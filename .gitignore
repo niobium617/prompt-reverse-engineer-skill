@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 工具临时目录（verify.py 运行产物）
+tools/.tmp_verify/
+
+# 本机 Claude Code 会话配置（含本机权限信息，不入库）
+.claude/
+
+# Codex 插件 skills junction（由 tools/install.py 物化，不提交链接）
+platform-adapters/codex/prompt-reverse-engineer/skills/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini

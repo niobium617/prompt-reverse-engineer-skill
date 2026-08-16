@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "tool": "agent",
+  "modality": "image",
+  "semantic_analysis": {
+    "summary": [
+      "主色为深蓝紫夜色，霓虹橙与青色点缀（脚本检出主色含 #FF7828 类霓虹橙）",
+      "低角度仰拍的城市夜景，三分法构图",
+      "高对比霓虹光影，赛博朋克氛围"
+    ],
+    "suggestions": [
+      "可补充镜头参数增强摄影感"
+    ],
+    "subject": "未来都市天际线剪影，高层建筑群与发光广告牌，前景一名撑透明伞的行人",
+    "scene": "雨夜霓虹街头，潮湿反光地面，2077 年赛博都市",
+    "composition": "低角度仰拍，全景，三分法构图，主体建筑群居中偏右",
+    "lighting": "霓虹灯牌侧光与轮廓光，高对比夜色，蓝调时刻",
+    "color": "深蓝紫为主色调，霓虹橙与青色点缀，高饱和冷色调",
+    "style": "赛博朋克，电影感城市夜景",
+    "photo_params": "广角镜头 24mm，f/2.8，深景深",
+    "quality_words": "ultra detailed, 8K, cinematic lighting, masterpiece",
+    "negative_words": "blurry, low quality, watermark, text, deformed",
+    "target_style": "吉卜力动画风格"
+  }
+}

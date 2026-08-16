@@ -1,0 +1,8 @@
+{
+  "kind": "score_report",
+  "header": "## 评分报告",
+  "dimension_line": "- {name}（权重 {weight}%）：{score} 分 — {note}",
+  "total_line": "总分：{total} / 100（等级 {grade}）",
+  "suggestion_line": "优化建议 {i}：{suggestion}",
+  "approximate_note": "（自动启发式近似评分，仅供参考）"
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "tool": "agent",
+  "modality": "video",
+  "semantic_analysis": {
+    "summary": [
+      "10 秒夜景短片，脚本检出 3 个镜头",
+      "远景交代环境 → 中景人物行走 → 特写灯光收尾",
+      "整体为赛博朋克夜城氛围，节奏舒缓"
+    ],
+    "suggestions": [
+      "可补充旁白内容增强叙事"
+    ],
+    "story": "雨夜霓虹街头，一名年轻女子撑伞夜行，最终驻足仰望全息广告牌",
+    "storyboard": [
+      {
+        "shot_no": 1,
+        "shot_size": "远景",
+        "camera_move": "慢速推进",
+        "duration_s": "3",
+        "action": "雨夜霓虹街道，女子撑伞从画面深处走近，反光地面映出霓虹灯牌"
+      },
+      {
+        "shot_no": 2,
+        "shot_size": "中景",
+        "camera_move": "横向跟拍",
+        "duration_s": "4",
+        "action": "女子穿行在人群与灯牌之间，黑色风衣下摆扬起"
+      },
+      {
+        "shot_no": 3,
+        "shot_size": "特写",
+        "camera_move": "缓慢拉远",
+        "duration_s": "3",
+        "action": "女子抬头，瞳孔中倒映全息广告牌，画面渐暗",
+        "dialogue": "在这座城市，每个人都在发光。"
+      }
+    ],
+    "character": "年轻女性，25 岁左右，黑色风衣，透明伞，神情平静带一丝疲惫",
+    "camera": "远景开场交代环境，中景跟拍叙事，特写收尾强调情绪；节奏舒缓",
+    "lighting": "霓虹灯光为主光源，蓝紫夜色底光，轮廓光勾勒人物",
+    "atmosphere": "赛博朋克雨夜都市，潮湿、迷离、孤独感",
+    "narration": "在这座城市，每个人都在发光。",
+    "duration": "10",
+    "aspect_ratio": "16:9"
+  }
+}

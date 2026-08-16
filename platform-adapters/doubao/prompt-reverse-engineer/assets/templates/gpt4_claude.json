@@ -1,0 +1,18 @@
+{
+  "model": "gpt4_claude",
+  "alias": ["gpt4", "gpt-4", "claude", "gpt", "chatgpt"],
+  "default_params": {},
+  "optional_fields": ["domain", "audience", "output_format", "narration", "dialogue", "character", "camera", "atmosphere"],
+  "modalities": {
+    "text": {
+      "replicate": "[System]\n你是{role}。专业领域：{domain}。目标受众：{audience}。\n任务：{task}。\n写作风格：{style}。\n结构要求：{structure}。\n限制：{constraints}。\n输出格式：{output_format}。\n\n[User]\n请基于以上设定生成一篇同类内容，主题：[此处填写主题]",
+      "optimize": "[System]\n你是一名专业的 Prompt 优化专家。\n任务：将用户提供的原始描述优化为结构完整、可复用的高质量生成指令。\n要求：按“角色→任务→背景→要求→限制→输出格式”六要素组织，保留原意并补充缺失要素。\n输出格式：先输出优化后的完整 Prompt，再附 1-2 句修改说明。\n\n[User]\n原始描述：{task}"
+    },
+    "image": {
+      "replicate": "[System]\n你是一名视觉生成 Prompt 专家。\n任务：根据以下画面要素描述，生成用于 AI 绘图模型的详细图像描述词。\n要求：覆盖主体、场景、构图、光影、色彩、风格六个维度，按此顺序组织。\n\n[User]\n主体：{subject}\n场景：{scene}\n构图：{composition}\n光影：{lighting}\n色彩：{color}\n风格：{style}"
+    },
+    "video": {
+      "storyboard": "[System]\n你是一名视频创作导演。\n任务：根据分镜脚本生成一段 {duration} 秒短视频的画面描述，画幅 {aspect_ratio}。\n要求：逐镜头描述，每镜包含景别、运镜、时长、画面内容；用语简洁具体。\n\n[User]\n故事：{story}\n分镜脚本：\n{storyboard}"
+    }
+  }
+}

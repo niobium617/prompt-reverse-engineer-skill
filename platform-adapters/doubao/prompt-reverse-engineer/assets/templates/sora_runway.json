@@ -1,0 +1,12 @@
+{
+  "model": "sora_runway",
+  "alias": ["sora", "runway", "sora/runway"],
+  "default_params": {"aspect_ratio": "16:9"},
+  "optional_fields": ["narration", "dialogue", "character", "camera"],
+  "modalities": {
+    "video": {
+      "storyboard": "创作一支 {duration} 秒的短视频，画幅 {aspect_ratio}。\n故事：{story}\n{storyboard}\n整体氛围：{atmosphere}；灯光：{lighting}。",
+      "replicate": "创作一支 {duration} 秒的{atmosphere}风格短片，画幅 {aspect_ratio}。\n人物：{character}。\n镜头风格：{camera}。\n故事：{story}\n{storyboard}\n旁白：{narration}"
+    }
+  }
+}

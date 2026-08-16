@@ -1,0 +1,13 @@
+{
+  "model": "midjourney",
+  "alias": ["mj", "midjourney", "mid-journey"],
+  "default_params": {"aspect_ratio": "16:9", "version": "6"},
+  "optional_fields": ["photo_params", "quality_words", "negative_words", "target_style", "narration"],
+  "modalities": {
+    "image": {
+      "positive": "/imagine prompt: {subject}, {scene}, {composition}, {lighting}, {color}, {style}, {photo_params}, {quality_words} --ar {aspect_ratio} --v {version}",
+      "negative": "--no {negative_words}",
+      "style_transfer": "/imagine prompt: {subject}, {scene}, {composition}, {lighting}, {target_style}, {quality_words} --ar {aspect_ratio} --v {version}"
+    }
+  }
+}
