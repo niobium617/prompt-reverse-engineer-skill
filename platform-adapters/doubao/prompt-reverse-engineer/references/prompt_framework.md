@@ -41,17 +41,19 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 
 ### 2.3 图像模态字段（modality=image）
 
+渲染顺序（`image_rules.md` 第一节七段结构）：subject → scene → style → lighting → color → composition → photo_params → quality_words。字段定义与必填性如下：
+
 | 字段 | 必填 | 说明与示例 |
 |---|---|---|
-| subject | 是 | 主体：人物/物体+动作+外观+服饰。如 `"年轻女性，黑色风衣，手持透明伞，回眸"` |
+| subject | 是 | 主体：**先身份外形、后动作状态**（人物/物体+动作+外观+服饰）。如 `"年轻女性，黑色风衣，手持透明伞，回眸望向镜头，神情宁静"` |
 | scene | 是 | 场景：地点+环境+时间+氛围。如 `"雨夜霓虹街头，潮湿反光地面，未来都市"` |
-| composition | 是 | 构图：视角+景别+构图方式。如 `"低角度仰拍，中景，三分法构图，人物居中偏右"` |
-| lighting | 是 | 光影：光源方向+明暗关系+氛围。如 `"霓虹灯牌侧光，轮廓光勾勒，高对比夜色"` |
-| color | 是 | 色彩：主色调+色彩风格+饱和度。如 `"深蓝紫为主，霓虹橙青点缀，高饱和冷色调"` |
-| style | 建议 | 整体风格，如 `"赛博朋克 / 胶片摄影 / 扁平插画"` |
-| photo_params | 建议 | 摄影参数：镜头类型+焦距+景深。如 `"50mm 定焦，f/1.8 浅景深，35mm 等效"` |
+| composition | 是 | 构图：视角+景别+构图方式（七段中位于光影之后）。如 `"低角度仰拍，中景，三分法构图，人物居中偏右"` |
+| lighting | 是 | 光影：光源方向+明暗关系+氛围（与 color 相邻渲染组成「光影色调」）。如 `"霓虹灯牌侧光，轮廓光勾勒，高对比夜色"` |
+| color | 是 | 色彩：主色调+色彩风格+饱和度（与 lighting 相邻渲染）。如 `"深蓝紫为主，霓虹橙青点缀，高饱和冷色调"` |
+| style | 建议 | 整体风格（七段中位于场景之后、光影之前）。如 `"赛博朋克 / 胶片摄影 / 扁平插画"` |
+| photo_params | 建议 | 摄影参数：镜头类型+焦距+景深（与 quality_words 收尾组成「画质与质感」）。如 `"50mm 定焦，f/1.8 浅景深，35mm 等效"` |
 | quality_words | 建议 | 质量词，如 `"超清细节, 8K, 电影级光影"`（MJ 正向提示用） |
-| negative_words | 建议 | 负向词表，如 `"模糊, 低质量, 畸形, 多余肢体"`（MJ `--no` 参数用） |
+| negative_words | 建议 | 负向词表，按「画面瑕疵/风格违和/内容违和」三类组织（见 image_rules.md 第八节），如 `"模糊, 低质量, 畸形, 多余肢体, 卡通, 明亮清新, 违和道具"`（MJ `--no` 参数用） |
 | target_style | 可选 | 风格迁移目标，如 `"宫崎骏动画风格"`（style_transfer 模板用） |
 
 ### 2.4 视频模态字段（modality=video）
@@ -67,6 +69,29 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 | narration | 可选 | 旁白/对话内容 |
 | duration | 建议 | 成片时长（秒），如 `"10"` |
 | aspect_ratio | 建议 | 画幅比例，如 `"16:9"` |
+
+#### 2.5 叙事文本场景化字段（modality=story）
+
+用于「剧本/小说/文章 → 逐场景图片+视频提示词」。Agent 先通读全文提炼全局基调，再按场景切分信号（`scripts/analyze_scenes.py`）逐场景提炼语义。渲染由 `prompt_compiler.py scenes` 子命令完成：每个场景对象同时按 image 模板（默认 mj,sd）与 video 模板（默认 sora）渲染。
+
+顶层字段（`semantic_analysis` 内）：
+
+| 字段 | 必填 | 说明与示例 |
+|---|---|---|
+| summary | 建议 | 全文题材/风格基调概述。如 `"都市情感短片：雨夜偶遇与咖啡厅告别，冷调写实摄影风格"` |
+| characters | 建议 | 主要角色表（辅助各场景主体提炼）。如 `"林晓：25 岁女性，黑色风衣，短发；陈默：28 岁男性，深灰大衣"` |
+| scenes | 是 | 场景数组，每项字段见下表 |
+
+场景对象字段（`scenes[i]`，图片字段复用 2.3 节、视频字段复用 2.4 节，字段名/必填性与各节一致）：
+
+| 字段 | 必填 | 说明与示例 |
+|---|---|---|
+| scene_no | 是 | 场景编号，从 1 起整数 |
+| title | 建议 | 场景标题，如 `"雨夜街头相遇"` |
+| （图片七段）subject / scene / style / lighting / color / composition / photo_params / quality_words / negative_words / target_style | 同 2.3 节 | 按 `image_rules.md` 第一节七段规范提炼；`target_style` 为可选风格迁移目标 |
+| （视频分镜）story / duration / aspect_ratio / storyboard / character / camera / atmosphere / narration | 同 2.4 节 | 按 `video_rules.md` 分镜规范提炼；`lighting` 字段同时服务图片与视频模板 |
+
+场景切分原则：**时间 / 地点 / 人物关系任一变化即新场景**；每个场景独立完成七段提炼与分镜设计，风格基调沿用顶层 `summary` 结论保持一致。
 
 ## 三、评分细则
 

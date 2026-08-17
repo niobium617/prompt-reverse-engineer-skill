@@ -2,7 +2,7 @@
 
 > **把任何优秀作品 → 逆向拆解 → 还原为可复用的专业 Prompt**
 >
-> 支持 **Claude Code / Cursor / Codex / DeepSeek Harness / 豆包** 五大平台 · **文本 / 图片 / 视频** 三模态输入 · **Midjourney / Stable Diffusion / GPT-4·Claude / Sora·Runway** 多模型格式输出 · 附**百分制六维加权质量评分**
+> 支持 **Claude Code / Cursor / Codex / DeepSeek Harness / 豆包** 五大平台 · **文本 / 图片 / 视频 / 剧本小说** 多模态输入 · **Midjourney / Stable Diffusion / GPT-4·Claude / Sora·Runway** 多模型格式输出 · 附**百分制六维加权质量评分**（剧本可逐场景生成图片/视频提示词）
 
 看到一篇爆款文案、一张惊艳的 AI 图片、一段电影感短视频，想知道「它是怎么被生成的」？把作品丢给本技能，它会自动拆解其主体、风格、结构与参数，反向还原出可复刻、可修改的专业 Prompt，并适配输出为各主流生成模型的格式。
 
@@ -33,6 +33,7 @@
 | **文本**（文章/文案/小说/脚本） | 角色定位、写作风格、结构逻辑、约束规则 | 复刻 Prompt + 优化模板 |
 | **图像**（摄影/绘画/海报/产品图） | 主体、场景、构图、光影、色彩、摄影参数 | 正向 Prompt + Negative Prompt + 风格迁移 Prompt |
 | **视频**（短视频/广告/电影片段） | 镜头序列、运镜方式、人物动作、环境氛围、叙事结构 | 视频生成 Prompt + 分镜脚本 |
+| **剧本/小说/文章**（叙事文本→场景化） | 场景切分、全局基调、逐场景七段+分镜 | 每个场景的图片 Prompt（默认 MJ+SD）+ 视频 Prompt（默认 Sora）+ 逐场景评分 |
 
 ### 1.2 四种目标模型格式
 
@@ -58,16 +59,16 @@
 ### 1.4 工作原理：双层分析
 
 ```
-作品（文本/图片/视频）
+作品（文本/图片/视频/剧本）
    │
-   ├── 脚本层（本地确定性信号）──→ 字数/句式统计 · 主色/构图/EXIF · 镜头切分/关键帧
-   │        analyze_text.py / analyze_image.py / analyze_video.py
+   ├── 脚本层（本地确定性信号）──→ 字数/句式统计 · 主色/构图/EXIF · 镜头切分/关键帧 · 场景切分信号
+   │        analyze_text.py / analyze_image.py / analyze_video.py / analyze_scenes.py
    │
-   ├── Agent 多模态本体（语义分析）──→ 主体 · 风格 · 结构 · 叙事（按规则库六要素）
+   ├── Agent 多模态本体（语义分析）──→ 主体 · 风格 · 结构 · 叙事 · 逐场景七段+分镜（按规则库）
    │
-   ├── 编译层 prompt_compiler.py ──→ 模板渲染成 4 种模型格式 + 六维评分 + 安全过滤
+   ├── 编译层 prompt_compiler.py ──→ 模板渲染成 4 种模型格式 + 六维评分 + 安全过滤（含 scenes 子命令逐场景编译）
    │
-   └── 输出：分析摘要 + Prompt 列表 + 评分报告 + 使用提示
+   └── 输出：分析摘要 + Prompt 列表 + 评分报告 + 使用提示（场景化输出总览 + 场景总表 + 逐场景 Prompt + 逐场景评分）
 ```
 
 **脚本只做「本地可计算」的事，语义判断归 Agent**——因此脚本不可用时（如豆包纯文本模式）技能仍可完整运行，仅缺少量化信号（降级路径已内置于 SKILL.md）。
@@ -115,6 +116,8 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 分析这张图片生成 Midjourney prompt：D:\images\cyberpunk.png
 
 拆解这个视频的分镜脚本，转成 Sora prompt：https://example.com/video.mp4
+
+把这部短剧按场景生成图片和视频提示词：D:\scripts\rain_umbrella.txt
 ```
 
 即得完整输出：分析摘要 → Prompt 列表（可直接粘贴使用）→ 评分报告 → 使用提示。
@@ -165,7 +168,19 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 
 **超长视频**：自动截取前 120 秒抽样分析（`--max-seconds` 可调），输出注明抽样范围。
 
-### 3.5 指定目标模型
+### 3.5 叙事文本场景化模式（剧本/小说/文章）
+
+**输入**：本地文本路径、URL 或直接粘贴的剧本/小说/文章，并表达「生成对应场景的图片/视频提示词」「把故事变成画面」「逐场景出图」意图。
+
+**分析流程**：脚本 `analyze_scenes.py` 先做确定性场景切分信号（剧本按场次标记 `第X场`/`INT.`/`EXT.` 等；散文按叙事块+时间地点提示）→ Agent 通读全文提炼全局基调（题材/风格/角色表）→ 按「**时间/地点/人物关系任一变化即新场景**」定稿场景划分 → 每场景独立完成图片七段 + 视频分镜语义分析（契约见 `references/prompt_framework.md` 2.5 节）。
+
+**输出**（每场景一份，逐场景评分）：文本总览 → 场景总表 → 逐场景图片 Prompt（默认 **MJ + SD** 双版本）+ 视频分镜 Prompt（默认 **Sora**）→ 逐场景六维评分 → 使用提示。
+
+**示例对话**：
+> 用户：「把这本小说按场景拆成图片和视频提示词，图片出 MJ 和 SD 版」
+> 技能：输出总览 → 场景总表 → 每场景 MJ/SD Prompt + Sora 分镜脚本 → 逐场景评分与优化建议
+
+### 3.6 指定目标模型
 
 | 说法 | 结果 |
 |---|---|
@@ -173,8 +188,9 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 | 「也出 SD 版」/「转成 Sora」 | 追加对应模型 |
 | 「全部模型」 | 四种格式全出 |
 | 指定了未注册的模型名 | 回退默认双版本并说明 |
+| 场景化模式（不指定） | 图片默认 **MJ + SD**、视频默认 **Sora**（`--image-models` / `--video-models` 可换） |
 
-### 3.6 安全红线（自动执行）
+### 3.7 安全红线（自动执行）
 
 - 输出 Prompt **强制**经安全过滤：越狱指令（"忽略之前指令"等）与可执行系统命令（`rm -rf`、`cmd.exe`、`subprocess` 等）命中即阻断，重写后才可输出
 - 涉暴力、露骨、侵权模仿特定在世人物的内容拒绝生成
@@ -193,15 +209,16 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 │   │   ├── analyze_text.py            # 文本确定性统计
 │   │   ├── analyze_image.py           # 图片信号提取（主色/构图/EXIF/人脸）
 │   │   ├── analyze_video.py           # 视频镜头切分+关键帧+运镜估计（无需 ffmpeg）
-│   │   └── prompt_compiler.py         # 编译/评分/安全过滤（compile|score|filter|all）
+│   │   ├── analyze_scenes.py          # 叙事文本场景切分信号（剧本场次标记/散文候选块）
+│   │   └── prompt_compiler.py         # 编译/评分/安全过滤（compile|score|filter|all|scenes）
 │   ├── references/                    # 规则知识库（Markdown，Agent 阅读）
-│   │   ├── prompt_framework.md        # 六要素+字段契约+评分细则+安全规则（总纲）
-│   │   ├── image_rules.md             # 摄影/绘画/光影/色彩术语库
+│   │   ├── prompt_framework.md        # 六要素+字段契约+评分细则+安全规则（总纲，含 2.5 节 story 契约）
+│   │   ├── image_rules.md             # 摄影/绘画/光影/色彩术语库（含七段结构）
 │   │   ├── video_rules.md             # 电影镜头语言+分镜规范
 │   │   └── model_mappings.md          # 四模型格式映射表
 │   └── assets/
 │       ├── templates/                 # 5 个 JSON 渲染模板（新模型=新文件，自动注册）
-│       └── examples/                  # 三模态示例（输入媒体+金标输出）
+│       └── examples/                  # 四模态示例（输入媒体+金标输出，含 story_example 场景化样例）
 ├── platform-adapters/                 # 平台适配层（内容由 install.py 物化，勿手改）
 │   ├── codex/…/.codex-plugin/plugin.json
 │   ├── deepseek/README.md             # DeepSeek Harness 适配说明（~/.dsh/skills）
@@ -243,16 +260,16 @@ L3 编译器 → Agent：     {prompts[], score_report{}, filter{}}
 python tools/verify.py
 ```
 
-13 项断言、全部离线、可重复执行：
+18 项断言、全部离线、可重复执行：
 
 | 层 | 覆盖 |
 |---|---|
-| 单元层 | 三脚本跑示例输入：退出码/信封/关键字段 + 幂等（两次运行逐字节一致） |
+| 单元层 | 四脚本跑示例输入：退出码/信封/关键字段 + 幂等（两次运行逐字节一致）；analyze_scenes 剧本→场次标记、散文→候选块+时间地点提示 |
 | 契约层 | 编译渲染（总分=加权和、建议 1-2 条）+ 越狱样例阻断（退出码 5）+ `--sanitize` 替换放行 |
-| 负向层 | 缺字段（退出码 4 报字段名）/ 未知模型 / 坏文件 |
+| 负向层 | 缺字段（退出码 4 报字段名）/ 未知模型 / 坏文件 / 场景缺字段（报场景号）/ 场景黑名单 |
 | 安装层 | junction 创建、重复运行幂等、config.toml 标记块仅一次（Windows） |
 | 豆包兼容 | YAML frontmatter 校验 + zip 内文件齐全 + 包内编译器独立运行成功 |
-| 三场景 | ① 营销文案→GPT Prompt（角色/风格/结构约束）② 赛博朋克图→MJ Prompt（`/imagine`+`--no`+风格迁移）③ 10 秒视频→分镜 Prompt（镜头数=分镜段落数） |
+| 四场景 | ① 营销文案→GPT Prompt（角色/风格/结构约束）② 赛博朋克图→MJ Prompt（`/imagine`+`--no`+风格迁移）③ 10 秒视频→分镜 Prompt（镜头数=分镜段落数）④ 剧本→逐场景 Prompt（每场景 MJ/SD/Sora 齐全 + 逐场景评分） |
 
 ---
 

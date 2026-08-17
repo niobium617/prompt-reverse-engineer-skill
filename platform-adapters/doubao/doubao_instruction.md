@@ -18,9 +18,11 @@
 
 ### 1. 触发条件
 
-用户提供了具体内容（粘贴的文本、图片、视频文件路径或 URL），并表达「逆向 / 复刻 / 拆解 / 变成 prompt / 优化 prompt」意图时执行本技能。纯闲聊或与内容逆向无关的任务不激活。
+用户提供了具体内容（粘贴的文本、图片、视频文件路径或 URL），并表达「逆向 / 复刻 / 拆解 / 变成 prompt / 优化 prompt」意图时执行本技能。用户提供**剧本 / 小说 / 文章等叙事文本**并要求「生成对应场景的图片/视频提示词 / 把故事变成画面 / 逐场景出图」时，按第 2 节叙事文本分支执行。纯闲聊或与内容逆向无关的任务不激活。
 
 ### 2. 核心工作流（六步，严格按序）
+
+**叙事文本分支**：若输入为剧本/小说/文章且用户要求场景化生成，改走：`analyze_scenes.py` 获取场景切分信号 → Agent 通读全文提炼全局基调（summary/characters）并逐场景完成七段与分镜语义分析（契约见 `references/prompt_framework.md` 2.5 节，写入 story JSON）→ `prompt_compiler.py scenes` 编译（每场景图片默认 MJ/SD + 视频默认 Sora）→ 逐场景评分 → 按第 4 节场景化格式输出。安全过滤与降级规则与常规流程一致。
 
 1. **识别**：判定输入模态（text / image / video）与来源（本地路径 / URL / 直接粘贴）。粘贴的文本写入技能目录外的临时文件；URL 可直接交给脚本下载；检查输入可读，失败按第 5 节处理。
 2. **分析**：运行 `scripts/` 下对应脚本获取 `local_features` 确定性信号（脚本用法见第 6 节）。**图像/视频必须 Read 关键帧或原图**，用多模态能力完成语义分析（主体/风格/结构等）。
@@ -32,8 +34,9 @@
 ### 3. 各模态分析要点
 
 - **文本**：角色定位（作者身份/专业领域/人设/受众）+ 写作风格（语言特点/情绪倾向/表达方式/关键词习惯）+ 结构逻辑（开头/展开/组织/结尾）+ 约束规则（字数/格式/禁止内容）。脚本信号可辅助：标题层级、列表/加粗密度、emoji 与感叹号频次、Top 关键词。
-- **图像**：主体（人物/物体/动作/外观/服饰）→ 场景（地点/环境/时间/氛围）→ 构图（视角/景别/构图方式）→ 光影 → 色彩 → 风格 → 摄影参数。脚本信号：主色/亮度/饱和度/色温、构图网格、清晰度。术语库见 `references/image_rules.md`。
+- **图像**：按七段结构分析——核心主体（身份/外形/特征，先写）→ 动作与状态 → 场景（地点/环境/时间/氛围）→ 艺术风格 → 光影色调（光影+色彩）→ 镜头构图（视角/景别/构图方式）→ 画质与质感（摄影参数+质量词）。脚本信号：主色/亮度/饱和度/色温、构图网格、清晰度。术语库与负向三类/格式规范见 `references/image_rules.md`。
 - **视频**：脚本镜头切分 + **逐关键帧多模态分析** → 故事结构（起承转合）+ 分镜表（景别/运镜/时长/画面内容/台词）+ 人物 + 环境氛围 + 灯光。镜头语言见 `references/video_rules.md`。
+- **叙事文本（场景化）**：全局基调先行（题材/风格/角色表）→ 场景切分（**时间/地点/人物关系任一变化即新场景**；剧本按场次标记、散文按叙事块，信号来自 `analyze_scenes.py`）→ 每场景独立提炼图片七段（`references/image_rules.md`）与视频分镜（`references/video_rules.md`），风格沿用全局基调保持全篇一致。
 
 ### 4. 输出格式规范
 
@@ -44,7 +47,14 @@
 3. **评分报告**：六维表格（维度/权重/得分）+ 总分与等级 + 1-2 条优化建议。
 4. **使用提示**：说明哪些占位需替换、如何微调（如换风格词、换比例参数）。
 
-风格参照：`assets/examples/*/output.md`（写作前先看对应模态的示例）。
+**场景化输出**（叙事文本分支）固定组织：
+1. **文本总览**：题材、风格基调、主要角色。
+2. **场景总表**：场景号 / 标题 / 时间地点 / 情绪关键词一览。
+3. **逐场景提示词**：每个场景——小标题 `场景 N：标题` + 图片 Prompt（默认 MJ/SD 双版本，代码块包裹）+ 视频分镜 Prompt（默认 Sora）。
+4. **逐场景评分**：每场景六维表格 + 总分与等级 + 1-2 条优化建议。
+5. **使用提示**：占位替换说明、如何微调风格/比例。
+
+风格参照：`assets/examples/*/output.md`（写作前先看对应模态的示例，场景化见 `story_example`）。
 
 ### 5. 异常处理规则
 
@@ -52,7 +62,7 @@
 |---|---|
 | 输入不可读 / URL 下载失败（脚本退出码 2/3） | 请用户提供本地路径或直接粘贴内容；URL 超时重试 2 次，仍失败则提示改用本地文件 |
 | 脚本解码失败（退出码 4） | 检查文件类型与损坏情况；**降级路径**：跳过脚本层，Agent 直接基于内容做纯描述分析，按相同流程编译 |
-| 缺字段（编译器退出码 4 并列出字段名） | 按列出的字段补全 `semantic_analysis` 后重新编译 |
+| 缺字段（编译器退出码 4 并列出字段名） | 按列出的字段补全 `semantic_analysis` 后重新编译（scenes 模式会报出场景号） |
 | 安全过滤阻断（退出码 5） | 重写含违规表述的部分，重编后输出 |
 | 内容敏感（暴力/露骨/侵权模仿特定在世人物） | 拒绝生成，说明原因 |
 | 未知模型名 | 回退默认 MJ + GPT-4 双版本，并说明 |
@@ -70,19 +80,22 @@
 | analyze_text.py | `<input 文件\|URL\|-> [-o out.json]` | 文本统计信封 JSON |
 | analyze_image.py | `<input> [--max-size 4096] [-o out.json]` | 图片信号信封 JSON |
 | analyze_video.py | `<input> [--max-seconds 120] [-o out.json]` | 镜头切分+关键帧路径信封 JSON |
-| prompt_compiler.py | `all \| compile \| score \| filter` 子命令（`--help` 查看参数） | 编译/评分/过滤结果 |
+| analyze_scenes.py | `<input> [-o out.json]` | 叙事文本场景切分信号信封 JSON |
+| prompt_compiler.py | `all \| compile \| score \| filter \| scenes` 子命令（`--help` 查看参数） | 编译/评分/过滤/逐场景编译结果 |
+
+场景化编译：`python <技能目录>/scripts/prompt_compiler.py scenes --analysis story.json [--image-models mj,sd] [--video-models sora] [--dims dims.json | --auto]`，story JSON 契约见 `references/prompt_framework.md` 2.5 节；`--dims` 为逐场景评分 `[{scene_no, dims: [{key, score, note}]}]`。
 
 统一约定：信封 `{schema_version, tool, modality, input, local_features}`；退出码 `0 成功 / 1 用法 / 2 输入不可读 / 3 下载失败 / 4 解码失败或缺字段 / 5 安全阻断`；同输入输出逐字节一致（幂等）。字段契约与评分细则唯一权威见 `references/prompt_framework.md`。
 
 ### 7. 参考索引
 
-- `references/prompt_framework.md` —— 六要素结构 + 字段契约 + 评分细则 + 安全规则 + 建议库 + 扩展指南（**必读**）
-- `references/image_rules.md` —— 摄影参数/构图/光影/色彩/风格词库
+- `references/prompt_framework.md` —— 六要素结构 + 字段契约（含 2.5 节 story 场景化）+ 评分细则 + 安全规则 + 建议库 + 扩展指南（**必读**）
+- `references/image_rules.md` —— 摄影参数/构图/光影/色彩/风格词库 + 七段结构与负向三类
 - `references/video_rules.md` —— 景别/运镜/叙事/分镜规范
-- `references/model_mappings.md` —— 四模型格式映射表
+- `references/model_mappings.md` —— 四模型格式映射表 + 场景化默认模型
 - `assets/templates/*.json` —— 机器渲染模板（新增模型=新增模板文件，自动注册）
-- `assets/examples/<模态>_example/output.md` —— 三模态金标输出样例
-- `tools/fixtures/semantic_*.json` —— semantic_analysis 字段填写范例
+- `assets/examples/<模态>_example/output.md` —— 三模态金标输出样例；`story_example` 为剧本→逐场景提示词金标
+- `tools/fixtures/semantic_*.json` —— semantic_analysis 字段填写范例（semantic_story.json 为场景化范例）
 
 <!-- 来源：references\prompt_framework.md -->
 
@@ -129,17 +142,19 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 
 #### 2.3 图像模态字段（modality=image）
 
+渲染顺序（`image_rules.md` 第一节七段结构）：subject → scene → style → lighting → color → composition → photo_params → quality_words。字段定义与必填性如下：
+
 | 字段 | 必填 | 说明与示例 |
 |---|---|---|
-| subject | 是 | 主体：人物/物体+动作+外观+服饰。如 `"年轻女性，黑色风衣，手持透明伞，回眸"` |
+| subject | 是 | 主体：**先身份外形、后动作状态**（人物/物体+动作+外观+服饰）。如 `"年轻女性，黑色风衣，手持透明伞，回眸望向镜头，神情宁静"` |
 | scene | 是 | 场景：地点+环境+时间+氛围。如 `"雨夜霓虹街头，潮湿反光地面，未来都市"` |
-| composition | 是 | 构图：视角+景别+构图方式。如 `"低角度仰拍，中景，三分法构图，人物居中偏右"` |
-| lighting | 是 | 光影：光源方向+明暗关系+氛围。如 `"霓虹灯牌侧光，轮廓光勾勒，高对比夜色"` |
-| color | 是 | 色彩：主色调+色彩风格+饱和度。如 `"深蓝紫为主，霓虹橙青点缀，高饱和冷色调"` |
-| style | 建议 | 整体风格，如 `"赛博朋克 / 胶片摄影 / 扁平插画"` |
-| photo_params | 建议 | 摄影参数：镜头类型+焦距+景深。如 `"50mm 定焦，f/1.8 浅景深，35mm 等效"` |
+| composition | 是 | 构图：视角+景别+构图方式（七段中位于光影之后）。如 `"低角度仰拍，中景，三分法构图，人物居中偏右"` |
+| lighting | 是 | 光影：光源方向+明暗关系+氛围（与 color 相邻渲染组成「光影色调」）。如 `"霓虹灯牌侧光，轮廓光勾勒，高对比夜色"` |
+| color | 是 | 色彩：主色调+色彩风格+饱和度（与 lighting 相邻渲染）。如 `"深蓝紫为主，霓虹橙青点缀，高饱和冷色调"` |
+| style | 建议 | 整体风格（七段中位于场景之后、光影之前）。如 `"赛博朋克 / 胶片摄影 / 扁平插画"` |
+| photo_params | 建议 | 摄影参数：镜头类型+焦距+景深（与 quality_words 收尾组成「画质与质感」）。如 `"50mm 定焦，f/1.8 浅景深，35mm 等效"` |
 | quality_words | 建议 | 质量词，如 `"超清细节, 8K, 电影级光影"`（MJ 正向提示用） |
-| negative_words | 建议 | 负向词表，如 `"模糊, 低质量, 畸形, 多余肢体"`（MJ `--no` 参数用） |
+| negative_words | 建议 | 负向词表，按「画面瑕疵/风格违和/内容违和」三类组织（见 image_rules.md 第八节），如 `"模糊, 低质量, 畸形, 多余肢体, 卡通, 明亮清新, 违和道具"`（MJ `--no` 参数用） |
 | target_style | 可选 | 风格迁移目标，如 `"宫崎骏动画风格"`（style_transfer 模板用） |
 
 #### 2.4 视频模态字段（modality=video）
@@ -155,6 +170,29 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 | narration | 可选 | 旁白/对话内容 |
 | duration | 建议 | 成片时长（秒），如 `"10"` |
 | aspect_ratio | 建议 | 画幅比例，如 `"16:9"` |
+
+##### 2.5 叙事文本场景化字段（modality=story）
+
+用于「剧本/小说/文章 → 逐场景图片+视频提示词」。Agent 先通读全文提炼全局基调，再按场景切分信号（`scripts/analyze_scenes.py`）逐场景提炼语义。渲染由 `prompt_compiler.py scenes` 子命令完成：每个场景对象同时按 image 模板（默认 mj,sd）与 video 模板（默认 sora）渲染。
+
+顶层字段（`semantic_analysis` 内）：
+
+| 字段 | 必填 | 说明与示例 |
+|---|---|---|
+| summary | 建议 | 全文题材/风格基调概述。如 `"都市情感短片：雨夜偶遇与咖啡厅告别，冷调写实摄影风格"` |
+| characters | 建议 | 主要角色表（辅助各场景主体提炼）。如 `"林晓：25 岁女性，黑色风衣，短发；陈默：28 岁男性，深灰大衣"` |
+| scenes | 是 | 场景数组，每项字段见下表 |
+
+场景对象字段（`scenes[i]`，图片字段复用 2.3 节、视频字段复用 2.4 节，字段名/必填性与各节一致）：
+
+| 字段 | 必填 | 说明与示例 |
+|---|---|---|
+| scene_no | 是 | 场景编号，从 1 起整数 |
+| title | 建议 | 场景标题，如 `"雨夜街头相遇"` |
+| （图片七段）subject / scene / style / lighting / color / composition / photo_params / quality_words / negative_words / target_style | 同 2.3 节 | 按 `image_rules.md` 第一节七段规范提炼；`target_style` 为可选风格迁移目标 |
+| （视频分镜）story / duration / aspect_ratio / storyboard / character / camera / atmosphere / narration | 同 2.4 节 | 按 `video_rules.md` 分镜规范提炼；`lighting` 字段同时服务图片与视频模板 |
+
+场景切分原则：**时间 / 地点 / 人物关系任一变化即新场景**；每个场景独立完成七段提炼与分镜设计，风格基调沿用顶层 `summary` 结论保持一致。
 
 ### 三、评分细则
 
@@ -200,16 +238,40 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 ## 图像 Prompt 规则库
 
 > 图像语义分析时的术语参考。Agent 提取的语义字段应尽量使用本库词汇，保证输出 Prompt 专业、可被生成模型准确理解。
+> 场景化入口（剧本/小说/文章 → 逐场景图片提示词）：字段契约见 `prompt_framework.md` 2.5 节，渲染由 `prompt_compiler.py scenes` 完成，本节七段规范同样适用。
 
-### 一、图像 Prompt 要素顺序规范
+### 一、图像 Prompt 要素顺序规范（七段结构）
 
-标准顺序（Midjourney / Stable Diffusion 通用，`model_mappings.md` 有逐模型细节）：
+标准结构（Midjourney / Stable Diffusion 通用，`model_mappings.md` 有逐模型细节）。**越核心的要素越靠前**——模型对前置内容的注意力权重更高：
+
+| 段位 | 内容 | 覆盖语义字段 |
+|---|---|---|
+| ① 核心主体 | 画面核心对象的身份、外形、核心特征 | `subject`（前半） |
+| ② 动作与状态 | 主体的姿态、行为、表情、互动关系 | `subject`（后半） |
+| ③ 场景与环境 | 所处空间、背景元素、环境氛围细节 | `scene` |
+| ④ 艺术风格 | 画风流派、创作媒介、参考风格 | `style` |
+| ⑤ 光影色调 | 光照类型、光线方向、整体色彩基调 | `lighting` + `color` |
+| ⑥ 镜头构图 | 拍摄视角、景别、构图方式 | `composition` |
+| ⑦ 画质与质感 | 分辨率、精细度、特殊画面效果 | `photo_params` + `quality_words` |
+
+机器渲染顺序（与模板 `assets/templates/*.json` 占位符一致）：
 
 ```
-主体(subject) → 场景(scene) → 构图(composition) → 光影(lighting) → 色彩(color) → 风格(style) → 摄影参数(photo_params) → 质量词(quality_words)
+subject → scene → style → lighting → color → composition → photo_params → quality_words
 ```
 
-负向词（negative_words）单独成段（SD 的 Negative 段 / MJ 的 `--no` 参数）。
+语义字段填充时，`subject` 内先写**身份外形**（①），后写**动作状态**（②）；`lighting` 与 `color` 相邻渲染组成⑤；`photo_params` 与 `quality_words` 收尾组成⑦。
+
+写法示例（字段示例与 `prompt_framework.md` 2.3 节一致）：
+
+- **① 核心主体 + ② 动作与状态**（subject）：`年轻女性，黑色风衣，手持透明伞，回眸望向镜头，神情宁静`
+- **③ 场景与环境**（scene）：`雨夜霓虹街头，潮湿反光地面，未来都市`
+- **④ 艺术风格**（style）：`赛博朋克 / 胶片摄影 / 扁平插画`
+- **⑤ 光影色调**（lighting + color）：`霓虹灯牌侧光，轮廓光勾勒，高对比夜色` + `深蓝紫为主，霓虹橙青点缀，高饱和冷色调`
+- **⑥ 镜头构图**（composition）：`低角度仰拍，中景，三分法构图，人物居中偏右`
+- **⑦ 画质与质感**（photo_params + quality_words）：`50mm 定焦，f/1.8 浅景深` + `超清细节, 8K, 电影级光影`
+
+负向词（negative_words）单独成段（SD 的 Negative 段 / MJ 的 `--no` 参数），组织方式见第八节。
 
 ### 二、摄影参数表
 
@@ -273,15 +335,31 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 
 `ultra detailed` `8K` `masterpiece` `best quality` `sharp focus` `high resolution` `cinematic lighting` `professional photography`
 
-### 八、常见 Negative 清单（negative_words）
+### 八、Negative 三类标准结构（negative_words）
 
-`blurry` `low quality` `worst quality` `deformed` `distorted anatomy` `extra limbs` `bad proportions` `mutated hands` `watermark` `text` `signature` `oversaturated` `artifacts` / 中文对应：模糊、低质量、畸形、结构错误、多余肢体、水印、文字乱码
+负向词按「画面瑕疵 → 风格违和 → 内容违和」三类组织，同类集中放置、英文逗号分隔：
+
+| 类别 | 用途 | 常见词（中/英） |
+|---|---|---|
+| 画面瑕疵 | 修正生成缺陷 | 模糊 `blurry`、低质量 `low quality`、`worst quality`、畸形 `deformed`、结构错误 `distorted anatomy`、多余肢体 `extra limbs`、比例失调 `bad proportions`、畸形手 `mutated hands`、水印 `watermark`、文字乱码 `text`、`signature`、过饱和 `oversaturated`、`artifacts` |
+| 风格违和 | 排除不符合题材的风格 | 卡通 `cartoon`、Q 版 `chibi`、二次元 `anime`、明亮清新、现代整洁建筑等与目标题材冲突的风格 |
+| 内容违和 | 排除不符合设定的元素 | 与场景设定冲突的人物（如空旷场景出现路人）、道具、鲜艳色彩等 |
+
+Agent 填充 `negative_words` 字段时按三类分组书写（如 `"模糊, 低质量, 畸形, 多余肢体, 卡通, 明亮清新, 违和道具, 鲜艳色彩"`：瑕疵词在前、违和风格居中、违和内容收尾），渲染时统一逗号连接。
+
+### 九、格式使用规范
+
+1. **排序规则**：越核心的元素越靠前（第一节七段顺序），模型对前置内容的注意力权重更高。
+2. **分隔方式**：不同元素用英文逗号分隔；同维度的描述集中放置，便于整体调整。
+3. **权重强化**（Stable Diffusion 等支持权重语法的模型）：`(关键词:权重数值)` 格式，数值 >1 增强、<1 减弱，如 `(透明伞:1.3)`。**Midjourney 不支持此语法**——需突出某要素时用要素前置、`--stylize 0-1000` 或 `--chaos` 参数，勿在 MJ 输出中写 `(词:权重)` 标记。
+4. **模块化复用**：替换对应段位的内容即可快速切换题材、风格，无需重写整段提示词。
 
 <!-- 来源：references\video_rules.md -->
 
 ## 视频 Prompt 规则库
 
 > 视频语义分析时的镜头语言参考。Sora / Runway 类模型偏好自然语言分镜脚本，英文运镜术语可显著提升生成质量，下表均给出中英对照。
+> 场景化入口（剧本/小说/文章 → 逐场景视频提示词）：字段契约见 `prompt_framework.md` 2.5 节，渲染由 `prompt_compiler.py scenes` 完成，本节分镜规范同样适用。
 
 ### 一、景别（shot_size）与情绪含义
 
@@ -338,7 +416,7 @@ storyboard 为对象数组，每项字段如下（与 `prompt_framework.md` 2.4 
 | shot_size | 是 | 景别，用本表第一节词汇，如 `"中景"` / `"close-up"` |
 | camera_move | 是 | 运镜，用第三节词汇，如 `"慢速推进"` / `"tracking shot"` |
 | duration_s | 是 | 镜头时长（秒），如 `"3"` |
-| action | 是 | 画面内容：人物动作+环境+关键视觉元素 |
+| action | 是 | 画面内容：人物动作+环境+关键视觉元素。按「主体 → 动作 → 场景」组织（主体先身份外形、后动作状态，再补环境要素，与 `image_rules.md` 第一节七段结构的前三段一致） |
 | dialogue | 可选 | 台词/旁白，无则省略 |
 
 **分镜脚本示例（Sora/Runway 自然语言格式）**：
@@ -364,8 +442,9 @@ storyboard 为对象数组，每项字段如下（与 `prompt_framework.md` 2.4 
 ### 一、默认输出规则
 
 - 用户**未指定目标模型**时，默认输出 **Midjourney + GPT-4/Claude 两个版本**。
+- 场景化模式（叙事文本 → 逐场景提示词，`prompt_compiler.py scenes`）：默认 **图片 = Midjourney + Stable Diffusion 双版本**、**视频 = Sora**，可用 `--image-models` / `--video-models` 指定其他组合。
 - 用户指定多个模型时（如"转成 MJ 和 SD"），全部输出。
-- 用户指定了未注册的模型名 → 回退默认双版本，并在输出中说明。
+- 用户指定了未注册的模型名 → 回退默认版本，并在输出中说明。
 
 ### 二、模型注册表（template 文件对应关系）
 
@@ -379,25 +458,27 @@ storyboard 为对象数组，每项字段如下（与 `prompt_framework.md` 2.4 
 ### 三、Midjourney 格式
 
 ```
-/imagine prompt: {subject}, {scene}, {composition}, {lighting}, {color}, {style}, {photo_params}, {quality_words} --ar {aspect_ratio} --v {version}
+/imagine prompt: {subject}, {scene}, {style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words} --ar {aspect_ratio} --v {version}
 ```
 
-- 要素按 `image_rules.md` 第一节顺序排列，逗号分隔。
-- 负向内容用 `--no {negative_words}` 参数表达（MJ 无独立 Negative 段）。
+- 要素按 `image_rules.md` 第一节七段顺序排列，逗号分隔（主体+动作 → 场景 → 风格 → 光影色调 → 构图 → 画质质感）。
+- 负向内容用 `--no {negative_words}` 参数表达（MJ 无独立 Negative 段），按第八节三类组织。
 - 常用参数：`--ar`（比例，默认 16:9）、`--v`（版本）、`--stylize`（风格化 0-1000）、`--chaos`（随机性 0-100）、`--no`。
-- 风格迁移：`/imagine prompt: {subject}, {scene}, {target_style}, {quality_words} --ar {aspect_ratio} --v {version}`。
+- MJ **不支持** `(词:权重)` 权重语法，突出要素用前置或 `--stylize`/`--chaos`（见 image_rules.md 第九节）。
+- 风格迁移：替换 `{style}` 为目标风格词，其余段位不变：`/imagine prompt: {subject}, {scene}, {target_style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words} --ar {aspect_ratio} --v {version}`。
 
 ### 四、Stable Diffusion 格式
 
 ```
-Positive: {subject}, {scene}, {composition}, {lighting}, {color}, {style}, {photo_params}, {quality_words}
+Positive: {subject}, {scene}, {style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words}
 Negative: {negative_words}
 Steps: 30, CFG scale: 7, Sampler: DPM++ 2M Karras, Seed: -1, Size: {width}x{height}
 ```
 
-- Positive 与 Negative **严格分离**成两段。
+- Positive 与 Negative **严格分离**成两段；Positive 按第一节七段顺序，Negative 按第八节三类组织。
 - 参数行：Steps / CFG / Sampler / Seed / Size / Model tag（如真实感模型 `photorealistic` 前缀）。
-- 风格迁移：替换 Positive 中的 `{style}` 为目标风格词。
+- 权重语法：SD 支持 `(关键词:权重数值)`（>1 增强、<1 减弱），见 image_rules.md 第九节。
+- 风格迁移：替换 Positive 中的 `{style}` 为目标风格词，其余段位不变。
 
 ### 五、GPT-4 / Claude 格式（System + User 消息结构）
 

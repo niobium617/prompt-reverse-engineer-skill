@@ -1,6 +1,7 @@
 # 视频 Prompt 规则库
 
 > 视频语义分析时的镜头语言参考。Sora / Runway 类模型偏好自然语言分镜脚本，英文运镜术语可显著提升生成质量，下表均给出中英对照。
+> 场景化入口（剧本/小说/文章 → 逐场景视频提示词）：字段契约见 `prompt_framework.md` 2.5 节，渲染由 `prompt_compiler.py scenes` 完成，本节分镜规范同样适用。
 
 ## 一、景别（shot_size）与情绪含义
 
@@ -57,7 +58,7 @@ storyboard 为对象数组，每项字段如下（与 `prompt_framework.md` 2.4 
 | shot_size | 是 | 景别，用本表第一节词汇，如 `"中景"` / `"close-up"` |
 | camera_move | 是 | 运镜，用第三节词汇，如 `"慢速推进"` / `"tracking shot"` |
 | duration_s | 是 | 镜头时长（秒），如 `"3"` |
-| action | 是 | 画面内容：人物动作+环境+关键视觉元素 |
+| action | 是 | 画面内容：人物动作+环境+关键视觉元素。按「主体 → 动作 → 场景」组织（主体先身份外形、后动作状态，再补环境要素，与 `image_rules.md` 第一节七段结构的前三段一致） |
 | dialogue | 可选 | 台词/旁白，无则省略 |
 
 **分镜脚本示例（Sora/Runway 自然语言格式）**：

@@ -121,8 +121,8 @@ def load_analysis(path):
     data = load_json(path, "分析文件")
     if "semantic_analysis" not in data:
         die("分析文件缺少 semantic_analysis 字段（字段规范见 prompt_framework.md）", 4)
-    if "modality" not in data or data["modality"] not in ("text", "image", "video"):
-        die("分析文件缺少有效 modality 字段（text/image/video）", 4)
+    if "modality" not in data or data["modality"] not in ("text", "image", "video", "story"):
+        die("分析文件缺少有效 modality 字段（text/image/video/story）", 4)
     return data
 
 
@@ -575,6 +575,166 @@ def emit(result, output):
 
 
 # ---------------------------------------------------------------------------
+# scenes
+# ---------------------------------------------------------------------------
+def cmd_scenes(args):
+    """叙事文本（modality=story）逐场景编译：每场景渲染图片组（默认 mj,sd）
+    + 视频组（默认 sora）+ 安全过滤 + 逐场景评分。"""
+    analysis = load_analysis(args.analysis)
+    if analysis["modality"] != "story":
+        die("scenes 子命令要求 analysis 的 modality 为 story（叙事文本场景化）", 1)
+    semantic = analysis.get("semantic_analysis", {})
+    scenes = semantic.get("scenes")
+    if not isinstance(scenes, list) or not scenes:
+        die("story 分析缺少非空 scenes 数组（字段规范见 prompt_framework.md 2.5 节）", 4)
+
+    registry = load_registry(args.template_dir)
+    if not registry:
+        die(f"模板目录 {args.template_dir} 下未发现模型模板", 4)
+    image_models, image_unknown = resolve_models(args.image_models, registry)
+    video_models, video_unknown = resolve_models(args.video_models, registry)
+    unknown = sorted(set(image_unknown) | set(video_unknown))
+    if unknown:
+        die(f"未知模型：{', '.join(unknown)}（可用：{', '.join(sorted(registry))}）", 1)
+    if not any("image" in registry[m].get("modalities", {}) for m in image_models):
+        die("图片模型列表中无支持 image 模态的模板", 1)
+    if not any("video" in registry[m].get("modalities", {}) for m in video_models):
+        die("视频模型列表中无支持 video 模态的模板", 1)
+
+    # ---- 逐场景评分数据 ----
+    scene_dims, notes_map = {}, {}
+    if args.dims:
+        dims_data = load_json(args.dims, "评分文件")
+        known = {k for k, _, _ in DIMENSIONS}
+        for item in dims_data:
+            scene_no = item.get("scene_no")
+            if not isinstance(scene_no, int):
+                die("评分文件每项必须含整数 scene_no，发现：" + json.dumps(item, ensure_ascii=False), 4)
+            entries, seen = [], set()
+            for d in item.get("dims", []):
+                key = d.get("key")
+                if key not in known:
+                    die(f"未知评分维度：{key}", 4)
+                score = d.get("score")
+                if not isinstance(score, (int, float)) or not 0 <= score <= 100:
+                    die(f"维度 {key} 得分须为 0-100 的数字", 4)
+                entries.append((key, d.get("note", ""), score))
+                seen.add(key)
+            missing = [k for k, _, _ in DIMENSIONS if k not in seen]
+            if missing:
+                die(f"场景 {scene_no} 评分缺少维度：{', '.join(missing)}", 4)
+            scene_dims[scene_no] = [(k, n, w, s) for k, _, s in entries
+                                    for kk, n, w in DIMENSIONS if kk == k]
+            notes_map[scene_no] = {k: note for k, note, _ in entries}
+    elif args.auto:
+        for scene in scenes:
+            no = scene.get("scene_no")
+            if not isinstance(no, int):
+                die(f"场景缺少整数 scene_no 字段：{json.dumps(scene, ensure_ascii=False)[:120]}", 4)
+            auto = heuristic_scores(scene)
+            scene_dims[no] = [(k, n, w, auto[k]) for k, n, w in DIMENSIONS]
+    else:
+        die("scenes 需要 --dims（逐场景评分 JSON）或 --auto（启发式，仅离线验证）", 1)
+
+    # ---- 逐场景编译 ----
+    out_scenes, blocked_any = [], False
+    for scene in scenes:
+        scene_no = scene.get("scene_no")
+        if not isinstance(scene_no, int):
+            die("场景缺少整数 scene_no 字段", 4)
+        if scene_no not in scene_dims:
+            die(f"场景 {scene_no} 缺少评分条目", 4)
+        title = scene.get("title") or f"场景 {scene_no}"
+        prompts, missing_all = [], []
+        for model in image_models:
+            template = registry[model]
+            for kind in template.get("modalities", {}).get("image", {}):
+                status, payload = render_one(template, kind, "image", scene)
+                if status == "ok":
+                    prompts.append({"model": model, "kind": kind, "text": payload,
+                                    "template_id": template["template_id"],
+                                    "sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest()})
+                elif status == "missing":
+                    missing_all.append((model, kind, payload))
+        for model in video_models:
+            template = registry[model]
+            for kind in template.get("modalities", {}).get("video", {}):
+                status, payload = render_one(template, kind, "video", scene)
+                if status == "ok":
+                    prompts.append({"model": model, "kind": kind, "text": payload,
+                                    "template_id": template["template_id"],
+                                    "sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest()})
+                elif status == "missing":
+                    missing_all.append((model, kind, payload))
+        if missing_all:
+            for model, kind, fields in missing_all:
+                die(f"场景 {scene_no}（{title}）{model}/{kind} 缺失字段：{', '.join(fields)}"
+                    f"（补全 semantic_analysis.scenes[{scene_no}] 后重试）", 4)
+
+        matches, sanitized = [], []
+        for p in prompts:
+            m, s = scan_text(p["text"])
+            matches.extend(m)
+            sanitized.append(dict(p, text=s))
+        if matches:
+            blocked_any = True
+
+        report = build_report(scene_dims[scene_no], bool(args.auto))
+        out_scenes.append({
+            "scene_no": scene_no,
+            "title": title,
+            "prompts": sanitized,
+            "filter": {"blocked": len(matches) > 0, "matches": matches},
+            "score_report": report,
+        })
+
+    result = {
+        "schema_version": SCHEMA_VERSION,
+        "tool": TOOL,
+        "subcommand": "scenes",
+        "modality": "story",
+        "models": {"image": image_models, "video": video_models},
+        "scenes": out_scenes,
+    }
+    if args.format == "json":
+        emit(result, args.output)
+    else:
+        emit_scenes_text(result, args.output)
+    if blocked_any and not args.sanitize:
+        print("安全过滤阻断：生成结果命中黑名单，请重写后重试", file=sys.stderr)
+        sys.exit(5)
+
+
+def emit_scenes_text(result, output):
+    lines = ["# 场景化 Prompt 编译结果（modality=story）", ""]
+    for sc in result.get("scenes", []):
+        lines.append(f"## 场景 {sc['scene_no']}：{sc['title']}")
+        for p in sc.get("prompts", []):
+            lines.append(f"### {p['model']} / {p['kind']}")
+            lines.append("```")
+            lines.append(p["text"])
+            lines.append("```")
+            lines.append("")
+        r = sc.get("score_report", {})
+        if r:
+            lines.append("### 评分")
+            for dim in r["dimensions"]:
+                lines.append(f"- {dim['name']}（权重 {dim['weight']}%）：{dim['score']} 分")
+            lines.append(f"总分：{r['total']} / 100（等级 {r['grade']}）")
+            if r.get("approximate"):
+                lines.append("（自动启发式近似评分，仅供参考）")
+            for i, sug in enumerate(r.get("suggestions", []), 1):
+                lines.append(f"优化建议 {i}：{sug}")
+            lines.append("")
+    text = "\n".join(lines) + "\n"
+    if output:
+        with open(output, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    else:
+        print(text, end="")
+
+
+# ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Prompt 编译/评分/安全过滤")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -610,6 +770,22 @@ def main():
     p_all.add_argument("--template-dir", default=str(DEFAULT_TEMPLATE_DIR))
     p_all.add_argument("-o", "--output")
 
+    p_scenes = sub.add_parser("scenes", help="叙事文本逐场景编译（每场景 image+video 提示词）")
+    p_scenes.add_argument("--analysis", required=True,
+                          help="story 分析 JSON（modality=story，semantic_analysis.scenes[]）")
+    p_scenes.add_argument("--image-models", default="mj,sd",
+                          help="图片模型列表（逗号分隔/别名，默认 mj,sd）")
+    p_scenes.add_argument("--video-models", default="sora",
+                          help="视频模型列表（逗号分隔/别名，默认 sora）")
+    p_scenes.add_argument("--dims",
+                          help="逐场景评分 JSON：[{scene_no, dims: [{key, score, note}]}]")
+    p_scenes.add_argument("--auto", action="store_true",
+                          help="启发式逐场景近似评分（仅离线验证）")
+    p_scenes.add_argument("--sanitize", action="store_true")
+    p_scenes.add_argument("--format", default="json", choices=["json", "text"])
+    p_scenes.add_argument("--template-dir", default=str(DEFAULT_TEMPLATE_DIR))
+    p_scenes.add_argument("-o", "--output")
+
     args = parser.parse_args()
     if args.command == "compile":
         cmd_compile(args)
@@ -619,6 +795,8 @@ def main():
         cmd_filter(args)
     elif args.command == "all":
         cmd_all(args)
+    elif args.command == "scenes":
+        cmd_scenes(args)
 
 
 if __name__ == "__main__":

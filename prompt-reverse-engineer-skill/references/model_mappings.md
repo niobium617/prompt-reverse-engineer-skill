@@ -5,8 +5,9 @@
 ## 一、默认输出规则
 
 - 用户**未指定目标模型**时，默认输出 **Midjourney + GPT-4/Claude 两个版本**。
+- 场景化模式（叙事文本 → 逐场景提示词，`prompt_compiler.py scenes`）：默认 **图片 = Midjourney + Stable Diffusion 双版本**、**视频 = Sora**，可用 `--image-models` / `--video-models` 指定其他组合。
 - 用户指定多个模型时（如"转成 MJ 和 SD"），全部输出。
-- 用户指定了未注册的模型名 → 回退默认双版本，并在输出中说明。
+- 用户指定了未注册的模型名 → 回退默认版本，并在输出中说明。
 
 ## 二、模型注册表（template 文件对应关系）
 

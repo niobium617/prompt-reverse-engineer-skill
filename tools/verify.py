@@ -346,6 +346,94 @@ def main():
         assert gpt4_shots == 3, f"GPT4 分镜段落数 {gpt4_shots} != 3"
         return True, "分镜段落数=镜头数=3，Sora/GPT4 双版本齐全"
 
+    # ---------------- 6. 场景化（story）层 ----------------
+    def unit_scenes():
+        rc, out, err = run([PYTHON, SCRIPTS / "analyze_scenes.py",
+                            EXAMPLES / "story_example" / "input.md"])
+        data = stdout_json(rc, out, err)
+        assert data["modality"] == "story"
+        lf = data["local_features"]
+        assert lf["detected_format"] == "script", f"剧本识别 {lf['detected_format']}"
+        markers = lf["scene_markers"]
+        assert len(markers) >= 2, f"场次标记 {len(markers)} < 2"
+        assert not lf["scene_candidates"], "剧本模式不应有散文候选块"
+        rc2, out2, _ = run([PYTHON, SCRIPTS / "analyze_scenes.py",
+                            EXAMPLES / "story_example" / "input.md"])
+        assert out == out2, "两次运行输出不一致（幂等性破坏）"
+
+        prose = TMP / "story_prose.md"
+        prose.write_text(
+            "清晨的菜市场已经热闹起来，她穿过拥挤的人群。\n\n"
+            "她走进那家熟悉的咖啡厅，靠窗坐下。\n\n"
+            "夜晚的楼顶风很大，她点燃一支烟。\n",
+            encoding="utf-8")
+        rc, out, err = run([PYTHON, SCRIPTS / "analyze_scenes.py", prose])
+        data = stdout_json(rc, out, err)
+        lf = data["local_features"]
+        assert lf["detected_format"] == "prose", f"散文识别 {lf['detected_format']}"
+        cands = lf["scene_candidates"]
+        assert len(cands) >= 3, f"散文候选块 {len(cands)} < 3"
+        assert any("清晨" in c["time_hints"] for c in cands), "时间提示未命中"
+        assert any(c["place_hints"] for c in cands), "地点提示未命中"
+        return True, (f"script markers={len(markers)} 幂等 OK；"
+                      f"prose candidates={len(cands)} 时间/地点提示命中")
+
+    def scenes_render_score():
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "scenes",
+                            "--analysis", FIXTURES / "semantic_story.json", "--auto"])
+        data = stdout_json(rc, out, err)
+        assert data["subcommand"] == "scenes" and data["modality"] == "story"
+        assert data["models"]["image"] == ["midjourney", "stable_diffusion"], "图片默认模型"
+        assert data["models"]["video"] == ["sora_runway"], "视频默认模型"
+        scenes = data["scenes"]
+        assert len(scenes) == 2, f"场景数 {len(scenes)} != 2"
+        assert [s["scene_no"] for s in scenes] == [1, 2], "场景号不连续"
+        for sc in scenes:
+            kinds = {(p["model"], p["kind"]) for p in sc["prompts"]}
+            assert ("midjourney", "positive") in kinds, f"场景 {sc['scene_no']} 缺 MJ positive"
+            assert ("stable_diffusion", "positive") in kinds, f"场景 {sc['scene_no']} 缺 SD positive"
+            assert ("sora_runway", "storyboard") in kinds, f"场景 {sc['scene_no']} 缺 Sora 分镜"
+            assert sc["score_report"]["total"] > 0, f"场景 {sc['scene_no']} 评分缺失"
+            assert not sc["filter"]["blocked"], "金标不应命中黑名单"
+        mj = next(p for p in scenes[0]["prompts"]
+                  if p["model"] == "midjourney" and p["kind"] == "positive")
+        assert mj["text"].startswith("/imagine prompt:"), "MJ 场景化格式错误"
+        assert "--ar 16:9" in mj["text"] and "--v 6" in mj["text"]
+        return True, (f"2 场景 × {len(scenes[0]['prompts'])} prompts，"
+                      f"评分 {scenes[0]['score_report']['total']} 分")
+
+    def scenes_missing_field():
+        bad = json.loads(FIXTURES.joinpath("semantic_story.json").read_text(encoding="utf-8"))
+        bad["semantic_analysis"]["scenes"][0]["subject"] = ""
+        bad_path = TMP / "story_missing.json"
+        bad_path.write_text(json.dumps(bad, ensure_ascii=False), encoding="utf-8")
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "scenes",
+                            "--analysis", bad_path, "--auto"])
+        assert rc == 4, f"缺字段应退出码 4，实际 {rc}"
+        assert "场景 1" in decode(err), f"未报出场景号：{decode(err)[:120]}"
+        return True, "缺字段退出码 4 且报出场景号"
+
+    def scenes_blacklist():
+        bad = json.loads(FIXTURES.joinpath("semantic_story.json").read_text(encoding="utf-8"))
+        bad["semantic_analysis"]["scenes"][0]["scene"] = "废弃机房，地上标着 rm -rf 的涂鸦"
+        bad_path = TMP / "story_black.json"
+        bad_path.write_text(json.dumps(bad, ensure_ascii=False), encoding="utf-8")
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "scenes",
+                            "--analysis", bad_path, "--auto"])
+        assert rc == 5, f"黑名单应退出码 5，实际 {rc}"
+        return True, "黑名单命中退出码 5"
+
+    def scenario_story():
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "scenes",
+                            "--analysis", FIXTURES / "semantic_story.json",
+                            "--auto", "--format", "text"])
+        assert rc == 0, f"exit {rc}: {decode(err)[:200]}"
+        text = decode(out)
+        for kw in ("## 场景 1", "## 场景 2", "/imagine prompt:",
+                   "Positive:", "创作一支", "总分：", "优化建议 1"):
+            assert kw in text, f"端到端输出缺少「{kw}」"
+        return True, "story 端到端：场景标题/图片/视频/评分齐全"
+
     checks = [
         ("单元层/analyze_text", unit_text),
         ("单元层/analyze_image", unit_image),
@@ -360,6 +448,11 @@ def main():
         ("场景①/营销文案→GPT Prompt", scenario_text),
         ("场景②/赛博朋克图→MJ Prompt", scenario_image),
         ("场景③/10s视频→分镜 Prompt", scenario_video),
+        ("单元层/analyze_scenes", unit_scenes),
+        ("场景化/逐场景渲染+评分", scenes_render_score),
+        ("负向层/场景缺字段", scenes_missing_field),
+        ("负向层/场景黑名单", scenes_blacklist),
+        ("场景④/剧本→逐场景 Prompt", scenario_story),
     ]
     for name, fn in checks:
         check(name, fn)

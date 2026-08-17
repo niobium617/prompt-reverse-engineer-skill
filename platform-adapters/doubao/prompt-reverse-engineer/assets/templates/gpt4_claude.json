@@ -9,7 +9,7 @@
       "optimize": "[System]\n你是一名专业的 Prompt 优化专家。\n任务：将用户提供的原始描述优化为结构完整、可复用的高质量生成指令。\n要求：按“角色→任务→背景→要求→限制→输出格式”六要素组织，保留原意并补充缺失要素。\n输出格式：先输出优化后的完整 Prompt，再附 1-2 句修改说明。\n\n[User]\n原始描述：{task}"
     },
     "image": {
-      "replicate": "[System]\n你是一名视觉生成 Prompt 专家。\n任务：根据以下画面要素描述，生成用于 AI 绘图模型的详细图像描述词。\n要求：覆盖主体、场景、构图、光影、色彩、风格六个维度，按此顺序组织。\n\n[User]\n主体：{subject}\n场景：{scene}\n构图：{composition}\n光影：{lighting}\n色彩：{color}\n风格：{style}"
+      "replicate": "[System]\n你是一名视觉生成 Prompt 专家。\n任务：根据以下画面要素描述，生成用于 AI 绘图模型的详细图像描述词。\n要求：按「核心主体与动作 → 场景环境 → 艺术风格 → 光影色调 → 镜头构图 → 画质与质感」七段结构组织；主体描述先写身份外形、后写动作状态；越核心的要素越靠前。\n\n[User]\n主体（身份外形+动作状态）：{subject}\n场景：{scene}\n风格：{style}\n光影：{lighting}\n色彩：{color}\n构图：{composition}\n摄影参数：{photo_params}\n质量词：{quality_words}"
     },
     "video": {
       "storyboard": "[System]\n你是一名视频创作导演。\n任务：根据分镜脚本生成一段 {duration} 秒短视频的画面描述，画幅 {aspect_ratio}。\n要求：逐镜头描述，每镜包含景别、运镜、时长、画面内容；用语简洁具体。\n\n[User]\n故事：{story}\n分镜脚本：\n{storyboard}"

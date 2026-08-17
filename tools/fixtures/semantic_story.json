@@ -1,0 +1,102 @@
+{
+  "schema_version": "1.0",
+  "modality": "story",
+  "semantic_analysis": {
+    "summary": "都市情感短片：雨夜街头偶遇与咖啡厅告别两场戏，冷调写实摄影风格，情绪从压抑到释然。",
+    "characters": "林晓：25 岁女性，黑色风衣，短发；陈默：28 岁男性，深灰大衣",
+    "scenes": [
+      {
+        "scene_no": 1,
+        "title": "雨夜街头相遇",
+        "subject": "年轻女性，黑色风衣，手持透明伞，回眸望向镜头，神情犹豫",
+        "scene": "雨夜霓虹街头，潮湿反光地面，未来都市",
+        "style": "写实电影感，赛博朋克夜景",
+        "lighting": "霓虹灯牌侧光，轮廓光勾勒，高对比夜色",
+        "color": "深蓝紫为主，霓虹橙青点缀，高饱和冷色调",
+        "composition": "低角度仰拍，中景，三分法构图，人物居中偏右",
+        "photo_params": "50mm 定焦，f/1.8 浅景深",
+        "quality_words": "ultra detailed, 8K, cinematic lighting",
+        "negative_words": "模糊, 低质量, 畸形, 多余肢体, 卡通, 明亮清新",
+        "target_style": "宫崎骏动画风格",
+        "story": "雨夜，林晓撑伞在街头停下，听到身后的脚步声，回眸看见陈默。",
+        "duration": "8",
+        "aspect_ratio": "16:9",
+        "character": "林晓：年轻女性，黑色风衣，手持透明伞",
+        "camera": "远景开场，缓慢推进至中景，跟拍回眸动作",
+        "atmosphere": "雨夜霓虹街头，冷峻压抑",
+        "storyboard": [
+          {
+            "shot_no": 1,
+            "shot_size": "远景",
+            "camera_move": "慢速推进",
+            "duration_s": "3",
+            "action": "雨夜霓虹街道，年轻女子撑伞从画面深处走近，反光地面映出霓虹灯牌",
+            "dialogue": ""
+          },
+          {
+            "shot_no": 2,
+            "shot_size": "近景",
+            "camera_move": "跟拍",
+            "duration_s": "3",
+            "action": "女子停下脚步，缓缓回眸，雨滴沿伞沿滑落",
+            "dialogue": ""
+          },
+          {
+            "shot_no": 3,
+            "shot_size": "中景",
+            "camera_move": "环绕",
+            "duration_s": "2",
+            "action": "男子身影出现在画面边缘，两人隔着雨幕对视",
+            "dialogue": ""
+          }
+        ]
+      },
+      {
+        "scene_no": 2,
+        "title": "咖啡厅告别",
+        "subject": "年轻女性，黑色风衣，指尖轻敲杯沿，神情释然",
+        "scene": "暖调咖啡厅靠窗座位，窗外雨夜霓虹，蒸汽升腾",
+        "style": "写实电影感，日系清透色调",
+        "lighting": "窗边自然光混合暖色吊灯，柔光侧影",
+        "color": "暖棕木质色调为主，米白点缀，中饱和自然色",
+        "composition": "平拍，近景，框架式构图，人物居于窗框内",
+        "photo_params": "35mm 定焦，f/2.8，中等景深",
+        "quality_words": "high resolution, film photography, soft bokeh",
+        "negative_words": "模糊, 低质量, 过曝, 卡通, 冷暗色调",
+        "target_style": "新海诚动画风格",
+        "story": "第二天，两人在咖啡厅相对而坐，林晓释然告别，起身走向门口。",
+        "duration": "10",
+        "aspect_ratio": "16:9",
+        "character": "林晓：年轻女性，黑色风衣；陈默：28 岁男性，深灰大衣",
+        "camera": "正反打对话镜头，结尾缓慢拉远至全景",
+        "atmosphere": "暖调咖啡厅，温暖中带一丝怅然",
+        "storyboard": [
+          {
+            "shot_no": 1,
+            "shot_size": "中景",
+            "camera_move": "平缓推移",
+            "duration_s": "4",
+            "action": "咖啡厅靠窗，两人相对而坐，女子指尖轻敲杯沿，窗外霓虹雨夜",
+            "dialogue": "「就到这里吧。」"
+          },
+          {
+            "shot_no": 2,
+            "shot_size": "近景",
+            "camera_move": "固定镜头",
+            "duration_s": "3",
+            "action": "女子低头微笑，端起咖啡杯抿了一口，蒸汽升腾",
+            "dialogue": ""
+          },
+          {
+            "shot_no": 3,
+            "shot_size": "全景",
+            "camera_move": "缓慢拉远",
+            "duration_s": "3",
+            "action": "女子起身走向门口，身影消失在雨幕中，镜头定格空座位",
+            "dialogue": ""
+          }
+        ]
+      }
+    ]
+  }
+}
