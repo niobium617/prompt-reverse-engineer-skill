@@ -2,15 +2,38 @@
 
 > 图像语义分析时的术语参考。Agent 提取的语义字段应尽量使用本库词汇，保证输出 Prompt 专业、可被生成模型准确理解。
 
-## 一、图像 Prompt 要素顺序规范
+## 一、图像 Prompt 要素顺序规范（七段结构）
 
-标准顺序（Midjourney / Stable Diffusion 通用，`model_mappings.md` 有逐模型细节）：
+标准结构（Midjourney / Stable Diffusion 通用，`model_mappings.md` 有逐模型细节）。**越核心的要素越靠前**——模型对前置内容的注意力权重更高：
+
+| 段位 | 内容 | 覆盖语义字段 |
+|---|---|---|
+| ① 核心主体 | 画面核心对象的身份、外形、核心特征 | `subject`（前半） |
+| ② 动作与状态 | 主体的姿态、行为、表情、互动关系 | `subject`（后半） |
+| ③ 场景与环境 | 所处空间、背景元素、环境氛围细节 | `scene` |
+| ④ 艺术风格 | 画风流派、创作媒介、参考风格 | `style` |
+| ⑤ 光影色调 | 光照类型、光线方向、整体色彩基调 | `lighting` + `color` |
+| ⑥ 镜头构图 | 拍摄视角、景别、构图方式 | `composition` |
+| ⑦ 画质与质感 | 分辨率、精细度、特殊画面效果 | `photo_params` + `quality_words` |
+
+机器渲染顺序（与模板 `assets/templates/*.json` 占位符一致）：
 
 ```
-主体(subject) → 场景(scene) → 构图(composition) → 光影(lighting) → 色彩(color) → 风格(style) → 摄影参数(photo_params) → 质量词(quality_words)
+subject → scene → style → lighting → color → composition → photo_params → quality_words
 ```
 
-负向词（negative_words）单独成段（SD 的 Negative 段 / MJ 的 `--no` 参数）。
+语义字段填充时，`subject` 内先写**身份外形**（①），后写**动作状态**（②）；`lighting` 与 `color` 相邻渲染组成⑤；`photo_params` 与 `quality_words` 收尾组成⑦。
+
+写法示例（字段示例与 `prompt_framework.md` 2.3 节一致）：
+
+- **① 核心主体 + ② 动作与状态**（subject）：`年轻女性，黑色风衣，手持透明伞，回眸望向镜头，神情宁静`
+- **③ 场景与环境**（scene）：`雨夜霓虹街头，潮湿反光地面，未来都市`
+- **④ 艺术风格**（style）：`赛博朋克 / 胶片摄影 / 扁平插画`
+- **⑤ 光影色调**（lighting + color）：`霓虹灯牌侧光，轮廓光勾勒，高对比夜色` + `深蓝紫为主，霓虹橙青点缀，高饱和冷色调`
+- **⑥ 镜头构图**（composition）：`低角度仰拍，中景，三分法构图，人物居中偏右`
+- **⑦ 画质与质感**（photo_params + quality_words）：`50mm 定焦，f/1.8 浅景深` + `超清细节, 8K, 电影级光影`
+
+负向词（negative_words）单独成段（SD 的 Negative 段 / MJ 的 `--no` 参数），组织方式见第八节。
 
 ## 二、摄影参数表
 
@@ -74,6 +97,21 @@
 
 `ultra detailed` `8K` `masterpiece` `best quality` `sharp focus` `high resolution` `cinematic lighting` `professional photography`
 
-## 八、常见 Negative 清单（negative_words）
+## 八、Negative 三类标准结构（negative_words）
 
-`blurry` `low quality` `worst quality` `deformed` `distorted anatomy` `extra limbs` `bad proportions` `mutated hands` `watermark` `text` `signature` `oversaturated` `artifacts` / 中文对应：模糊、低质量、畸形、结构错误、多余肢体、水印、文字乱码
+负向词按「画面瑕疵 → 风格违和 → 内容违和」三类组织，同类集中放置、英文逗号分隔：
+
+| 类别 | 用途 | 常见词（中/英） |
+|---|---|---|
+| 画面瑕疵 | 修正生成缺陷 | 模糊 `blurry`、低质量 `low quality`、`worst quality`、畸形 `deformed`、结构错误 `distorted anatomy`、多余肢体 `extra limbs`、比例失调 `bad proportions`、畸形手 `mutated hands`、水印 `watermark`、文字乱码 `text`、`signature`、过饱和 `oversaturated`、`artifacts` |
+| 风格违和 | 排除不符合题材的风格 | 卡通 `cartoon`、Q 版 `chibi`、二次元 `anime`、明亮清新、现代整洁建筑等与目标题材冲突的风格 |
+| 内容违和 | 排除不符合设定的元素 | 与场景设定冲突的人物（如空旷场景出现路人）、道具、鲜艳色彩等 |
+
+Agent 填充 `negative_words` 字段时按三类分组书写（如 `"模糊, 低质量, 畸形, 多余肢体, 卡通, 明亮清新, 违和道具, 鲜艳色彩"`：瑕疵词在前、违和风格居中、违和内容收尾），渲染时统一逗号连接。
+
+## 九、格式使用规范
+
+1. **排序规则**：越核心的元素越靠前（第一节七段顺序），模型对前置内容的注意力权重更高。
+2. **分隔方式**：不同元素用英文逗号分隔；同维度的描述集中放置，便于整体调整。
+3. **权重强化**（Stable Diffusion 等支持权重语法的模型）：`(关键词:权重数值)` 格式，数值 >1 增强、<1 减弱，如 `(透明伞:1.3)`。**Midjourney 不支持此语法**——需突出某要素时用要素前置、`--stylize 0-1000` 或 `--chaos` 参数，勿在 MJ 输出中写 `(词:权重)` 标记。
+4. **模块化复用**：替换对应段位的内容即可快速切换题材、风格，无需重写整段提示词。

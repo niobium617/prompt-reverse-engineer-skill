@@ -57,7 +57,7 @@ storyboard 为对象数组，每项字段如下（与 `prompt_framework.md` 2.4 
 | shot_size | 是 | 景别，用本表第一节词汇，如 `"中景"` / `"close-up"` |
 | camera_move | 是 | 运镜，用第三节词汇，如 `"慢速推进"` / `"tracking shot"` |
 | duration_s | 是 | 镜头时长（秒），如 `"3"` |
-| action | 是 | 画面内容：人物动作+环境+关键视觉元素 |
+| action | 是 | 画面内容：人物动作+环境+关键视觉元素。按「主体 → 动作 → 场景」组织（主体先身份外形、后动作状态，再补环境要素，与 `image_rules.md` 第一节七段结构的前三段一致） |
 | dialogue | 可选 | 台词/旁白，无则省略 |
 
 **分镜脚本示例（Sora/Runway 自然语言格式）**：

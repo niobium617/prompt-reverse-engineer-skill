@@ -20,25 +20,27 @@
 ## 三、Midjourney 格式
 
 ```
-/imagine prompt: {subject}, {scene}, {composition}, {lighting}, {color}, {style}, {photo_params}, {quality_words} --ar {aspect_ratio} --v {version}
+/imagine prompt: {subject}, {scene}, {style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words} --ar {aspect_ratio} --v {version}
 ```
 
-- 要素按 `image_rules.md` 第一节顺序排列，逗号分隔。
-- 负向内容用 `--no {negative_words}` 参数表达（MJ 无独立 Negative 段）。
+- 要素按 `image_rules.md` 第一节七段顺序排列，逗号分隔（主体+动作 → 场景 → 风格 → 光影色调 → 构图 → 画质质感）。
+- 负向内容用 `--no {negative_words}` 参数表达（MJ 无独立 Negative 段），按第八节三类组织。
 - 常用参数：`--ar`（比例，默认 16:9）、`--v`（版本）、`--stylize`（风格化 0-1000）、`--chaos`（随机性 0-100）、`--no`。
-- 风格迁移：`/imagine prompt: {subject}, {scene}, {target_style}, {quality_words} --ar {aspect_ratio} --v {version}`。
+- MJ **不支持** `(词:权重)` 权重语法，突出要素用前置或 `--stylize`/`--chaos`（见 image_rules.md 第九节）。
+- 风格迁移：替换 `{style}` 为目标风格词，其余段位不变：`/imagine prompt: {subject}, {scene}, {target_style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words} --ar {aspect_ratio} --v {version}`。
 
 ## 四、Stable Diffusion 格式
 
 ```
-Positive: {subject}, {scene}, {composition}, {lighting}, {color}, {style}, {photo_params}, {quality_words}
+Positive: {subject}, {scene}, {style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words}
 Negative: {negative_words}
 Steps: 30, CFG scale: 7, Sampler: DPM++ 2M Karras, Seed: -1, Size: {width}x{height}
 ```
 
-- Positive 与 Negative **严格分离**成两段。
+- Positive 与 Negative **严格分离**成两段；Positive 按第一节七段顺序，Negative 按第八节三类组织。
 - 参数行：Steps / CFG / Sampler / Seed / Size / Model tag（如真实感模型 `photorealistic` 前缀）。
-- 风格迁移：替换 Positive 中的 `{style}` 为目标风格词。
+- 权重语法：SD 支持 `(关键词:权重数值)`（>1 增强、<1 减弱），见 image_rules.md 第九节。
+- 风格迁移：替换 Positive 中的 `{style}` 为目标风格词，其余段位不变。
 
 ## 五、GPT-4 / Claude 格式（System + User 消息结构）
 
