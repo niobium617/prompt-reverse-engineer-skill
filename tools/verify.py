@@ -188,13 +188,16 @@ def main():
         (target / ".claude").mkdir(parents=True, exist_ok=True)
         (target / ".codex").mkdir(parents=True, exist_ok=True)
         (target / ".codex" / "config.toml").write_text("", encoding="utf-8")
+        (target / ".dsh").mkdir(parents=True, exist_ok=True)
         rc, out, err = run([PYTHON, REPO / "tools" / "install.py",
-                            "--target-root", target, "--platform", "claude,codex,doubao"])
+                            "--target-root", target, "--platform", "claude,codex,doubao,deepseek"])
         assert rc == 0, f"首次安装退出码 {rc}，stderr: {decode(err)[:300]}"
         text = decode(out)
         assert "[OK]" in text
         skills_link = target / ".claude" / "skills" / "prompt-reverse-engineer"
         assert skills_link.exists(), "claude skills junction 未创建"
+        dsh_link = target / ".dsh" / "skills" / "prompt-reverse-engineer"
+        assert dsh_link.exists(), "deepseek (~/.dsh/skills) junction 未创建"
         plugin_skills = (REPO / "platform-adapters" / "codex" /
                          "prompt-reverse-engineer" / "skills")
         assert plugin_skills.exists(), "codex 插件 skills 未物化"
@@ -205,13 +208,13 @@ def main():
         assert doubao.exists() and "Prompt 逆向工程" in doubao.read_text(encoding="utf-8")
         # 幂等：第二次运行应全部 SKIP，标记块仍只有一次
         rc2, out2, _ = run([PYTHON, REPO / "tools" / "install.py",
-                            "--target-root", target, "--platform", "claude,codex,doubao"])
+                            "--target-root", target, "--platform", "claude,codex,doubao,deepseek"])
         assert rc2 == 0, f"二次安装退出码 {rc2}"
         text2 = decode(out2)
         assert "[SKIP]" in text2, "二次运行应出现 SKIP"
         assert config.read_text(encoding="utf-8").count("# >>> prompt-reverse-engineer >>>") == 1, \
             "标记块重复写入"
-        return True, "junction/注册块/豆包文本/幂等 全部通过"
+        return True, "junction（claude+deepseek）/注册块/豆包文本/幂等 全部通过"
 
     # ---------------- 4.5 豆包上传格式 ----------------
     def doubao_frontmatter():

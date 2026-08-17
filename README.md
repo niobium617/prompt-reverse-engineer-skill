@@ -2,7 +2,7 @@
 
 > **把任何优秀作品 → 逆向拆解 → 还原为可复用的专业 Prompt**
 >
-> 支持 **Claude Code / Cursor / Codex / 豆包** 四大平台 · **文本 / 图片 / 视频** 三模态输入 · **Midjourney / Stable Diffusion / GPT-4·Claude / Sora·Runway** 多模型格式输出 · 附**百分制六维加权质量评分**
+> 支持 **Claude Code / Cursor / Codex / DeepSeek Harness / 豆包** 五大平台 · **文本 / 图片 / 视频** 三模态输入 · **Midjourney / Stable Diffusion / GPT-4·Claude / Sora·Runway** 多模型格式输出 · 附**百分制六维加权质量评分**
 
 看到一篇爆款文案、一张惊艳的 AI 图片、一段电影感短视频，想知道「它是怎么被生成的」？把作品丢给本技能，它会自动拆解其主体、风格、结构与参数，反向还原出可复刻、可修改的专业 Prompt，并适配输出为各主流生成模型的格式。
 
@@ -86,7 +86,7 @@
 
 > 纯指令降级模式（豆包粘贴版）无任何依赖。安装依赖：`pip install opencv-python pillow numpy requests`
 
-### 2.2 安装（四平台）
+### 2.2 安装（五平台）
 
 ```bash
 # 预览安装动作（不执行任何写操作）
@@ -99,6 +99,7 @@ python tools/install.py
 - **Claude Code** → 安装到 `~/.claude/skills/prompt-reverse-engineer`
 - **Cursor** → 安装到 `~/.cursor/skills/prompt-reverse-engineer`
 - **Codex** → 注册本地插件市场到 `~/.codex/config.toml`
+- **DeepSeek Harness** → 安装到 `~/.dsh/skills/prompt-reverse-engineer`（格式与 Claude Code 的 SKILL.md bundle 兼容，无需改写）
 - **豆包（桌面版）** → 直接上传 `platform-adapters/doubao/prompt-reverse-engineer.zip`（内含标准 SKILL.md + scripts + references + assets）
 
 Windows 默认使用 **junction 联接**安装（技能目录只放联接点，实体留在仓库内，更新仓库即自动生效，无需管理员权限）；可用 `--mode copy` 切换为物理复制。各平台细节见 [`platform-adapters/README.md`](platform-adapters/README.md)。
@@ -203,6 +204,7 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 │       └── examples/                  # 三模态示例（输入媒体+金标输出）
 ├── platform-adapters/                 # 平台适配层（内容由 install.py 物化，勿手改）
 │   ├── codex/…/.codex-plugin/plugin.json
+│   ├── deepseek/README.md             # DeepSeek Harness 适配说明（~/.dsh/skills）
 │   └── doubao/                        # 豆包：上传 zip + 粘贴指令双产物
 └── tools/
     ├── install.py                     # 一键安装（junction/copy，幂等，--dry-run）

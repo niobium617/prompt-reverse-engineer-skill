@@ -3,8 +3,9 @@
 """prompt-reverse-engineer 一键安装脚本（纯 stdlib，无依赖）。
 
 功能：
-  - claude / cursor：在 ~/.claude/skills / ~/.cursor/skills 下建立 junction（默认）
-    或复制（--mode copy），指向技能本体 prompt-reverse-engineer-skill/
+  - claude / cursor / deepseek：在 ~/.claude/skills / ~/.cursor/skills / ~/.dsh/skills
+    下建立 junction（默认）或复制（--mode copy），指向技能本体
+    prompt-reverse-engineer-skill/
   - codex：物化 platform-adapters/codex 插件内 skills junction，并向 ~/.codex/config.toml
     追加本地 marketplace 注册块（幂等，标记注释包裹）
   - doubao：确定性生成扁平化指令文本 platform-adapters/doubao/doubao_instruction.md
@@ -61,9 +62,10 @@ def agent_roots(target_root):
             "claude": base / ".claude",
             "cursor": base / ".cursor",
             "codex": base / ".codex",
+            "deepseek": base / ".dsh",
         }
     return {"claude": home() / ".claude", "cursor": home() / ".cursor",
-            "codex": home() / ".codex"}
+            "codex": home() / ".codex", "deepseek": home() / ".dsh"}
 
 
 def is_junction(path: Path) -> bool:
@@ -312,7 +314,7 @@ def build_doubao_instruction(dry_run, actions):
 def main():
     parser = argparse.ArgumentParser(description="prompt-reverse-engineer 安装脚本")
     parser.add_argument("--platform", default="all",
-                        help="claude,cursor,codex,doubao 逗号分隔，或 all（默认）")
+                        help="claude,cursor,codex,doubao,deepseek 逗号分隔，或 all（默认）")
     parser.add_argument("--mode", default="junction", choices=["junction", "copy"],
                         help="junction（默认，C 盘只放联接点，实体在 F 盘）/ copy（物理复制）")
     parser.add_argument("--dry-run", action="store_true", help="只打印动作不执行")
@@ -321,17 +323,18 @@ def main():
                         help="把安装根目录重定向到指定目录（冒烟测试，不触碰真实配置）")
     args = parser.parse_args()
 
-    platforms = (["claude", "cursor", "codex", "doubao"]
+    platforms = (["claude", "cursor", "codex", "doubao", "deepseek"]
                  if args.platform == "all"
                  else [p.strip() for p in args.platform.split(",") if p.strip()])
-    unknown = [p for p in platforms if p not in ("claude", "cursor", "codex", "doubao")]
+    unknown = [p for p in platforms
+               if p not in ("claude", "cursor", "codex", "doubao", "deepseek")]
     if unknown:
         print(f"错误：未知平台：{', '.join(unknown)}", file=sys.stderr)
         sys.exit(2)
 
     actions = []
     for platform in platforms:
-        if platform in ("claude", "cursor"):
+        if platform in ("claude", "cursor", "deepseek"):
             install_dir_platform(platform, args.mode, args.target_root,
                                  args.dry_run, args.force, actions)
         elif platform == "codex":
