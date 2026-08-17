@@ -249,7 +249,8 @@ def main():
             names = zf.namelist()
             assert "prompt-reverse-engineer/SKILL.md" in names, f"zip 内缺少 SKILL.md：{names}"
             for script in ("analyze_text.py", "analyze_image.py",
-                           "analyze_video.py", "prompt_compiler.py"):
+                           "analyze_video.py", "analyze_scenes.py",
+                           "prompt_compiler.py"):
                 assert f"prompt-reverse-engineer/scripts/{script}" in names, \
                     f"zip 内缺少脚本：{script}"
             for ref in ("prompt_framework.md", "image_rules.md",
@@ -260,6 +261,9 @@ def main():
                         "gpt4_claude.json", "sora_runway.json", "score_report.json"):
                 assert f"prompt-reverse-engineer/assets/templates/{tpl}" in names, \
                     f"zip 内缺少模板：{tpl}"
+            for ex in ("story_example/input.md", "story_example/output.md"):
+                assert f"prompt-reverse-engineer/assets/examples/{ex}" in names, \
+                    f"zip 内缺少场景化样例：{ex}"
             ztext = zf.read("prompt-reverse-engineer/SKILL.md").decode("utf-8")
         assert ztext.startswith("---"), "zip 内 SKILL.md 缺少 YAML 头"
         zfm = ztext.split("---", 2)[1]
@@ -274,8 +278,16 @@ def main():
         pkg_data = json.loads(decode(out))
         assert any(p["model"] == "midjourney" for p in pkg_data["prompts"]), \
             "豆包包内编译器未产出 MJ Prompt"
+        rc, out, err = run([PYTHON, pkg_compiler, "scenes",
+                            "--analysis", FIXTURES / "semantic_story.json", "--auto"])
+        assert rc == 0, f"豆包包内编译器 scenes 运行失败（退出码 {rc}）：{decode(err)[:300]}"
+        pkg_scenes = json.loads(decode(out))
+        assert len(pkg_scenes["scenes"]) == 2, "豆包包内编译器 scenes 场景数错误"
+        assert any(p["model"] == "sora_runway" for p in pkg_scenes["scenes"][0]["prompts"]), \
+            "豆包包内编译器 scenes 未产出 Sora 分镜"
         return True, ("主 SKILL.md + 豆包上传版 frontmatter 合法，"
-                      "zip 含脚本/规则库/模板，且包内编译器独立运行成功")
+                      "zip 含脚本/规则库/模板/场景化样例，"
+                      "且包内编译器 all + scenes 独立运行成功")
 
     # ---------------- 5. 三场景 ----------------
     def scenario_text():

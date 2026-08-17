@@ -217,7 +217,7 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 │   │   ├── video_rules.md             # 电影镜头语言+分镜规范
 │   │   └── model_mappings.md          # 四模型格式映射表
 │   └── assets/
-│       ├── templates/                 # 5 个 JSON 渲染模板（新模型=新文件，自动注册）
+│       ├── templates/                 # 5 个 JSON 模板（4 模型渲染 + 1 评分报告，新模型=新文件，自动注册）
 │       └── examples/                  # 四模态示例（输入媒体+金标输出，含 story_example 场景化样例）
 ├── platform-adapters/                 # 平台适配层（内容由 install.py 物化，勿手改）
 │   ├── codex/…/.codex-plugin/plugin.json

@@ -171,7 +171,7 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 | duration | 建议 | 成片时长（秒），如 `"10"` |
 | aspect_ratio | 建议 | 画幅比例，如 `"16:9"` |
 
-##### 2.5 叙事文本场景化字段（modality=story）
+#### 2.5 叙事文本场景化字段（modality=story）
 
 用于「剧本/小说/文章 → 逐场景图片+视频提示词」。Agent 先通读全文提炼全局基调，再按场景切分信号（`scripts/analyze_scenes.py`）逐场景提炼语义。渲染由 `prompt_compiler.py scenes` 子命令完成：每个场景对象同时按 image 模板（默认 mj,sd）与 video 模板（默认 sora）渲染。
 
