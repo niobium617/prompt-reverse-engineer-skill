@@ -18,9 +18,10 @@ jobs:
         # 3.10 = README 声明的脚本最低版本；3.12 = 本地开发版本
         python-version: ["3.10", "3.12"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      # v7 起 action 运行在 Node 24 上（v4/v5 的 Node 20 运行时已被 GitHub 弃用）
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
