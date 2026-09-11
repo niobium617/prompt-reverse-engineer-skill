@@ -1,0 +1,33 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: 离线验证 (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 = README 声明的脚本最低版本；3.12 = 本地开发版本
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # 用 headless 版：CI 无显示环境，避免缺 libGL 导致 import cv2 失败；
+      # 本技能的脚本不调用 OpenCV 的 GUI 接口，功能等价。
+      - name: 安装依赖
+        run: python -m pip install --upgrade pip opencv-python-headless pillow numpy
+
+      - name: 离线端到端验证（19 项断言，无网络、无 API）
+        run: python tools/verify.py

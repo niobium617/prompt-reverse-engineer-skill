@@ -200,7 +200,14 @@ def install_codex(mode, target_root, dry_run, force, actions):
     if MARKER_BEGIN in text:
         actions.append(("skip", "codex", "config.toml 已含注册块，跳过"))
         return
-    import tomllib
+    try:
+        import tomllib  # Python 3.11+
+    except ModuleNotFoundError:
+        actions.append(("error", "codex",
+                        f"校验 {config_path} 需要 Python 3.11+（tomllib）；"
+                        "请改用 3.11+ 运行 install.py，或按 platform-adapters/README.md "
+                        "手动追加注册块"))
+        return
     try:
         tomllib.loads(text)
     except Exception as exc:
