@@ -1,6 +1,6 @@
 ---
 name: prompt-reverse-engineer
-description: "多模态 Prompt 逆向工程技能。当用户提供一段文本、一张图片或一个视频，并要求逆向/复刻/拆解其创作逻辑、还原为可复用 Prompt 时激活。触发词（中英双语）：逆向 prompt、反向生成、复刻这个文案/风格/图片/视频、把这段文字/这张图/这个视频变成 prompt、拆解文案/镜头/分镜、prompt 优化；prompt reverse engineering、reverse engineer this text/image/video、recreate this style as a prompt。输出适配 Midjourney / Stable Diffusion / GPT-4·Claude / Sora·Runway 多模型格式，附百分制质量评分。"
+description: "多模态 Prompt 逆向工程技能。当用户提供一段文本、一张图片或一个视频，并要求逆向/复刻/拆解其创作逻辑、还原为可复用 Prompt 时激活。触发词（中英双语）：逆向 prompt、反向生成、复刻这个文案/风格/图片/视频、把这段文字/这张图/这个视频变成 prompt、拆解文案/镜头/分镜、prompt 优化；prompt reverse engineering、reverse engineer this text/image/video、recreate this style as a prompt。输出适配 Midjourney / Stable Diffusion / GPT-4·Claude / DeepSeek / Sora·Runway 多模型格式，附百分制质量评分。"
 ---
 
 # Prompt 逆向工程多模态生成 Skill
@@ -16,7 +16,7 @@ description: "多模态 Prompt 逆向工程技能。当用户提供一段文本�
 **叙事文本分支**：若输入为剧本/小说/文章且用户要求场景化生成，改走：`analyze_scenes.py` 获取场景切分信号 → Agent 通读全文提炼全局基调（summary/characters）并逐场景完成七段与分镜语义分析（契约见 `references/prompt_framework.md` 2.5 节，写入 story JSON）→ `prompt_compiler.py scenes` 编译（每场景图片默认 MJ/SD + 视频默认 Sora）→ 逐场景评分 → 按第 4 节场景化格式输出。安全过滤与降级规则与常规流程一致。
 
 1. **识别**：判定输入模态（text / image / video）与来源（本地路径 / URL / 直接粘贴）。粘贴的文本写入技能目录外的临时文件；URL 可直接交给脚本下载；检查输入可读，失败按第 5 节处理。
-2. **分析**：运行 `scripts/` 下对应脚本获取 `local_features` 确定性信号（脚本用法见第 6 节）。**图像/视频必须 Read 关键帧或原图**，用多模态能力完成语义分析（主体/风格/结构等）。
+2. **分析**：运行 `scripts/` 下对应脚本获取 `local_features` 确定性信号（脚本用法见第 6 节）。**图像/视频必须 Read 关键帧或原图**，用多模态能力完成语义分析（主体/风格/结构等）；宿主无视觉能力时按第 5 节「宿主能力自适配」降级。
 3. **推理**：按 `references/prompt_framework.md` 第二节的规范字段表，把语义结论整理为 `semantic_analysis` 对象写入 JSON 文件（示例：`tools/fixtures/semantic_*.json`，字段名必须与契约一致）。
 4. **编译**：运行 `prompt_compiler.py all --analysis <json> --models <目标> --dims <评分json>`。用户未指定模型时用默认值（MJ + GPT-4 双版本）。
 5. **评分**：按 `references/prompt_framework.md` 第三节 rubric 逐维给 0-100 分（评分 JSON 格式：`[{"key": "维度key", "score": 分数, "note": "一句话依据"}]`）。采纳 1-2 条优化建议，若低分维度源于语义字段缺失，**回第 3 步补全后重编一轮**。
@@ -34,7 +34,7 @@ description: "多模态 Prompt 逆向工程技能。当用户提供一段文本�
 最终答复固定四部分（方便用户逐块复制）：
 
 1. **分析摘要**：模态、来源、特征要点 3-8 条（引用脚本数据与关键帧观察）。
-2. **Prompt 列表**：每个目标模型一条——小标题 `模型名 / 用途` + 代码块包裹完整 Prompt（MJ 用 `/imagine` 原样可粘贴；GPT/Claude 用 System+User 结构；SD 正负分离）。未指定模型时输出 Midjourney + GPT-4 两版本。
+2. **Prompt 列表**：每个目标模型一条——小标题 `模型名 / 用途` + 代码块包裹完整 Prompt（MJ 用 `/imagine` 原样可粘贴；GPT/Claude 与 DeepSeek 用 System+User 结构，其中 DeepSeek 版额外带首行思考档位与独立「推理要求」段；SD 正负分离）。未指定模型时输出 Midjourney + GPT-4 两版本。
 3. **评分报告**：六维表格（维度/权重/得分）+ 总分与等级 + 1-2 条优化建议。
 4. **使用提示**：说明哪些占位需替换、如何微调（如换风格词、换比例参数）。
 
@@ -57,8 +57,17 @@ description: "多模态 Prompt 逆向工程技能。当用户提供一段文本�
 | 安全过滤阻断（退出码 5） | 重写含违规表述的部分，重编后输出 |
 | 内容敏感（暴力/露骨/侵权模仿特定在世人物） | 拒绝生成，说明原因 |
 | 未知模型名 | 回退默认 MJ + GPT-4 双版本，并说明 |
-| 视频超长 | 用 `--max-seconds` 抽样分析，输出中注明抽样范围 |
+| 视频超长 | 用 `--max-seconds` 截取前 N 秒（**只从头取，非跨片抽样**），输出中注明截取范围；宿主为长上下文模型时按下方「宿主能力自适配」提高上限 |
 | 用户未指定模型 | 默认 MJ + GPT-4 双版本 |
+| 用户要 DeepSeek 版 | `--models deepseek`，按 `model_mappings.md` 第六节选思考档（**不计入默认集合**） |
+
+**宿主能力自适配**：本技能跨平台运行，同一条工作流按宿主 Agent 的**模型能力**自动调整。下列三条能力轴相互独立，按实际情况各自取用：
+
+| 能力轴 | 判定信号 | 策略调整 |
+|---|---|---|
+| 原生视觉 | Agent 能否直接读图 | **有**：图像/视频模态走完整流程——视频抽关键帧后逐帧分析。**无**：图像/视频模态降级，请用户补充文字描述或仅凭脚本量化信号输出通用提示词，**不得编造画面细节** |
+| 长上下文 | 宿主模型上下文窗口 | **≥200K**（如 `deepseek-flash` 为 1M：视觉输入每帧仅计 ≤384 tokens、单请求上限 600 帧，满额约 23 万 tokens）：视频 `--max-seconds` 可提高到 600；场景化整篇通读，不做分块摘要。**<200K**：保持默认 120 秒；长剧本按场景分批分析 |
+| 脚本可执行 | 能否运行 Python 与依赖 | **可**：完整双层分析（脚本量化信号 + 语义分析）。**不可**：走下方降级路径，跳过脚本层做纯语义分析，流程与输出格式不变 |
 
 安全红线：输出 Prompt 不得包含越狱指令（"忽略之前指令"等）或可执行系统命令（`rm -rf`、`cmd.exe`、`subprocess` 等）；交付前必须经 `prompt_compiler.py filter` 校验。黑名单细则见 `references/prompt_framework.md` 第四节。
 
@@ -83,7 +92,7 @@ description: "多模态 Prompt 逆向工程技能。当用户提供一段文本�
 - `references/prompt_framework.md` —— 六要素结构 + 字段契约（含 2.5 节 story 场景化）+ 评分细则 + 安全规则 + 建议库 + 扩展指南（**必读**）
 - `references/image_rules.md` —— 摄影参数/构图/光影/色彩/风格词库 + 七段结构与负向三类
 - `references/video_rules.md` —— 景别/运镜/叙事/分镜规范
-- `references/model_mappings.md` —— 四模型格式映射表 + 场景化默认模型
+- `references/model_mappings.md` —— 五模型格式映射表 + 场景化默认模型 + DeepSeek 思考档位
 - `assets/templates/*.json` —— 机器渲染模板（新增模型=新增模板文件，自动注册）
 - `assets/examples/<模态>_example/output.md` —— 三模态金标输出样例；`story_example` 为剧本→逐场景提示词金标
 - `tools/fixtures/semantic_*.json` —— semantic_analysis 字段填写范例（semantic_story.json 为场景化范例）

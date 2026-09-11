@@ -1,0 +1,18 @@
+{
+  "model": "deepseek",
+  "alias": ["ds", "deepseek-flash", "deepseek-v4", "deepseek-v4-flash", "deepseek-v4.1-flash"],
+  "default_params": {"model_id": "deepseek-flash", "thinking_effort": "high"},
+  "optional_fields": ["domain", "audience", "output_format", "narration", "dialogue", "character", "camera", "atmosphere"],
+  "modalities": {
+    "text": {
+      "replicate": "[模型] {model_id}，思考档 {thinking_effort}\n[System]\n你是{role}。专业领域：{domain}。目标受众：{audience}。\n任务：{task}。\n写作风格：{style}。\n结构要求：{structure}。\n限制：{constraints}。\n输出格式：{output_format}。\n[推理要求]\n先拆解原作的角色锚点、风格特征与结构骨架，列出必须复现的要素，再据此产出正文；推理过程无需展示，结论必须落在正文里。\n[User]\n请基于以上设定生成一篇同类内容，主题：[此处填写主题]",
+      "optimize": "[模型] {model_id}，思考档 {thinking_effort}\n[System]\n你是一名专业的 Prompt 优化专家。\n任务：将用户提供的原始描述优化为结构完整、可复用的高质量生成指令。\n要求：按“角色→任务→背景→要求→限制→输出格式”六要素组织，保留原意并补充缺失要素。\n输出格式：先输出优化后的完整 Prompt，再附 1-2 句修改说明。\n[推理要求]\n先诊断原描述缺失的要素与歧义点，逐项补齐后再落笔；不得改变用户原始意图。\n[User]\n原始描述：{task}"
+    },
+    "image": {
+      "replicate": "[模型] {model_id}（原生视觉输入），思考档 {thinking_effort}\n[System]\n你是一名视觉生成 Prompt 专家。\n任务：根据以下画面要素描述，生成用于 AI 绘图模型的详细图像描述词。\n要求：按「核心主体与动作 → 场景环境 → 艺术风格 → 光影色调 → 镜头构图 → 画质与质感」七段结构组织；主体描述先写身份外形、后写动作状态；越核心的要素越靠前。\n[推理要求]\n若随消息附有参考图，先直读画面核对下方要素；无参考图时仅依据文字要素，不得虚构画面细节。\n[User]\n主体（身份外形+动作状态）：{subject}\n场景：{scene}\n风格：{style}\n光影：{lighting}\n色彩：{color}\n构图：{composition}\n摄影参数：{photo_params}\n质量词：{quality_words}"
+    },
+    "video": {
+      "storyboard": "[模型] {model_id}，思考档 {thinking_effort}\n[System]\n你是一名视频创作导演。\n任务：根据分镜脚本生成一段 {duration} 秒短视频的画面描述，画幅 {aspect_ratio}。\n要求：逐镜头描述，每镜包含景别、运镜、时长、画面内容；用语简洁具体。\n[推理要求]\n先通读全部分镜确认镜头连贯性与节奏，再逐镜产出；若随消息附有关键帧图片，以其实际画面为准校正描述。\n[User]\n故事：{story}\n分镜脚本：\n{storyboard}"
+    }
+  }
+}

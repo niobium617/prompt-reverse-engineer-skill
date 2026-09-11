@@ -257,7 +257,7 @@ def main():
     parser.add_argument("input", help="输入：文件路径 | '-'=stdin | http(s) URL")
     parser.add_argument("-o", "--output", help="结果写入 JSON 文件（默认仅 stdout）")
     parser.add_argument("--max-seconds", type=float, default=120.0,
-                        help="最多分析的时长（秒），超长视频截断抽样")
+                        help="最多分析的时长（秒）；超长视频只取前 N 秒，不做跨片抽样")
     parser.add_argument("--stride", type=int, default=1, help="抽帧步长")
     parser.add_argument("--timeout", type=float, default=15.0, help="URL 下载超时秒数")
     args = parser.parse_args()

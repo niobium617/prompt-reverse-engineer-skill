@@ -130,4 +130,4 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 
 - **新增分析维度**：在本文档 2.x 添加字段定义 → 在对应模型模板 JSON 的占位串中引用新字段 → 在 SKILL.md 分析要点补一行。无需改脚本。
 - **新增评分维度**：修改 `prompt_compiler.py` 中 `DIMENSIONS`（含权重，和须为 100）→ 在本文档第三节补锚点 → 在第五节补建议条目（保持两处镜像）。
-- **新增目标模型**：在 `assets/templates/` 新增一个 `*.json` 模板文件（含 `model`、`alias`、`default_params`、`modalities` 字段），编译器自动注册发现；在 `model_mappings.md` 补映射表行。零代码改动。
+- **新增目标模型**：在 `assets/templates/` 新增一个 `*.json` 模板文件（含 `model`、`alias`、`default_params`、`modalities` 字段），编译器自动注册发现；在 `model_mappings.md` 补映射表行。零代码改动。模板内若需引用非语义字段（模型名、调用参数等），写进 `default_params` 由编译器注入（范例：`deepseek.json` 的 `model_id` / `thinking_effort`），**不要**加进本文档第二节字段表。

@@ -231,7 +231,8 @@ def build_doubao_body():
         "",
         "你是多模态 Prompt 逆向工程专家。用户提供文本、图片或视频后，你深度拆解其"
         "创作逻辑（主体、风格、结构、参数），反向生成可复用的专业 Prompt，适配输出"
-        "Midjourney / Stable Diffusion / GPT-4 / Sora 等模型格式，并给出百分制质量评分。",
+        "Midjourney / Stable Diffusion / GPT-4·Claude / DeepSeek / Sora·Runway 等"
+        "模型格式，并给出百分制质量评分。",
         "",
         "## 附带的脚本",
         "本技能包附带 scripts/ 目录（4 个 Python 分析脚本：analyze_text.py、"
@@ -265,6 +266,21 @@ def build_doubao_body():
     return "\n".join(lines).rstrip() + "\n"
 
 
+def extract_skill_description():
+    """从技能本体 SKILL.md 的 YAML 头取 description。
+
+    豆包技能包的 description 必须与技能本体一致，手写副本必然漂移，故直接读取。
+    """
+    text = (SKILL_SRC / "SKILL.md").read_text(encoding="utf-8")
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        raise SystemExit("错误：技能本体 SKILL.md 缺少 YAML frontmatter")
+    for line in parts[1].splitlines():
+        if line.startswith("description:"):
+            return line[len("description:"):].strip()
+    raise SystemExit("错误：技能本体 SKILL.md 的 frontmatter 缺少 description")
+
+
 def build_doubao_instruction(dry_run, actions):
     """生成豆包双产物：粘贴版指令文本 + 可上传技能包 SKILL.md（含 YAML 头）。"""
     if dry_run:
@@ -279,11 +295,7 @@ def build_doubao_instruction(dry_run, actions):
     frontmatter = (
         "---\n"
         "name: prompt-reverse-engineer\n"
-        "description: \"多模态 Prompt 逆向工程技能。当用户提供文本、图片或视频并要求"
-        "逆向/复刻/拆解其创作逻辑、还原为可复用 Prompt 时激活。触发词：逆向 prompt、"
-        "反向生成、复刻这个文案/风格/图片/视频、拆解文案/镜头/分镜；prompt reverse "
-        "engineering、recreate this style as a prompt。输出适配 Midjourney / Stable "
-        "Diffusion / GPT-4 / Sora 多模型格式，附百分制质量评分。\"\n"
+        f"description: {extract_skill_description()}\n"
         "---\n"
     )
     (pkg_dir / "SKILL.md").write_text(frontmatter + "\n" + body, encoding="utf-8")

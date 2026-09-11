@@ -2,7 +2,7 @@
 
 > **把任何优秀作品 → 逆向拆解 → 还原为可复用的专业 Prompt**
 >
-> 支持 **Claude Code / Cursor / Codex / DeepSeek Harness / 豆包** 五大平台 · **文本 / 图片 / 视频 / 剧本小说** 多模态输入 · **Midjourney / Stable Diffusion / GPT-4·Claude / Sora·Runway** 多模型格式输出 · 附**百分制六维加权质量评分**（剧本可逐场景生成图片/视频提示词）
+> 支持 **Claude Code / Cursor / Codex / DeepSeek Harness / 豆包** 五大平台 · **文本 / 图片 / 视频 / 剧本小说** 多模态输入 · **Midjourney / Stable Diffusion / GPT-4·Claude / DeepSeek / Sora·Runway** 多模型格式输出 · 附**百分制六维加权质量评分**（剧本可逐场景生成图片/视频提示词）
 
 看到一篇爆款文案、一张惊艳的 AI 图片、一段电影感短视频，想知道「它是怎么被生成的」？把作品丢给本技能，它会自动拆解其主体、风格、结构与参数，反向还原出可复刻、可修改的专业 Prompt，并适配输出为各主流生成模型的格式。
 
@@ -35,16 +35,17 @@
 | **视频**（短视频/广告/电影片段） | 镜头序列、运镜方式、人物动作、环境氛围、叙事结构 | 视频生成 Prompt + 分镜脚本 |
 | **剧本/小说/文章**（叙事文本→场景化） | 场景切分、全局基调、逐场景七段+分镜 | 每个场景的图片 Prompt（默认 MJ+SD）+ 视频 Prompt（默认 Sora）+ 逐场景评分 |
 
-### 1.2 四种目标模型格式
+### 1.2 五种目标模型格式
 
 生成的 Prompt 自动适配目标模型语法：
 
 - **Midjourney**：`/imagine prompt: ... --ar 16:9 --v 6` 格式，负向词用 `--no` 表达
 - **Stable Diffusion**：Positive / Negative 严格分离，附 Steps、CFG、Sampler、Seed 参数行
 - **GPT-4 / Claude**：System + User 消息结构，六要素完整映射
+- **DeepSeek**：System + User 结构 + 独立「推理要求」段，首行标注思考档位（`low`/`high`/`max`），适配 V4.1 Flash 的思考模式与原生视觉输入
 - **Sora / Runway**：自然语言分镜脚本，含景别/运镜/时长/画面内容
 
-**未指定目标模型时，默认输出 Midjourney + GPT-4 双版本。**
+**未指定目标模型时，默认输出 Midjourney + GPT-4 双版本**；DeepSeek 版为可选输出（说「也出 DeepSeek 版」即可）。
 
 ### 1.3 质量评分
 
@@ -66,7 +67,7 @@
    │
    ├── Agent 多模态本体（语义分析）──→ 主体 · 风格 · 结构 · 叙事 · 逐场景七段+分镜（按规则库）
    │
-   ├── 编译层 prompt_compiler.py ──→ 模板渲染成 4 种模型格式 + 六维评分 + 安全过滤（含 scenes 子命令逐场景编译）
+   ├── 编译层 prompt_compiler.py ──→ 模板渲染成 5 种模型格式 + 六维评分 + 安全过滤（含 scenes 子命令逐场景编译）
    │
    └── 输出：分析摘要 + Prompt 列表 + 评分报告 + 使用提示（场景化输出总览 + 场景总表 + 逐场景 Prompt + 逐场景评分）
 ```
@@ -100,7 +101,7 @@ python tools/install.py
 - **Claude Code** → 安装到 `~/.claude/skills/prompt-reverse-engineer`
 - **Cursor** → 安装到 `~/.cursor/skills/prompt-reverse-engineer`
 - **Codex** → 注册本地插件市场到 `~/.codex/config.toml`
-- **DeepSeek Harness** → 安装到 `~/.dsh/skills/prompt-reverse-engineer`（格式与 Claude Code 的 SKILL.md bundle 兼容，无需改写）
+- **DeepSeek Harness** → 安装到 `~/.dsh/skills/prompt-reverse-engineer`（格式与 Claude Code 的 SKILL.md bundle 兼容，无需改写；宿主模型 `deepseek-flash` = V4.1 Flash，1M 上下文 + 原生视觉输入）
 - **豆包（桌面版）** → 直接上传 `platform-adapters/doubao/prompt-reverse-engineer.zip`（内含标准 SKILL.md + scripts + references + assets）
 
 Windows 默认使用 **junction 联接**安装（技能目录只放联接点，实体留在仓库内，更新仓库即自动生效，无需管理员权限）；可用 `--mode copy` 切换为物理复制。各平台细节见 [`platform-adapters/README.md`](platform-adapters/README.md)。
@@ -166,7 +167,7 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 
 **输出**：Sora/Runway 自然语言分镜脚本 + 复刻 Prompt + GPT-4 分镜表 + 评分。
 
-**超长视频**：自动截取前 120 秒抽样分析（`--max-seconds` 可调），输出注明抽样范围。
+**超长视频**：默认只取前 120 秒（`--max-seconds` 可调，**截断而非跨片抽样**），输出注明截取范围。
 
 ### 3.5 叙事文本场景化模式（剧本/小说/文章）
 
@@ -186,7 +187,8 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 |---|---|
 | （不指定） | 默认 **Midjourney + GPT-4** 双版本 |
 | 「也出 SD 版」/「转成 Sora」 | 追加对应模型 |
-| 「全部模型」 | 四种格式全出 |
+| 「也出 DeepSeek 版」 | 追加 DeepSeek 格式（含思考档位，见 `model_mappings.md` 第六节） |
+| 「全部模型」 | 五种格式全出 |
 | 指定了未注册的模型名 | 回退默认双版本并说明 |
 | 场景化模式（不指定） | 图片默认 **MJ + SD**、视频默认 **Sora**（`--image-models` / `--video-models` 可换） |
 
@@ -215,9 +217,9 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 │   │   ├── prompt_framework.md        # 六要素+字段契约+评分细则+安全规则（总纲，含 2.5 节 story 契约）
 │   │   ├── image_rules.md             # 摄影/绘画/光影/色彩术语库（含七段结构）
 │   │   ├── video_rules.md             # 电影镜头语言+分镜规范
-│   │   └── model_mappings.md          # 四模型格式映射表
+│   │   └── model_mappings.md          # 五模型格式映射表（含 DeepSeek 思考档位）
 │   └── assets/
-│       ├── templates/                 # 5 个 JSON 模板（4 模型渲染 + 1 评分报告，新模型=新文件，自动注册）
+│       ├── templates/                 # 6 个 JSON 模板（5 模型渲染 + 1 评分报告，新模型=新文件，自动注册）
 │       └── examples/                  # 四模态示例（输入媒体+金标输出，含 story_example 场景化样例）
 ├── platform-adapters/                 # 平台适配层（内容由 install.py 物化，勿手改）
 │   ├── codex/…/.codex-plugin/plugin.json
@@ -260,7 +262,7 @@ L3 编译器 → Agent：     {prompts[], score_report{}, filter{}}
 python tools/verify.py
 ```
 
-18 项断言、全部离线、可重复执行：
+19 项断言、全部离线、可重复执行：
 
 | 层 | 覆盖 |
 |---|---|
@@ -269,6 +271,7 @@ python tools/verify.py
 | 负向层 | 缺字段（退出码 4 报字段名）/ 未知模型 / 坏文件 / 场景缺字段（报场景号）/ 场景黑名单 |
 | 安装层 | junction 创建、重复运行幂等、config.toml 标记块仅一次（Windows） |
 | 豆包兼容 | YAML frontmatter 校验 + zip 内文件齐全 + 包内编译器独立运行成功 |
+| DeepSeek 模型 | 别名（`deepseek`/`ds`/`deepseek-flash`）解析一致 + 三模态渲染含模型名/思考档/推理段 + 不混入默认集合 |
 | 四场景 | ① 营销文案→GPT Prompt（角色/风格/结构约束）② 赛博朋克图→MJ Prompt（`/imagine`+`--no`+风格迁移）③ 10 秒视频→分镜 Prompt（镜头数=分镜段落数）④ 剧本→逐场景 Prompt（每场景 MJ/SD/Sora 齐全 + 逐场景评分） |
 
 ---

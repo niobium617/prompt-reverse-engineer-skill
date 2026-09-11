@@ -9,7 +9,7 @@
 | Claude Code | `~/.claude/skills/prompt-reverse-engineer` | junction → 技能本体（install.py） |
 | Cursor | `~/.cursor/skills/prompt-reverse-engineer` | junction → 技能本体（install.py） |
 | Codex | `~/.codex/config.toml` 注册本地 marketplace，指向本目录 `codex/` | `codex/prompt-reverse-engineer/skills/` 由 install.py 物化 junction → 技能本体 |
-| DeepSeek Harness | `~/.dsh/skills/prompt-reverse-engineer` | junction → 技能本体（install.py）；格式与 Claude Code 的 `SKILL.md` bundle 兼容，无需改写，细节见 [deepseek/README.md](deepseek/README.md) |
+| DeepSeek Harness | `~/.dsh/skills/prompt-reverse-engineer` | junction → 技能本体（install.py）；格式与 Claude Code 的 `SKILL.md` bundle 兼容，无需改写。宿主模型 `deepseek-flash`（V4.1 Flash，1M 上下文 + 原生视觉输入），细节见 [deepseek/README.md](deepseek/README.md) |
 | 豆包（桌面版） | 上传技能包 / 粘贴指令 | ① **上传**（推荐）：把 `doubao/prompt-reverse-engineer/` 文件夹打包为 zip 上传——内含标准 `SKILL.md`（YAML 头含 name + description，豆包上传校验要求）；② **粘贴**：把 `doubao/doubao_instruction.md` 内容粘贴进「技能中心→新建Skill」指令框 |
 
 ## codex 子目录结构

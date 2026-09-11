@@ -8,6 +8,8 @@
   3. 负向层：缺字段 → 退出码 4；未知模型 → 报错；坏文件 → 退出码 4
   4. 安装层：install.py --target-root 临时目录冒烟（junction/幂等/config.toml 标记块仅一次）
   5. 三场景：① 营销文案→GPT Prompt ② 赛博朋克图→MJ Prompt ③ 10s 视频→分镜 Prompt
+  6. 场景化层：analyze_scenes 剧本/散文切分 + scenes 逐场景渲染/评分 + 场景缺字段/黑名单
+  7. DeepSeek 目标模型：别名解析 + 三模态渲染（思考档位/推理段）+ 不入默认集合
 
 用法：python tools/verify.py
 退出码：0 全部通过；1 存在失败项。
@@ -446,6 +448,43 @@ def main():
             assert kw in text, f"端到端输出缺少「{kw}」"
         return True, "story 端到端：场景标题/图片/视频/评分齐全"
 
+    # ---------------- 7. DeepSeek 目标模型 ----------------
+    def deepseek_template():
+        # 1) 模板被自动注册发现 + 别名解析
+        for alias in ("deepseek", "ds", "deepseek-flash"):
+            rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                                "--analysis", FIXTURES / "semantic_text.json",
+                                "--models", alias])
+            data = stdout_json(rc, out, err)
+            assert data["prompts"], f"别名 {alias} 未渲染出 Prompt"
+            assert all(p["model"] == "deepseek" for p in data["prompts"]), \
+                f"别名 {alias} 未解析到 deepseek：{[p['model'] for p in data['prompts']]}"
+            assert data["prompts"][0]["template_id"] == "deepseek", \
+                f"template_id 错误：{data['prompts'][0]['template_id']}"
+        # 2) 三模态渲染 + default_params 注入思考档位（非语义字段）
+        for modality, kind in (("text", "replicate"), ("image", "replicate"),
+                               ("video", "storyboard")):
+            rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                                "--analysis", FIXTURES / f"semantic_{modality}.json",
+                                "--models", "deepseek"])
+            data = stdout_json(rc, out, err)
+            prompt = next((p for p in data["prompts"] if p["kind"] == kind), None)
+            assert prompt, f"{modality} 模态缺少 {kind} 渲染"
+            text = prompt["text"]
+            assert text.startswith("[模型] deepseek-flash"), \
+                f"{modality} 版首行模型名错误：{text.splitlines()[0]}"
+            assert "思考档 high" in text, f"{modality} 版缺少思考档位"
+            assert "[推理要求]" in text, f"{modality} 版缺少独立推理段"
+            assert "[System]" in text and "[User]" in text, f"{modality} 版结构不完整"
+        # 3) 新增模型不得混入默认集合（既有默认输出保持不变）
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                            "--analysis", FIXTURES / "semantic_image.json"])
+        data = stdout_json(rc, out, err)
+        assert not any(p["model"] == "deepseek" for p in data["prompts"]), \
+            "deepseek 不应出现在默认模型集合中"
+        return True, ("别名 deepseek/ds/deepseek-flash 解析一致；三模态均含"
+                      "模型名+思考档+推理段；未混入默认集合")
+
     checks = [
         ("单元层/analyze_text", unit_text),
         ("单元层/analyze_image", unit_image),
@@ -465,6 +504,7 @@ def main():
         ("负向层/场景缺字段", scenes_missing_field),
         ("负向层/场景黑名单", scenes_blacklist),
         ("场景④/剧本→逐场景 Prompt", scenario_story),
+        ("DeepSeek/目标模型模板", deepseek_template),
     ]
     for name, fn in checks:
         check(name, fn)
