@@ -227,7 +227,7 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 │   └── doubao/                        # 豆包：上传 zip + 粘贴指令双产物
 └── tools/
     ├── install.py                     # 一键安装（junction/copy，幂等，--dry-run）
-    ├── verify.py                      # 离线端到端验证（13 项断言）
+    ├── verify.py                      # 离线端到端验证（19 项断言）
     └── fixtures/                      # 金标语义分析 JSON（契约测试/字段范例）
 ```
 
