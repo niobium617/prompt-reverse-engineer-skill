@@ -6,7 +6,8 @@
   - 仅允许 http / https；
   - 拒绝带用户名/密码的 URL；
   - 域名解析出的所有地址必须是公网地址，拒绝回环、私网、链路本地、
-    保留、组播与未指定地址（含 169.254.169.254 等云元数据端）；
+    站点本地（fec0::/10）、保留、组播与未指定地址（含 169.254.169.254
+    等云元数据端）；IPv4 映射 IPv6 地址按 Python 的分类规则同样拒绝；
   - 手动跟随重定向，每一跳都重新校验，最多 5 跳；
   - 流式读取并限制总字节数，超限立即中止。
 
@@ -48,6 +49,7 @@ def _is_public_ip(value):
         return False
     return not (
         addr.is_private or addr.is_loopback or addr.is_link_local
+        or getattr(addr, "is_site_local", False)
         or addr.is_reserved or addr.is_multicast or addr.is_unspecified
     )
 

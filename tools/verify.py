@@ -673,7 +673,8 @@ def main():
             f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
             "from _net import DownloadError, fetch_url, validate_url\n"
             "cases = ['http://127.0.0.1/x', 'http://10.0.0.1/', "
-            "'http://169.254.1.1/', 'file:///etc/passwd', "
+            "'http://169.254.1.1/', 'http://[::ffff:127.0.0.1]/x', "
+            "'http://[fec0::1]/x', 'file:///etc/passwd', "
             "'http://user:pass@93.184.216.34/']\n"
             "for url in cases:\n"
             "    try:\n"
@@ -703,7 +704,7 @@ def main():
                               "http://127.0.0.1/private", *extra])
             assert rc == 3, f"{script} 私网 URL 应退出码 3，实际 {rc}"
             assert "URL" in decode(err), f"{script} 未提示 URL 错误"
-        return True, "私网/回环/链路本地/凭据/非 http 全部拒绝，四脚本退出码 3"
+        return True, "私网/回环/链路本地/站点本地/映射地址/凭据/非 http 全部拒绝，四脚本退出码 3"
 
     checks = [
         ("单元层/analyze_text", unit_text),
