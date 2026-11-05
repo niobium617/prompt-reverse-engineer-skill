@@ -1,0 +1,18 @@
+{
+  "model": "veo3",
+  "display_name": "Veo 3.1",
+  "vendor": "Google",
+  "version": "3.1",
+  "last_verified": "2026-11-05",
+  "notes": "提示词采用「电影摄影 + 主体 + 动作 + 背景 + 风格氛围」五段式；时长 4/6/8 秒，负向提示词是否生效取决于接入面。",
+  "alias": ["veo", "veo3", "veo-3", "veo-3.1"],
+  "default_params": {"duration": "8", "aspect_ratio": "16:9", "resolution": "1080p"},
+  "optional_fields": ["character", "camera", "atmosphere", "lighting", "color", "audio", "narration", "reference_note", "style"],
+  "modalities": {
+    "video": {
+      "storyboard": "电影摄影：{camera}\n主体：{character}\n动作与故事：{story}\n\n{storyboard}\n\n背景：{atmosphere}\n风格：{style}\n灯光：{lighting}\n色彩：{color}\n音频：{audio}\n旁白：{narration}\n参考：{reference_note}",
+      "negative": "no subtitles, no captions, no text overlays, no watermarks, no morphing, no duplicate limbs",
+      "params": "duration: {duration}s\naspect_ratio: {aspect_ratio}\nresolution: {resolution}"
+    }
+  }
+}

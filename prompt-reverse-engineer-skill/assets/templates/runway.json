@@ -1,0 +1,18 @@
+{
+  "model": "runway",
+  "display_name": "Runway Gen-4.5",
+  "vendor": "Runway",
+  "version": "4.5",
+  "last_verified": "2026-11-05",
+  "notes": "时长 2-10 秒，输出 720p / 24-25fps；提示词先写镜头与主体动作，再写环境与视觉风格。",
+  "alias": ["runway", "runway-gen4", "runway-gen-4", "gen-4.5", "gen4.5"],
+  "default_params": {"duration": "10", "aspect_ratio": "16:9", "resolution": "1280x720"},
+  "optional_fields": ["character", "camera", "atmosphere", "lighting", "color", "audio", "narration", "reference_note", "style"],
+  "modalities": {
+    "video": {
+      "storyboard": "镜头风格：{camera}\n人物：{character}\n\n{story}\n\n{storyboard}\n\n环境：{atmosphere}\n灯光：{lighting}\n色彩：{color}\n视觉风格：{style}\n声音：{audio}",
+      "replicate": "复刻以下短片：{duration} 秒，画幅 {aspect_ratio}。\n\n镜头风格：{camera}\n人物：{character}\n故事：{story}\n\n{storyboard}\n\n环境：{atmosphere}\n灯光：{lighting}\n色彩：{color}\n视觉风格：{style}\n声音：{audio}",
+      "params": "duration: {duration}s\naspect_ratio: {aspect_ratio}\nresolution: {resolution}"
+    }
+  }
+}

@@ -18,6 +18,8 @@ import tempfile
 import cv2
 import numpy as np
 
+from _net import DownloadError, fetch_url
+
 TOOL = "analyze_video.py"
 SCHEMA_VERSION = "1.0"
 
@@ -38,17 +40,11 @@ def load_bytes(args):
         return data, source, "stdin"
     if re.match(r"^https?://", source):
         try:
-            import requests
-        except ImportError:
-            print("错误：URL 输入需要 requests 库", file=sys.stderr)
-            sys.exit(3)
-        try:
-            resp = requests.get(source, timeout=args.timeout)
-            resp.raise_for_status()
-        except Exception as exc:
+            data = fetch_url(source, timeout=args.timeout, max_bytes=args.max_bytes)
+        except DownloadError as exc:
             print(f"错误：URL 下载失败：{exc}", file=sys.stderr)
             sys.exit(3)
-        return resp.content, source, "url"
+        return data, source, "url"
     try:
         with open(source, "rb") as fh:
             return fh.read(), source, "file"
@@ -260,6 +256,8 @@ def main():
                         help="最多分析的时长（秒）；超长视频只取前 N 秒，不做跨片抽样")
     parser.add_argument("--stride", type=int, default=1, help="抽帧步长")
     parser.add_argument("--timeout", type=float, default=15.0, help="URL 下载超时秒数")
+    parser.add_argument("--max-bytes", type=int, default=512 * 1024 * 1024,
+                        help="URL 下载大小上限（字节，默认 512 MiB；仅公网地址）")
     args = parser.parse_args()
 
     data, source, kind = load_bytes(args)

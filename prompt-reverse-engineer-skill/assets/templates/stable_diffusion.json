@@ -1,14 +1,20 @@
 {
   "model": "stable_diffusion",
-  "alias": ["sd", "stable-diffusion", "stable diffusion"],
-  "default_params": {"aspect_ratio": "16:9"},
-  "optional_fields": ["photo_params", "quality_words", "negative_words", "target_style"],
+  "display_name": "Stable Diffusion 3.5",
+  "vendor": "Stability AI",
+  "version": "3.5",
+  "last_verified": "2026-11-05",
+  "notes": "SD 3.5 Large 推荐 28 步、CFG 4.5、DPM++ 2M + Karras；自然语言长句与标签混合均可，负向词仍有效。",
+  "alias": ["sd", "stable-diffusion", "stable diffusion", "sd3", "sd3.5"],
+  "default_params": {"width": "1024", "height": "576", "steps": "28", "cfg": "4.5", "sampler": "DPM++ 2M", "scheduler": "Karras", "aspect_ratio": "16:9"},
+  "optional_fields": ["style", "photo_params", "quality_words", "negative_words", "target_style", "text_content"],
+  "kind_requires": {"negative": ["negative_words"], "style_transfer": ["target_style"]},
   "modalities": {
     "image": {
-      "positive": "Positive: {subject}, {scene}, {style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words}",
+      "positive": "Positive: {subject}, {scene}, {style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words}, 文字「{text_content}」",
       "negative": "Negative: {negative_words}",
-      "params": "Steps: 30, CFG scale: 7, Sampler: DPM++ 2M Karras, Seed: -1, Size: 1024x576",
-      "style_transfer": "Positive: {subject}, {scene}, {target_style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words}\nNegative: {negative_words}\nSteps: 30, CFG scale: 7, Sampler: DPM++ 2M Karras, Seed: -1, Size: 1024x576"
+      "params": "Steps: {steps}, CFG scale: {cfg}, Sampler: {sampler}, Scheduler: {scheduler}, Seed: -1, Size: {width}x{height}",
+      "style_transfer": "Positive: {subject}, {scene}, {target_style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words}, 文字「{text_content}」\nNegative: {negative_words}\nSteps: {steps}, CFG scale: {cfg}, Sampler: {sampler}, Scheduler: {scheduler}, Seed: -1, Size: {width}x{height}"
     }
   }
 }

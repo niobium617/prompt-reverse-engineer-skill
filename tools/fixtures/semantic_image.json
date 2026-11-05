@@ -20,6 +20,8 @@
     "photo_params": "广角镜头 24mm，f/2.8，深景深",
     "quality_words": "ultra detailed, 8K, cinematic lighting, masterpiece",
     "negative_words": "blurry, low quality, watermark, text, deformed",
-    "target_style": "吉卜力动画风格"
+    "target_style": "吉卜力动画风格",
+    "text_content": "APS 2077",
+    "reference_note": "参考图 1：人物姿态；参考图 2：霓虹配色"
   }
 }

@@ -26,7 +26,7 @@ codex/                                # marketplace root（config.toml 的 sourc
 ```toml
 # >>> prompt-reverse-engineer >>>
 [marketplaces.aps-local]
-last_updated = "2026-08-15T00:00:00Z"
+last_updated = "2026-11-05T00:00:00Z"
 source_type = "local"
 source = '''<本仓库路径>/platform-adapters/codex'''
 

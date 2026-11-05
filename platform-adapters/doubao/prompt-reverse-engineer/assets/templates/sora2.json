@@ -1,0 +1,18 @@
+{
+  "model": "sora2",
+  "display_name": "Sora 2",
+  "vendor": "OpenAI",
+  "version": "2",
+  "last_verified": "2026-11-05",
+  "notes": "支持 4/8/12/16/20 秒；sora-2-pro 支持 1080p。提示词以自然语言散文为主，再补镜头与声音设计。",
+  "alias": ["sora", "sora-2", "sora2", "sora-2-pro", "sora2-pro"],
+  "default_params": {"duration": "12", "aspect_ratio": "16:9", "resolution": "1280x720", "model_id": "sora-2"},
+  "optional_fields": ["character", "camera", "atmosphere", "lighting", "color", "audio", "narration", "reference_note", "dialogue"],
+  "modalities": {
+    "video": {
+      "storyboard": "创作一支 {duration} 秒的短视频，画幅 {aspect_ratio}。\n\n{story}\n\n{storyboard}\n\n摄影：{camera}\n灯光：{lighting}\n色彩：{color}\n氛围：{atmosphere}\n声音：{audio}\n旁白：{narration}\n参考：{reference_note}",
+      "replicate": "复刻以下短片：{duration} 秒，画幅 {aspect_ratio}。\n\n{story}\n\n人物：{character}\n{storyboard}\n\n摄影：{camera}\n灯光：{lighting}\n色彩：{color}\n氛围：{atmosphere}\n声音：{audio}\n旁白：{narration}\n参考：{reference_note}",
+      "params": "model: {model_id}\nduration: {duration}s\nsize: {resolution}\naspect_ratio: {aspect_ratio}"
+    }
+  }
+}

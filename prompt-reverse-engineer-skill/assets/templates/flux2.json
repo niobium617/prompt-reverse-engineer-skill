@@ -1,0 +1,20 @@
+{
+  "model": "flux2",
+  "display_name": "FLUX.2 [pro]",
+  "vendor": "Black Forest Labs",
+  "version": "2",
+  "last_verified": "2026-11-05",
+  "notes": "FLUX.2 不使用 negative prompt；自然语言长句效果最好，复杂构图可用参考图并标注各自角色。",
+  "alias": ["flux", "flux2", "flux-2", "flux2-pro", "flux-2-pro", "bfl"],
+  "default_params": {"aspect_ratio": "16:9", "guidance": "4.5", "steps": "28"},
+  "negative_support": false,
+  "optional_fields": ["style", "photo_params", "quality_words", "target_style", "text_content", "reference_note"],
+  "kind_requires": {"style_transfer": ["target_style"]},
+  "modalities": {
+    "image": {
+      "positive": "{subject}. {scene}. {style}. {lighting}. {color}. {composition}. {photo_params}. {quality_words}. 文字「{text_content}」. {reference_note}",
+      "params": "Guidance: {guidance}, Steps: {steps}, Aspect ratio: {aspect_ratio}",
+      "style_transfer": "{subject}. {scene}. {target_style}. {lighting}. {color}. {composition}. {photo_params}. {quality_words}. 文字「{text_content}」. {reference_note}"
+    }
+  }
+}

@@ -1,6 +1,8 @@
 {
   "kind": "score_report",
   "header": "## 评分报告",
+  "table_header": "| 维度 | 权重 | 得分 | 依据 |\n|---|---:|---:|---|",
+  "table_row": "| {name} | {weight}% | {score} | {note} |",
   "dimension_line": "- {name}（权重 {weight}%）：{score} 分 — {note}",
   "total_line": "总分：{total} / 100（等级 {grade}）",
   "suggestion_line": "优化建议 {i}：{suggestion}",

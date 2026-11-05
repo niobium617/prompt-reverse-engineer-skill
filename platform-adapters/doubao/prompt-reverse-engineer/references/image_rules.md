@@ -98,6 +98,8 @@ subject → scene → style → lighting → color → composition → photo_par
 
 `ultra detailed` `8K` `masterpiece` `best quality` `sharp focus` `high resolution` `cinematic lighting` `professional photography`
 
+> 2026 年后的模型（MJ V8.2、FLUX.2、GPT Image 2.5、Nano Banana Pro）对「质量词堆叠」的收益明显下降：保留 2-4 个有效词即可，把预算放在主体细节、镜头与光线描述上。GLM/老版 SD 才需要长串质量词。
+
 ## 八、Negative 三类标准结构（negative_words）
 
 负向词按「画面瑕疵 → 风格违和 → 内容违和」三类组织，同类集中放置、英文逗号分隔：
@@ -110,9 +112,25 @@ subject → scene → style → lighting → color → composition → photo_par
 
 Agent 填充 `negative_words` 字段时按三类分组书写（如 `"模糊, 低质量, 畸形, 多余肢体, 卡通, 明亮清新, 违和道具, 鲜艳色彩"`：瑕疵词在前、违和风格居中、违和内容收尾），渲染时统一逗号连接。
 
+**支持范围**：MJ（`--no`）与 SD（独立 Negative）生效；FLUX.2 不支持负向，需改写为正向约束（如「干净背景，无文字」）；GPT Image / Nano Banana 只宜把关键排除项写进 Constraints，不要整段照搬负向词。
+
 ## 九、格式使用规范
 
 1. **排序规则**：越核心的元素越靠前（第一节七段顺序），模型对前置内容的注意力权重更高。
-2. **分隔方式**：不同元素用英文逗号分隔；同维度的描述集中放置，便于整体调整。
-3. **权重强化**（Stable Diffusion 等支持权重语法的模型）：`(关键词:权重数值)` 格式，数值 >1 增强、<1 减弱，如 `(透明伞:1.3)`。**Midjourney 不支持此语法**——需突出某要素时用要素前置、`--stylize 0-1000` 或 `--chaos` 参数，勿在 MJ 输出中写 `(词:权重)` 标记。
+2. **分隔方式**：不同元素用英文逗号分隔；同维度的描述集中放置，便于整体调整。FLUX.2 / GPT Image / Nano Banana 改用完整句子或分段标签，见第十节。
+3. **权重强化**（Stable Diffusion 等支持权重语法的模型）：`(关键词:权重数值)` 格式，数值 >1 增强、<1 减弱，如 `(透明伞:1.3)`。**Midjourney 不支持此语法**——需突出某要素时用要素前置、`--stylize 0-1000` 或 `--chaos` 参数，勿在 MJ 输出中写 `(词:权重)` 标记。FLUX.2 也不支持权重语法。
 4. **模块化复用**：替换对应段位的内容即可快速切换题材、风格，无需重写整段提示词。
+5. **参考图**：有参考图时在 `reference_note` 写明每张图的角色（人物造型 / 风格 / 构图 / 配色）；MJ V8 用 Edit Model，SD 用 IP-Adapter/ControlNet，FLUX.2 / GPT Image / Nano Banana 直接随请求附图。
+6. **画内文字**：需要精确渲染的文字放 `text_content`，并在提示中要求逐字复现；不要在 `subject` 里混写长段文字。
+
+## 十、现代图像模型的写法差异
+
+| 模型 | 负向支持 | 推荐写法 | 参考图 | 文字渲染 |
+|---|---|---|---|---|
+| Midjourney V8.2 | `--no` | 逗号标签 + 参数；质量词从简 | Edit Model，最多 4 张 | 中等，短文本用「」包裹 |
+| Stable Diffusion 3.5 | 独立 negative | 标签 + 权重语法；正负分离 | IP-Adapter / ControlNet | 弱 |
+| FLUX.2 [pro] | **不支持** | 自然语言长句，描述关系与空间 | 多参考图，标注角色 | 较好 |
+| GPT Image 2.5 | 写进 Constraints | 结构化规格书；编辑一次只改一项 | 随请求附图 | 强，逐字复现 |
+| Nano Banana Pro | 改写为正向约束 | 主体+动作 → 地点 → 构图 → 风格 | API 最多 14 张 | 最强，海报级 |
+
+选型建议：追求构图/风格一致 → MJ V8.2 或 FLUX.2；需要准确文字与编辑 → GPT Image 2.5 / Nano Banana Pro；本地可控与负面词 → SD 3.5。

@@ -18,12 +18,15 @@
         "quality_words": "ultra detailed, 8K, cinematic lighting",
         "negative_words": "模糊, 低质量, 畸形, 多余肢体, 卡通, 明亮清新",
         "target_style": "宫崎骏动画风格",
+        "text_content": "雨夜 · 初见",
+        "reference_note": "参考图 1：林晓造型；参考图 2：霓虹街景配色",
         "story": "雨夜，林晓撑伞在街头停下，听到身后的脚步声，回眸看见陈默。",
         "duration": "8",
         "aspect_ratio": "16:9",
         "character": "林晓：年轻女性，黑色风衣，手持透明伞",
         "camera": "远景开场，缓慢推进至中景，跟拍回眸动作",
         "atmosphere": "雨夜霓虹街头，冷峻压抑",
+        "audio": "雨声、脚步声由远及近、霓虹电流嗡鸣",
         "storyboard": [
           {
             "shot_no": 1,
@@ -64,12 +67,15 @@
         "quality_words": "high resolution, film photography, soft bokeh",
         "negative_words": "模糊, 低质量, 过曝, 卡通, 冷暗色调",
         "target_style": "新海诚动画风格",
+        "text_content": "就到这里吧",
+        "reference_note": "参考图 1：林晓与陈默造型；参考图 2：咖啡厅暖调",
         "story": "第二天，两人在咖啡厅相对而坐，林晓释然告别，起身走向门口。",
         "duration": "10",
         "aspect_ratio": "16:9",
         "character": "林晓：年轻女性，黑色风衣；陈默：28 岁男性，深灰大衣",
         "camera": "正反打对话镜头，结尾缓慢拉远至全景",
         "atmosphere": "暖调咖啡厅，温暖中带一丝怅然",
+        "audio": "咖啡厅环境低语、杯碟轻碰、雨声闷在窗外",
         "storyboard": [
           {
             "shot_no": 1,

@@ -1,0 +1,19 @@
+{
+  "model": "gpt_image",
+  "display_name": "GPT Image 2.5",
+  "vendor": "OpenAI",
+  "version": "2.5",
+  "last_verified": "2026-11-05",
+  "notes": "用结构化指令描述画面；画面文字放在引号内要求逐字渲染；编辑时一次只改一件事。",
+  "alias": ["gpt-image", "gpt-image-2", "gpt-image-2.5", "gptimage", "dalle"],
+  "default_params": {"aspect_ratio": "16:9", "quality": "high"},
+  "optional_fields": ["style", "photo_params", "quality_words", "negative_words", "target_style", "text_content", "reference_note"],
+  "kind_requires": {"edit": ["target_style"]},
+  "modalities": {
+    "image": {
+      "prompt": "Create an image with the following specification.\n\nSubject: {subject}\nScene: {scene}\nStyle: {style}\nLighting: {lighting}\nColor: {color}\nComposition: {composition}\nCamera: {photo_params}\nQuality: {quality_words}\nText in image: {text_content}\nReferences: {reference_note}\nConstraints: render all text exactly as written; no extra text, logos, or watermarks. {negative_words}",
+      "params": "quality: {quality}\naspect_ratio: {aspect_ratio}",
+      "edit": "Edit the provided image. Apply only this change: {target_style}. Preserve subject identity, composition, lighting, color, and all existing text."
+    }
+  }
+}

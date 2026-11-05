@@ -17,6 +17,8 @@ import json
 import re
 import sys
 
+from _net import DownloadError, fetch_url
+
 TOOL = "analyze_scenes.py"
 SCHEMA_VERSION = "1.0"
 
@@ -55,17 +57,11 @@ def load_bytes(args) -> bytes:
         return data, source, "stdin"
     if re.match(r"^https?://", source):
         try:
-            import requests
-        except ImportError:
-            print("错误：URL 输入需要 requests 库", file=sys.stderr)
-            sys.exit(3)
-        try:
-            resp = requests.get(source, timeout=args.timeout)
-            resp.raise_for_status()
-        except Exception as exc:  # 网络/超时/HTTP 错误统一归类
+            data = fetch_url(source, timeout=args.timeout, max_bytes=args.max_bytes)
+        except DownloadError as exc:
             print(f"错误：URL 下载失败：{exc}", file=sys.stderr)
             sys.exit(3)
-        return resp.content, source, "url"
+        return data, source, "url"
     path = source
     try:
         with open(path, "rb") as fh:
@@ -161,6 +157,8 @@ def main():
     parser.add_argument("input", help="输入：文件路径 | '-'=stdin | http(s) URL")
     parser.add_argument("-o", "--output", help="结果写入 JSON 文件（默认仅 stdout）")
     parser.add_argument("--timeout", type=float, default=15.0, help="URL 下载超时秒数")
+    parser.add_argument("--max-bytes", type=int, default=32 * 1024 * 1024,
+                        help="URL 下载大小上限（字节，默认 32 MiB；仅公网地址）")
     args = parser.parse_args()
 
     data, source, kind = load_bytes(args)
