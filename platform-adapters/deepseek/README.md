@@ -8,14 +8,14 @@
 
 ## 模型与能力（DeepSeek V4.1 Flash）
 
-本技能在 Harness 上运行时，语义分析由**宿主模型**完成，因此宿主模型能力直接决定可用模态与降级路径。当前主力模型为 **DeepSeek V4.1 Flash**（2026-09-10 发布）：
+本技能在 Harness 上运行时，语义分析由**宿主模型**完成，因此宿主模型能力直接决定可用模态与降级路径。当前主力模型为 **DeepSeek V4.1 Flash**（2026-09-10 发布；当前快照 `V4.1-Flash-1017`，2026-10-17）：
 
 | 项 | 值 | 对本技能的影响 |
 |---|---|---|
 | API 模型名 | `deepseek-flash` | 旧名 `deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 已下线但**暂时路由**到 V4.1 Flash，无需改配置 |
 | 上下文 / 最大输出 | 1M token / 384K | 长剧本可整篇通读；视频 `--max-seconds` 可提高到 600（SKILL.md 第 5 节「宿主能力自适配」） |
 | 视觉输入 | ✅ **唯一支持视觉的模型**（**原生**：视觉整合进主力模型本体，非 8 月 `vision-exp` 的「外挂视觉编码器」式） | 图片模态可直接喂原图；**视频输入未在 API 文档中声明**，视频模态仍走 `analyze_video.py` 抽关键帧 → 逐帧喂图 |
-| 思考模式 | 默认开启，`low` / `high` / `max` 三档 | 输出 DeepSeek 版 Prompt 时按 `references/model_mappings.md` 第六节选档 |
+| 思考模式 | 默认开启，`low` / `high` / `max` 三档 | 输出 DeepSeek 版 Prompt 时按 `references/model_mappings.md` 第 8 节选档；模板默认 `high` |
 | API 格式 | `https://api.deepseek.com`（OpenAI）/ `.../anthropic`（Anthropic） | 两种格式均可承载本技能 |
 
 ### 视觉输入规格（图像模态）
@@ -37,7 +37,7 @@
 
 **跨模型降级**：若 Harness 侧配置的是不支持视觉的模型（如 V4 Pro），图片/视频模态按 SKILL.md 第 5 节「原生视觉」能力轴降级——请用户补充文字描述，**不得编造画面细节**；文本模态与脚本层不受影响。
 
-> **V4 Pro 下线**：自 2026-09-14 12:00（北京时间）起，`deepseek-v4-pro` 请求将全部路由到 V4.1 Flash 并按 Flash 计费，直至 V4.1 Pro 上线。
+> **V4 Pro 路由**：自 2026-09-14 12:00（北京时间）起，`deepseek-v4-pro` 请求全部路由到 V4.1 Flash 并按 Flash 计费，直至 V4.1 Pro 上线。旧模型名（`deepseek-v4-flash` 等）继续兼容路由；输出 Prompt 时按实际快照 `V4.1-Flash-1017` 标注，不要写成 V4 Pro。
 
 ## Skill 发现路径（filesystem provider 按 rank 扫描）
 

@@ -18,6 +18,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from _net import DownloadError, fetch_url
+
 TOOL = "analyze_image.py"
 SCHEMA_VERSION = "1.0"
 
@@ -38,17 +40,11 @@ def load_bytes(args):
         return data, source, "stdin"
     if re.match(r"^https?://", source):
         try:
-            import requests
-        except ImportError:
-            print("错误：URL 输入需要 requests 库", file=sys.stderr)
-            sys.exit(3)
-        try:
-            resp = requests.get(source, timeout=args.timeout)
-            resp.raise_for_status()
-        except Exception as exc:
+            data = fetch_url(source, timeout=args.timeout, max_bytes=args.max_bytes)
+        except DownloadError as exc:
             print(f"错误：URL 下载失败：{exc}", file=sys.stderr)
             sys.exit(3)
-        return resp.content, source, "url"
+        return data, source, "url"
     try:
         with open(source, "rb") as fh:
             return fh.read(), source, "file"
@@ -221,6 +217,8 @@ def main():
     parser.add_argument("--max-size", type=int, default=4096,
                         help="处理前降采样的最大边长（默认 4096）")
     parser.add_argument("--timeout", type=float, default=15.0, help="URL 下载超时秒数")
+    parser.add_argument("--max-bytes", type=int, default=64 * 1024 * 1024,
+                        help="URL 下载大小上限（字节，默认 64 MiB；仅公网地址）")
     args = parser.parse_args()
 
     data, source, kind = load_bytes(args)

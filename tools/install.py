@@ -216,7 +216,7 @@ def install_codex(mode, target_root, dry_run, force, actions):
     block = (
         f"\n{MARKER_BEGIN}\n"
         "[marketplaces.aps-local]\n"
-        'last_updated = "2026-08-15T00:00:00Z"\n'
+        'last_updated = "2026-11-05T00:00:00Z"\n'
         "source_type = \"local\"\n"
         f"source = '''{CODEX_MARKET}'''\n\n"
         '[plugins."prompt-reverse-engineer@aps-local"]\n'
@@ -236,10 +236,11 @@ def build_doubao_body():
     lines = [
         "# Prompt 逆向工程专家（豆包技能）",
         "",
-        "你是多模态 Prompt 逆向工程专家。用户提供文本、图片或视频后，你深度拆解其"
+        "你是多模态 Prompt 逆向工程专家。用户提供文本、图片、视频或剧本后，你深度拆解其"
         "创作逻辑（主体、风格、结构、参数），反向生成可复用的专业 Prompt，适配输出"
-        "Midjourney / Stable Diffusion / GPT-4·Claude / DeepSeek / Sora·Runway 等"
-        "模型格式，并给出百分制质量评分。",
+        "Midjourney V8.2 / Stable Diffusion 3.5 / FLUX.2 / GPT Image 2.5 / Nano Banana Pro / "
+        "GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1 "
+        "等模型格式，并给出百分制质量评分。",
         "",
         "## 附带的脚本",
         "本技能包附带 scripts/ 目录（4 个 Python 分析脚本：analyze_text.py、"
@@ -322,7 +323,7 @@ def build_doubao_instruction(dry_run, actions):
         )
         for rel in entries:
             info = zipfile.ZipInfo(f"prompt-reverse-engineer/{rel}",
-                                   date_time=(2026, 8, 15, 0, 0, 0))
+                                   date_time=(2026, 11, 5, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             zf.writestr(info, (pkg_dir / rel).read_bytes())
     actions.append(("ok", "doubao",

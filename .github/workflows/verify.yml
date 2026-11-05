@@ -30,5 +30,5 @@ jobs:
       - name: 安装依赖
         run: python -m pip install --upgrade pip opencv-python-headless pillow numpy
 
-      - name: 离线端到端验证（19 项断言，无网络、无 API）
+      - name: 离线端到端验证（24 项断言，无网络、无 API）
         run: python tools/verify.py

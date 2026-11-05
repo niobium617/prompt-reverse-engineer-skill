@@ -1,13 +1,19 @@
 {
   "model": "midjourney",
+  "display_name": "Midjourney V8.2",
+  "vendor": "Midjourney",
+  "version": "8.2",
+  "last_verified": "2026-11-05",
+  "notes": "V8.2 自 2026-07-24 起为默认版本；角色/服装一致性改用 Edit Model（最多 4 张参考图），V7 的 --cref/--oref 不再用于 V8。",
   "alias": ["mj", "midjourney", "mid-journey"],
-  "default_params": {"aspect_ratio": "16:9", "version": "6"},
-  "optional_fields": ["photo_params", "quality_words", "negative_words", "target_style", "narration"],
+  "default_params": {"aspect_ratio": "16:9", "version": "8.2"},
+  "optional_fields": ["style", "photo_params", "quality_words", "negative_words", "target_style", "text_content"],
+  "kind_requires": {"negative": ["negative_words"], "style_transfer": ["target_style"]},
   "modalities": {
     "image": {
-      "positive": "/imagine prompt: {subject}, {scene}, {style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words} --ar {aspect_ratio} --v {version}",
-      "negative": "--no {negative_words}",
-      "style_transfer": "/imagine prompt: {subject}, {scene}, {target_style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words} --ar {aspect_ratio} --v {version}"
+      "positive": "/imagine prompt: {subject}, {scene}, {style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words}, 文字「{text_content}」 --ar {aspect_ratio} --v {version}",
+      "negative": "/imagine prompt: {subject}, {scene}, {style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words}, 文字「{text_content}」 --no {negative_words} --ar {aspect_ratio} --v {version}",
+      "style_transfer": "/imagine prompt: {subject}, {scene}, {target_style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words}, 文字「{text_content}」 --ar {aspect_ratio} --v {version}"
     }
   }
 }
