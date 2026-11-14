@@ -202,17 +202,17 @@ def install_codex(mode, target_root, dry_run, force, actions):
         return
     try:
         import tomllib  # Python 3.11+
-    except ModuleNotFoundError:
-        actions.append(("error", "codex",
-                        f"校验 {config_path} 需要 Python 3.11+（tomllib）；"
-                        "请改用 3.11+ 运行 install.py，或按 platform-adapters/README.md "
-                        "手动追加注册块"))
-        return
-    try:
-        tomllib.loads(text)
-    except Exception as exc:
-        actions.append(("error", "codex", f"config.toml 解析失败，不修改：{exc}"))
-        return
+    except (ModuleNotFoundError, ImportError):
+        tomllib = None
+        actions.append(("warn", "codex",
+                        f"Python < 3.11（无 tomllib），跳过 {config_path} 的 TOML "
+                        "语义校验，仅做标记块检查"))
+    if tomllib is not None:
+        try:
+            tomllib.loads(text)
+        except Exception as exc:
+            actions.append(("error", "codex", f"config.toml 解析失败，不修改：{exc}"))
+            return
     block = (
         f"\n{MARKER_BEGIN}\n"
         "[marketplaces.aps-local]\n"
@@ -233,6 +233,14 @@ def install_codex(mode, target_root, dry_run, force, actions):
 
 def build_doubao_body():
     """把 SKILL.md + references 扁平化为单一中文指令正文（确定性）。"""
+    scripts = sorted(p.name for p in (SKILL_SRC / "scripts").glob("*.py"))
+    script_note = (
+        f"本技能包附带 scripts/ 目录（{len(scripts)} 个 Python 脚本："
+        + "、".join(scripts) + "）。若运行环境支持执行"
+        "本地 Python（依赖：Python 3.10+ 与 opencv-python/pillow/numpy，用法见下文"
+        "「脚本调用速查」），优先运行脚本获取量化信号；若环境不支持执行脚本，则跳过"
+        "脚本层，直接按「异常处理规则」中的降级路径做纯语义分析，流程与输出格式不变。"
+    )
     lines = [
         "# Prompt 逆向工程专家（豆包技能）",
         "",
@@ -243,11 +251,7 @@ def build_doubao_body():
         "等模型格式，并给出百分制质量评分。",
         "",
         "## 附带的脚本",
-        "本技能包附带 scripts/ 目录（4 个 Python 分析脚本：analyze_text.py、"
-        "analyze_image.py、analyze_video.py、prompt_compiler.py）。若运行环境支持执行"
-        "本地 Python（依赖：Python 3.10+ 与 opencv-python/pillow/numpy，用法见下文"
-        "「脚本调用速查」），优先运行脚本获取量化信号；若环境不支持执行脚本，则跳过"
-        "脚本层，直接按「异常处理规则」中的降级路径做纯语义分析，流程与输出格式不变。",
+        script_note,
         "",
         "## 触发条件",
         "用户提供具体内容并表达「逆向 / 复刻 / 拆解 / 变成 prompt / 优化 prompt」意图时执行。",
@@ -365,7 +369,7 @@ def main():
     print("== 安装汇总 ==")
     for kind, name, detail in actions:
         tag = {"ok": "[OK]", "skip": "[SKIP]", "mkdir": "[MKDIR]", "junction": "[LINK]",
-               "rebuild": "[REBUILD]", "error": "[ERROR]"}.get(kind, "[?]")
+               "rebuild": "[REBUILD]", "warn": "[WARN]", "error": "[ERROR]"}.get(kind, "[?]")
         print(f"{tag} {name}: {detail}")
     errors = [a for a in actions if a[0] == "error"]
     if args.dry_run:

@@ -14,12 +14,17 @@
   9. 模板契约：validate-templates 全量校验 + 五类坏模板逐项报错
  10. GPT Image 五任务模式：--kind/task_type 映射、编辑顺序、参考图编号、契约错误退出 4
  11. 下载防护：私网/回环/凭据 URL 拒绝，分析脚本退出码 3
+ 12. 一致性：VERSION/清单/依赖/README 断言数/示例复现/豆包产物可复现
+ 13. 安装降级：copy 模式（全平台）、无 tomllib 的 Python 3.10 降级
 
-用法：python tools/verify.py
-退出码：0 全部通过；1 存在失败项。
+用法：python tools/verify.py [--filter 子串]
+退出码：0 全部通过；1 存在失败项；2 参数错误。
 """
+import argparse
+import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -39,6 +44,7 @@ WEIGHTS = {
 }
 
 RESULTS = []
+CHECKS_TOTAL = 0  # main() 里按 checks 长度赋值，供 README 断言数一致性检查使用
 
 
 def run(cmd, timeout=180):
@@ -74,6 +80,10 @@ def stdout_json(code, out, err):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="prompt-reverse-engineer 离线端到端验证")
+    parser.add_argument("--filter", action="append", default=[], metavar="SUBSTR",
+                        help="只运行名称包含该子串的检查（可重复；CI 分平台冒烟用）")
+    args = parser.parse_args()
     TMP.mkdir(parents=True, exist_ok=True)
 
     # ---------------- 1. 单元层 ----------------
@@ -815,6 +825,186 @@ def main():
             assert "URL" in decode(err), f"{script} 未提示 URL 错误"
         return True, "私网/回环/链路本地/站点本地/映射地址/凭据/非 http 全部拒绝，四脚本退出码 3"
 
+    # ---------------- 12. 一致性与可复现 ----------------
+    def version_consistency():
+        version_path = REPO / "VERSION"
+        assert version_path.exists(), "缺少根目录 VERSION（版本单一源）"
+        version = version_path.read_text(encoding="utf-8").strip()
+        assert re.fullmatch(r"\d+\.\d+\.\d+", version), f"VERSION 格式非法：{version!r}"
+        plugin_path = (REPO / "platform-adapters" / "codex" /
+                       "prompt-reverse-engineer" / ".codex-plugin" / "plugin.json")
+        plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
+        assert plugin["version"] == version, \
+            f"plugin.json 版本 {plugin['version']} != VERSION {version}"
+        return True, f"VERSION={version} 与 codex plugin.json 一致"
+
+    def codex_manifest_sync():
+        plugin_path = (REPO / "platform-adapters" / "codex" /
+                       "prompt-reverse-engineer" / ".codex-plugin" / "plugin.json")
+        plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
+        models = ("Midjourney", "Stable Diffusion", "FLUX.2", "GPT Image",
+                  "Nano Banana", "GPT-5.5", "DeepSeek", "Sora 2",
+                  "Runway", "Veo 3.1")
+        for name in models:
+            assert name in plugin["description"], f"plugin.json description 缺 {name}"
+            assert name in plugin["interface"]["longDescription"], \
+                f"plugin.json longDescription 缺 {name}"
+        assert "deepseek" in plugin["keywords"], "plugin.json 关键词缺 deepseek"
+        return True, "codex 清单描述含十模型与 DeepSeek 关键词"
+
+    def doubao_script_inventory():
+        scripts = sorted(p.name for p in (SKILL / "scripts").glob("*.py"))
+        text = (REPO / "platform-adapters" / "doubao" /
+                "doubao_instruction.md").read_text(encoding="utf-8")
+        marker = f"{len(scripts)} 个 Python 脚本"
+        assert marker in text, f"豆包文案未写「{marker}」"
+        for name in scripts:
+            assert name in text, f"豆包文案缺少脚本：{name}"
+        return True, f"{len(scripts)} 个脚本清单与 scripts/*.py 一致"
+
+    def doubao_reproducible():
+        files = [
+            REPO / "platform-adapters" / "doubao" / "doubao_instruction.md",
+            REPO / "platform-adapters" / "doubao" /
+            "prompt-reverse-engineer" / "SKILL.md",
+            REPO / "platform-adapters" / "doubao" /
+            "prompt-reverse-engineer.zip",
+        ]
+
+        def digest():
+            rc, _, err = run([PYTHON, REPO / "tools" / "install.py",
+                              "--platform", "doubao"])
+            assert rc == 0, f"豆包生成失败：{decode(err)[:300]}"
+            return [hashlib.sha256(p.read_bytes()).hexdigest() for p in files]
+
+        first = digest()
+        second = digest()
+        assert first == second, "两次生成豆包产物哈希不一致（时间戳/排序不确定）"
+        return True, "豆包三产物两次生成哈希一致（固定时间戳可复现）"
+
+    def dependency_docs():
+        readme = (REPO / "README.md").read_text(encoding="utf-8")
+        assert "requests" not in readme, "README 仍声明 requests 依赖"
+        imports = set()
+        for path in (SKILL / "scripts").glob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            imports |= set(re.findall(
+                r"^\s*(?:from|import)\s+([A-Za-z_][\w]*)", source, re.M))
+        third = imports - set(sys.stdlib_module_names) - {"_net"}
+        declared = {"cv2": "opencv-python", "PIL": "pillow", "numpy": "numpy"}
+        undeclared = sorted(third - set(declared))
+        assert not undeclared, f"未声明的第三方依赖：{undeclared}"
+        for dist in sorted(declared.values()):
+            assert dist.lower() in readme.lower(), f"README 依赖表缺少 {dist}"
+        return True, "README 依赖声明与 scripts 导入一致（无 requests）"
+
+    def readme_assertion_counts():
+        text = (REPO / "README.md").read_text(encoding="utf-8")
+        found = {int(n) for n in re.findall(r"(\d+)\s*项断言", text)}
+        assert found, "README 未写断言数"
+        assert found == {CHECKS_TOTAL}, \
+            f"README 断言数 {sorted(found)} != 实际 {CHECKS_TOTAL}"
+        return True, f"README 断言数 {CHECKS_TOTAL} 与实际一致"
+
+    def examples_reproducible():
+        rc, out, err = run([PYTHON, REPO / "tools" / "gen_examples.py", "--check"])
+        assert rc == 0, f"示例已漂移：{decode(out)[:400]}{decode(err)[:200]}"
+        return True, "四模态 output.md 与 gen_examples.py 生成结果逐字节一致"
+
+    def install_copy_smoke():
+        target = TMP / "install_copy"
+        shutil.rmtree(str(target), ignore_errors=True)
+        (target / ".claude").mkdir(parents=True)
+        cmd = [PYTHON, REPO / "tools" / "install.py", "--target-root", target,
+               "--platform", "claude", "--mode", "copy"]
+        rc, out, err = run(cmd)
+        assert rc == 0, f"copy 模式安装失败：{decode(err)[:300]}"
+        dest = target / ".claude" / "skills" / "prompt-reverse-engineer"
+        assert (dest / "SKILL.md").exists(), "copy 模式缺少 SKILL.md"
+        assert (dest / "scripts" / "prompt_compiler.py").exists(), "copy 模式缺少脚本"
+        rc2, out2, _ = run(cmd)
+        assert rc2 == 0 and "[SKIP]" in decode(out2), "copy 模式重复安装不幂等"
+        rc3, _, err3 = run(cmd + ["--force"])
+        assert rc3 == 0 and (dest / "SKILL.md").exists(), \
+            f"--force 覆盖失败：{decode(err3)[:200]}"
+        return True, "copy 模式安装/幂等/--force 覆盖通过（Linux/Windows 通用）"
+
+    def install_without_tomllib():
+        target = TMP / "install_no_tomllib"
+        shutil.rmtree(str(target), ignore_errors=True)
+        (target / ".codex").mkdir(parents=True)
+        config = target / ".codex" / "config.toml"
+        config.write_text("", encoding="utf-8")
+        install_py = REPO / "tools" / "install.py"
+        probe = TMP / "no_tomllib_probe.py"
+        probe.write_text(
+            "import runpy, sys\n"
+            "sys.modules['tomllib'] = None\n"
+            f"sys.argv = [{str(install_py)!r}, '--target-root', {str(target)!r}, "
+            "'--platform', 'codex']\n"
+            f"runpy.run_path({str(install_py)!r}, run_name='__main__')\n",
+            encoding="utf-8")
+        rc, out, err = run([PYTHON, "-I", probe])
+        assert rc == 0, f"无 tomllib 时应降级退出 0，实际 {rc}：{decode(err)[:300]}"
+        text = decode(out)
+        assert "[WARN]" in text and "tomllib" in text, f"缺少降级告警：{text[:300]}"
+        assert config.read_text(encoding="utf-8").count(
+            "# >>> prompt-reverse-engineer >>>") == 1, "降级后未写入标记块"
+        return True, "模拟 Python 3.10（无 tomllib）降级告警并继续，退出 0"
+
+    def negative_duplicate_dims():
+        dims = [{"key": k, "score": 80, "note": "x"} for k in WEIGHTS]
+        dims.append({"key": "theme_clarity", "score": 90, "note": "dup"})
+        path = TMP / "dup_dims.json"
+        path.write_text(json.dumps(dims, ensure_ascii=False), encoding="utf-8")
+        rc, _, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "score",
+                          "--analysis", FIXTURES / "semantic_text.json",
+                          "--dims", path])
+        assert rc == 4, f"重复评分维度应退出码 4，实际 {rc}"
+        assert "重复" in decode(err), f"未提示重复：{decode(err)[:200]}"
+        return True, "重复评分维度退出码 4"
+
+    def negative_scene_numbering():
+        base = json.loads((FIXTURES / "semantic_story.json").read_text(encoding="utf-8"))
+
+        def attempt(numbers, name):
+            data = json.loads(json.dumps(base, ensure_ascii=False))
+            for scene, number in zip(data["semantic_analysis"]["scenes"], numbers):
+                scene["scene_no"] = number
+            path = TMP / f"story_numbering_{name}.json"
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            rc, _, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "scenes",
+                              "--analysis", path, "--auto"])
+            return rc, decode(err)
+
+        rc, err = attempt([1, 1], "dup")
+        assert rc == 4 and "重复" in err, f"重复场景号应退出码 4，实际 {rc}：{err[:200]}"
+        rc, err = attempt([1, 3], "gap")
+        assert rc == 4 and "连续" in err, f"跳号场景应退出码 4，实际 {rc}：{err[:200]}"
+        return True, "重复/跳号 scene_no 均退出码 4"
+
+    def all_templates_render():
+        cases = (
+            ("semantic_text.json", "text", ("gpt4_claude", "deepseek")),
+            ("semantic_image.json", "image", ("midjourney", "stable_diffusion",
+                                              "flux2", "gpt_image", "nano_banana")),
+            ("semantic_video.json", "video", ("sora2", "runway", "veo3")),
+        )
+        rendered_models, total = set(), 0
+        for fixture, modality, models in cases:
+            rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                                "--analysis", FIXTURES / fixture,
+                                "--models", ",".join(models)])
+            data = stdout_json(rc, out, err)
+            rendered = {p["model"] for p in data["prompts"]}
+            missing = set(models) - rendered
+            assert not missing, f"{modality} 模态未渲染：{sorted(missing)}"
+            assert all(p["text"].strip() for p in data["prompts"]), "存在空 Prompt"
+            rendered_models |= rendered
+            total += len(data["prompts"])
+        assert len(rendered_models) == 10, f"渲染模型数 {len(rendered_models)} != 10"
+        return True, f"10 个模型模板均渲染出非空 Prompt（共 {total} 条）"
+
     checks = [
         ("单元层/analyze_text", unit_text),
         ("单元层/analyze_image", unit_image),
@@ -825,7 +1015,11 @@ def main():
         ("负向层/缺字段", negative_missing_field),
         ("负向层/未知模型", negative_unknown_model),
         ("负向层/坏文件", negative_bad_file),
+        ("负向层/重复评分维度", negative_duplicate_dims),
+        ("负向层/场景编号", negative_scene_numbering),
         ("安装层/install 冒烟", install_smoke),
+        ("安装层/copy 模式冒烟", install_copy_smoke),
+        ("安装层/Python 3.10 降级", install_without_tomllib),
         ("豆包兼容/YAML frontmatter", doubao_frontmatter),
         ("场景①/营销文案→GPT Prompt", scenario_text),
         ("场景②/赛博朋克图→MJ Prompt", scenario_image),
@@ -838,12 +1032,27 @@ def main():
         ("DeepSeek/目标模型模板", deepseek_template),
         ("模板层/多模型契约与排版", new_templates_contract),
         ("模板层/GPT Image 五任务模式", gpt_image_modes),
+        ("模板层/十模型全量渲染", all_templates_render),
         ("安全层/归一化绕过", security_normalization),
         ("安全层/注入标记", injection_flags),
         ("安全层/模板 schema", template_schema),
         ("安全层/下载防护", net_guard),
+        ("一致性/VERSION 与清单", version_consistency),
+        ("一致性/Codex 清单文案", codex_manifest_sync),
+        ("一致性/豆包脚本清单", doubao_script_inventory),
+        ("一致性/豆包产物可复现", doubao_reproducible),
+        ("一致性/依赖声明", dependency_docs),
+        ("一致性/README 断言数", readme_assertion_counts),
+        ("一致性/示例可复现", examples_reproducible),
     ]
-    for name, fn in checks:
+    global CHECKS_TOTAL
+    CHECKS_TOTAL = len(checks)
+    selected = [(name, fn) for name, fn in checks
+                if not args.filter or any(sub in name for sub in args.filter)]
+    if not selected:
+        print(f"错误：--filter {' '.join(args.filter)} 未匹配任何检查", file=sys.stderr)
+        sys.exit(2)
+    for name, fn in selected:
         check(name, fn)
 
     failed = [r for r in RESULTS if not r[1]]
@@ -860,4 +1069,5 @@ def main():
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     main()
