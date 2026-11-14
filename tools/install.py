@@ -255,6 +255,25 @@ def install_codex(mode, target_root, dry_run, force, actions):
         actions.append(("ok", "codex", f"已向 {config_path} 追加注册块"))
 
 
+TEXT_SUFFIXES = {".md", ".py", ".json", ".txt", ".yaml", ".yml"}
+
+
+def normalize_newlines(text: str) -> str:
+    """统一为 LF：Windows 检出为 CRLF 时，豆包产物仍保持逐字节可复现。"""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def normalize_tree(root: Path):
+    """把目录内文本文件的行尾统一为 LF（二进制文件按后缀跳过）。"""
+    for path in root.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
+            continue
+        data = path.read_bytes()
+        fixed = normalize_newlines(data.decode("utf-8")).encode("utf-8")
+        if fixed != data:
+            path.write_bytes(fixed)
+
+
 def build_doubao_body():
     """把 SKILL.md + references 扁平化为单一中文指令正文（确定性）。"""
     scripts = sorted(p.name for p in (SKILL_SRC / "scripts").glob("*.py"))
@@ -282,7 +301,7 @@ def build_doubao_body():
         "",
     ]
     for path in DOUBAO_SOURCES:
-        text = path.read_text(encoding="utf-8")
+        text = normalize_newlines(path.read_text(encoding="utf-8"))
         # 去掉 SKILL.md 的 frontmatter
         if text.startswith("---"):
             parts = text.split("---", 2)
@@ -307,7 +326,7 @@ def extract_skill_description():
 
     豆包技能包的 description 必须与技能本体一致，手写副本必然漂移，故直接读取。
     """
-    text = (SKILL_SRC / "SKILL.md").read_text(encoding="utf-8")
+    text = normalize_newlines((SKILL_SRC / "SKILL.md").read_text(encoding="utf-8"))
     parts = text.split("---", 2)
     if len(parts) < 3:
         raise SystemExit("错误：技能本体 SKILL.md 缺少 YAML frontmatter")
@@ -324,7 +343,7 @@ def build_doubao_instruction(dry_run, actions):
         return
     body = build_doubao_body()
     DOUBAO_DIR.mkdir(parents=True, exist_ok=True)
-    DOUBAO_FILE.write_text(body, encoding="utf-8")
+    DOUBAO_FILE.write_text(body, encoding="utf-8", newline="\n")
     # 豆包上传版：SKILL.md 必须含 YAML 格式的 name + description（豆包上传校验要求）
     pkg_dir = DOUBAO_DIR / "prompt-reverse-engineer"
     pkg_dir.mkdir(parents=True, exist_ok=True)
@@ -334,7 +353,8 @@ def build_doubao_instruction(dry_run, actions):
         f"description: {extract_skill_description()}\n"
         "---\n"
     )
-    (pkg_dir / "SKILL.md").write_text(frontmatter + "\n" + body, encoding="utf-8")
+    (pkg_dir / "SKILL.md").write_text(frontmatter + "\n" + body, encoding="utf-8",
+                                      newline="\n")
     # 完全体：同步技能本体的 scripts / references / assets（模板是编译器运行时依赖）
     for sub in ("scripts", "references", "assets"):
         dest = pkg_dir / sub
@@ -342,6 +362,7 @@ def build_doubao_instruction(dry_run, actions):
             shutil.rmtree(str(dest))
         shutil.copytree(str(SKILL_SRC / sub), str(dest),
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        normalize_tree(dest)
     # 打包 zip（豆包上传用）：固定时间戳保证可复现
     import zipfile
     zip_path = DOUBAO_DIR / "prompt-reverse-engineer.zip"

@@ -352,3 +352,61 @@ GitHub Actions 修复后：
 ### 脱敏
 
 本文不含密钥与绝对用户路径。
+
+## 2026-11-14 发布 v2.1.0
+
+### 摘要
+
+固化阶段 0–3 成果：豆包产物行尾归一化、发布检查表、README/CI 断言数同步，发布 `v2.1.0`。
+
+### 背景（基线）
+
+- 发布前：`VERSION` 2.1.0、`plugin.json` 2.1.0（阶段 2 已对齐）；`verify.py` 44/44。
+- 已知偏差：Windows `core.autocrlf=true` 检出时，重新生成的豆包 zip 与提交版本不一致（差 17 字节及以上），阶段 3 记录为「留待发布阶段评估」。
+
+### 变更清单（旧值 → 新值）
+
+| 位置 | 旧值 | 新值 |
+|---|---|---|
+| `tools/install.py` | 直接 `read_text` / `copytree`，`write_text` 走平台默认换行 | 新增 `normalize_newlines` / `normalize_tree`，写入显式 `newline="\n"`，豆包产物恒为 LF |
+| `tools/verify.py` | 44 项断言 | 45 项：新增 `一致性/豆包产物换行`（归一化函数 + 指令文本/zip 内文本无 CRLF） |
+| `README.md` | 44 项断言（树与说明） | 45 项；目录树补 `docs/RELEASE.md` |
+| `.github/workflows/verify.yml` | 步骤名 44 项 | 45 项 |
+| `docs/RELEASE.md` | 不存在 | 发布检查表（版本源、tag/Release、发布后核对、历史版本） |
+| 豆包 zip | 390614 字节（内部混有 CRLF） | 390286 字节（内部文本 LF） |
+
+### 生效方式
+
+随 `main` 发布；安装器与 CI 自动使用新逻辑。非 Windows 平台生成结果与 Windows 完全一致。
+
+### 验证（真实输出）
+
+```text
+== 验证汇总 ==
+通过 45 / 45
+全部通过 ✔
+```
+
+```text
+[PASS] text_example/output.md 与生成结果一致
+[PASS] image_example/output.md 与生成结果一致
+[PASS] video_example/output.md 与生成结果一致
+[PASS] story_example/output.md 与生成结果一致
+```
+
+`python tools/install.py --platform doubao` 后 `git diff --name-only` 仅 5 个预期文件；
+包内文本文件（`git ls-files --eol` 显示 `w/lf`）与 zip 内条目均无 CRLF。
+
+### 偏差
+
+- 仓库描述在阶段 0–1 已含十模型/五平台，本次只核对未改写。
+- 发布当天 git 协议到 github.com 间歇不可达，tag/Release 若无法 `git push` 则改走 GitHub API（`gh release create --target main`）。
+
+### 回滚
+
+`git revert` 发布提交；`gh release delete v2.1.0 --yes` 并删除远端 tag；豆包产物恢复为归档 zip。
+无数据迁移。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径。
