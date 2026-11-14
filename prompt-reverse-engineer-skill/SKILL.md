@@ -18,7 +18,7 @@ description: "多模态 Prompt 逆向工程技能。当用户提供一段文本�
 1. **识别**：判定输入模态（text / image / video）与来源（本地路径 / URL / 直接粘贴）。粘贴的文本写入技能目录外的临时文件；URL 可直接交给脚本下载；检查输入可读，失败按第 5 节处理。
 2. **分析**：运行 `scripts/` 下对应脚本获取 `local_features` 确定性信号（脚本用法见第 6 节）。**图像/视频必须 Read 关键帧或原图**，用多模态能力完成语义分析（主体/风格/结构等）；宿主无视觉能力时按第 5 节「宿主能力自适配」降级。
 3. **推理**：按 `references/prompt_framework.md` 第二节的规范字段表，把语义结论整理为 `semantic_analysis` 对象写入 JSON 文件（示例：`tools/fixtures/semantic_*.json`，字段名必须与契约一致）。
-4. **编译**：运行 `prompt_compiler.py all --analysis <json> --models <目标> --dims <评分json>`。用户未指定模型时用默认值（Midjourney V8.2 + GPT-5.5/Claude 5.5 双版本）；需要排版稿时加 `--format md`。
+4. **编译**：运行 `prompt_compiler.py all --analysis <json> --models <目标> --dims <评分json>`。用户未指定模型时用默认值（Midjourney V8.2 + GPT-5.5/Claude 5.5 双版本）；需要排版稿时加 `--format md`。复刻已有图 / 编辑已有图 / 按参考图生成 / 多图融合时，在 `semantic_analysis` 写 `task_type`（五枚举），或用 `--kind prompt|recreate|edit|reference_guided|compose` 指定用途。
 5. **评分**：按 `references/prompt_framework.md` 第三节 rubric 逐维给 0-100 分（评分 JSON 格式：`[{"key": "维度key", "score": 分数, "note": "一句话依据"}]`）。采纳 1-2 条优化建议，若低分维度源于语义字段缺失，**回第 3 步补全后重编一轮**。
 6. **输出**：按第 4 节格式组织最终答复。
 
@@ -35,7 +35,7 @@ description: "多模态 Prompt 逆向工程技能。当用户提供一段文本�
 
 1. **元信息卡**：一行表格列出模态、来源、目标模型（含版本号）、宿主能力（原生视觉 / 长上下文 / 脚本可执行）。
 2. **分析摘要**：特征要点 3-8 条（引用脚本数据与关键帧观察）。
-3. **Prompt 列表**：每个目标模型一条——小标题 `模型展示名（版本） · 用途` + 代码块包裹完整 Prompt。MJ 输出 `/imagine` 原样可粘贴（negative 版整段带 `--no`）；SD 正负分离并附参数行；FLUX.2 无负向、按自然语言长句；GPT Image / Nano Banana 用分段标签；文本模型用 Markdown 六要素，DeepSeek 版额外带首行模型快照/思考档与独立「推理要求」段。未指定模型时输出 Midjourney V8.2 + GPT-5.5/Claude 5.5 两版本。
+3. **Prompt 列表**：每个目标模型一条——小标题 `模型展示名（版本） · 用途` + 代码块包裹完整 Prompt。MJ 输出 `/imagine` 原样可粘贴（negative 版整段带 `--no`）；SD 正负分离并附参数行；FLUX.2 无负向、按自然语言长句；GPT Image / Nano Banana 用分段标签（GPT Image 按 `task_type` 出五种任务模式之一：文生图 / 复刻 / 编辑 / 参考生成 / 融合）；文本模型用 Markdown 六要素，DeepSeek 版额外带首行模型快照/思考档与独立「推理要求」段。未指定模型时输出 Midjourney V8.2 + GPT-5.5/Claude 5.5 两版本。
 4. **评分报告**：Markdown 表格（维度 / 权重 / 得分 / 依据）+ 总分与等级 + 1-2 条优化建议。`prompt_compiler.py all --format md` 可直接产出该排版。
 5. **使用提示**：说明哪些占位需替换、如何微调（换风格词、换比例参数）；负向词不被某模型支持时（如 FLUX.2）明确告知；有参考图时说明每张图的角色。
 
@@ -84,17 +84,17 @@ description: "多模态 Prompt 逆向工程技能。当用户提供一段文本�
 | analyze_image.py | `<input> [--max-size 4096] [-o out.json]` | 图片信号信封 JSON |
 | analyze_video.py | `<input> [--max-seconds 120] [-o out.json]` | 镜头切分+关键帧路径信封 JSON |
 | analyze_scenes.py | `<input> [-o out.json]` | 叙事文本场景切分信号信封 JSON |
-| prompt_compiler.py | `all \| compile \| score \| filter \| scenes \| validate-templates` 子命令（`--help` 查看参数） | 编译/评分/过滤/逐场景编译/模板校验结果 |
+| prompt_compiler.py | `all \| compile \| score \| filter \| scenes \| validate-templates` 子命令（`--help` 查看参数）；`compile`/`all` 支持 `--kind prompt\|recreate\|edit\|reference_guided\|compose` | 编译/评分/过滤/逐场景编译/模板校验结果 |
 
 场景化编译：`python <技能目录>/scripts/prompt_compiler.py scenes --analysis story.json [--image-models mj,sd] [--video-models sora] [--dims dims.json | --auto] [--format md]`，story JSON 契约见 `references/prompt_framework.md` 2.5 节；`--dims` 为逐场景评分 `[{scene_no, dims: [{key, score, note}]}]`。`--format md` 输出场景总览表 + Prompt 卡片 + 评分表。
 
 模板自检：`python <技能目录>/scripts/prompt_compiler.py validate-templates` 一次列出全部问题（元数据/日期/占位符/大括号/`kind_requires`），有错退出码 4；新增模型后先跑一次。
 
-统一约定：信封 `{schema_version, tool, modality, input, local_features}`；退出码 `0 成功 / 1 用法 / 2 输入不可读 / 3 下载失败 / 4 解码失败或缺字段 / 5 安全阻断`；同输入输出逐字节一致（幂等）。字段契约与评分细则唯一权威见 `references/prompt_framework.md`。
+统一约定：信封 `{schema_version, tool, modality, input, local_features}`；退出码 `0 成功 / 1 用法（含无模型支持该用途）/ 2 输入不可读 / 3 下载失败或超限 / 4 契约错误（解码失败、缺字段、嵌套对象、类型不符、参考图编号冲突、task_type 与 --kind 冲突）/ 5 安全阻断`；同输入输出逐字节一致（幂等）。字段契约与评分细则唯一权威见 `references/prompt_framework.md`。
 
 ## 7. 参考索引
 
-- `references/prompt_framework.md` —— 六要素结构 + 字段契约（含 2.5 节 story 场景化）+ 评分细则 + 安全规则 + 建议库 + 扩展指南（**必读**）
+- `references/prompt_framework.md` —— 六要素结构 + 字段契约（含 2.3.1 task_type 五用途、2.3.2 视觉规格扩展字段、2.5 节 story 场景化）+ 评分细则 + 安全规则 + 建议库 + 扩展指南（**必读**）
 - `references/image_rules.md` —— 摄影参数/构图/光影/色彩/风格词库 + 七段结构与负向三类
 - `references/video_rules.md` —— 景别/运镜/叙事/分镜规范
 - `references/model_mappings.md` —— 十模型格式映射表（MJ V8.2 / SD 3.5 / FLUX.2 / GPT Image 2.5 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1）+ 场景化默认模型 + DeepSeek 思考档位 + 版本迁移注记

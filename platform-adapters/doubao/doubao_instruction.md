@@ -27,7 +27,7 @@
 1. **识别**：判定输入模态（text / image / video）与来源（本地路径 / URL / 直接粘贴）。粘贴的文本写入技能目录外的临时文件；URL 可直接交给脚本下载；检查输入可读，失败按第 5 节处理。
 2. **分析**：运行 `scripts/` 下对应脚本获取 `local_features` 确定性信号（脚本用法见第 6 节）。**图像/视频必须 Read 关键帧或原图**，用多模态能力完成语义分析（主体/风格/结构等）；宿主无视觉能力时按第 5 节「宿主能力自适配」降级。
 3. **推理**：按 `references/prompt_framework.md` 第二节的规范字段表，把语义结论整理为 `semantic_analysis` 对象写入 JSON 文件（示例：`tools/fixtures/semantic_*.json`，字段名必须与契约一致）。
-4. **编译**：运行 `prompt_compiler.py all --analysis <json> --models <目标> --dims <评分json>`。用户未指定模型时用默认值（Midjourney V8.2 + GPT-5.5/Claude 5.5 双版本）；需要排版稿时加 `--format md`。
+4. **编译**：运行 `prompt_compiler.py all --analysis <json> --models <目标> --dims <评分json>`。用户未指定模型时用默认值（Midjourney V8.2 + GPT-5.5/Claude 5.5 双版本）；需要排版稿时加 `--format md`。复刻已有图 / 编辑已有图 / 按参考图生成 / 多图融合时，在 `semantic_analysis` 写 `task_type`（五枚举），或用 `--kind prompt|recreate|edit|reference_guided|compose` 指定用途。
 5. **评分**：按 `references/prompt_framework.md` 第三节 rubric 逐维给 0-100 分（评分 JSON 格式：`[{"key": "维度key", "score": 分数, "note": "一句话依据"}]`）。采纳 1-2 条优化建议，若低分维度源于语义字段缺失，**回第 3 步补全后重编一轮**。
 6. **输出**：按第 4 节格式组织最终答复。
 
@@ -44,7 +44,7 @@
 
 1. **元信息卡**：一行表格列出模态、来源、目标模型（含版本号）、宿主能力（原生视觉 / 长上下文 / 脚本可执行）。
 2. **分析摘要**：特征要点 3-8 条（引用脚本数据与关键帧观察）。
-3. **Prompt 列表**：每个目标模型一条——小标题 `模型展示名（版本） · 用途` + 代码块包裹完整 Prompt。MJ 输出 `/imagine` 原样可粘贴（negative 版整段带 `--no`）；SD 正负分离并附参数行；FLUX.2 无负向、按自然语言长句；GPT Image / Nano Banana 用分段标签；文本模型用 Markdown 六要素，DeepSeek 版额外带首行模型快照/思考档与独立「推理要求」段。未指定模型时输出 Midjourney V8.2 + GPT-5.5/Claude 5.5 两版本。
+3. **Prompt 列表**：每个目标模型一条——小标题 `模型展示名（版本） · 用途` + 代码块包裹完整 Prompt。MJ 输出 `/imagine` 原样可粘贴（negative 版整段带 `--no`）；SD 正负分离并附参数行；FLUX.2 无负向、按自然语言长句；GPT Image / Nano Banana 用分段标签（GPT Image 按 `task_type` 出五种任务模式之一：文生图 / 复刻 / 编辑 / 参考生成 / 融合）；文本模型用 Markdown 六要素，DeepSeek 版额外带首行模型快照/思考档与独立「推理要求」段。未指定模型时输出 Midjourney V8.2 + GPT-5.5/Claude 5.5 两版本。
 4. **评分报告**：Markdown 表格（维度 / 权重 / 得分 / 依据）+ 总分与等级 + 1-2 条优化建议。`prompt_compiler.py all --format md` 可直接产出该排版。
 5. **使用提示**：说明哪些占位需替换、如何微调（换风格词、换比例参数）；负向词不被某模型支持时（如 FLUX.2）明确告知；有参考图时说明每张图的角色。
 
@@ -93,17 +93,17 @@
 | analyze_image.py | `<input> [--max-size 4096] [-o out.json]` | 图片信号信封 JSON |
 | analyze_video.py | `<input> [--max-seconds 120] [-o out.json]` | 镜头切分+关键帧路径信封 JSON |
 | analyze_scenes.py | `<input> [-o out.json]` | 叙事文本场景切分信号信封 JSON |
-| prompt_compiler.py | `all \| compile \| score \| filter \| scenes \| validate-templates` 子命令（`--help` 查看参数） | 编译/评分/过滤/逐场景编译/模板校验结果 |
+| prompt_compiler.py | `all \| compile \| score \| filter \| scenes \| validate-templates` 子命令（`--help` 查看参数）；`compile`/`all` 支持 `--kind prompt\|recreate\|edit\|reference_guided\|compose` | 编译/评分/过滤/逐场景编译/模板校验结果 |
 
 场景化编译：`python <技能目录>/scripts/prompt_compiler.py scenes --analysis story.json [--image-models mj,sd] [--video-models sora] [--dims dims.json | --auto] [--format md]`，story JSON 契约见 `references/prompt_framework.md` 2.5 节；`--dims` 为逐场景评分 `[{scene_no, dims: [{key, score, note}]}]`。`--format md` 输出场景总览表 + Prompt 卡片 + 评分表。
 
 模板自检：`python <技能目录>/scripts/prompt_compiler.py validate-templates` 一次列出全部问题（元数据/日期/占位符/大括号/`kind_requires`），有错退出码 4；新增模型后先跑一次。
 
-统一约定：信封 `{schema_version, tool, modality, input, local_features}`；退出码 `0 成功 / 1 用法 / 2 输入不可读 / 3 下载失败 / 4 解码失败或缺字段 / 5 安全阻断`；同输入输出逐字节一致（幂等）。字段契约与评分细则唯一权威见 `references/prompt_framework.md`。
+统一约定：信封 `{schema_version, tool, modality, input, local_features}`；退出码 `0 成功 / 1 用法（含无模型支持该用途）/ 2 输入不可读 / 3 下载失败或超限 / 4 契约错误（解码失败、缺字段、嵌套对象、类型不符、参考图编号冲突、task_type 与 --kind 冲突）/ 5 安全阻断`；同输入输出逐字节一致（幂等）。字段契约与评分细则唯一权威见 `references/prompt_framework.md`。
 
 ### 7. 参考索引
 
-- `references/prompt_framework.md` —— 六要素结构 + 字段契约（含 2.5 节 story 场景化）+ 评分细则 + 安全规则 + 建议库 + 扩展指南（**必读**）
+- `references/prompt_framework.md` —— 六要素结构 + 字段契约（含 2.3.1 task_type 五用途、2.3.2 视觉规格扩展字段、2.5 节 story 场景化）+ 评分细则 + 安全规则 + 建议库 + 扩展指南（**必读**）
 - `references/image_rules.md` —— 摄影参数/构图/光影/色彩/风格词库 + 七段结构与负向三类
 - `references/video_rules.md` —— 景别/运镜/叙事/分镜规范
 - `references/model_mappings.md` —— 十模型格式映射表（MJ V8.2 / SD 3.5 / FLUX.2 / GPT Image 2.5 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1）+ 场景化默认模型 + DeepSeek 思考档位 + 版本迁移注记
@@ -172,6 +172,41 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 | target_style | 可选 | 风格迁移/编辑目标，如 `"宫崎骏动画风格"`（style_transfer / edit 模板用；未提供时不渲染该用途） |
 | text_content | 可选 | 需要画面精确渲染的文字（海报标题、招牌、字幕），如 `"APS 2077"`。GPT Image / Nano Banana / MJ 会显式标注 |
 | reference_note | 可选 | 参考图说明：每张图的角色与用途，如 `"参考图 1：人物造型；参考图 2：霓虹配色"`。写清「哪张图控制什么」，避免模型混用 |
+
+##### 2.3.1 任务模式（task_type）与五用途
+
+`semantic_analysis.task_type` 取以下五枚举之一，`prompt_compiler.py` 据此只渲染对应用途（kind）；也可在 `compile` / `all` 用 `--kind <kind>` 显式指定。两者同时给出且不一致 → 退出码 4。只给 `task_type` 时，模板没有该用途的模型保持原有全部渲染；显式 `--kind` 且没有任何模型支持 → 退出码 1。不传 `task_type` / `--kind` 时行为与旧版一致（渲染模板内全部适用用途）。
+
+| task_type | kind | 含义 | 声明后必填的扩展字段 |
+|---|---|---|---|
+| text_to_image | prompt | 文生图（默认） | 无 |
+| image_recreation | recreate | 按参考图复刻 | subject_position、spatial |
+| image_editing | edit | 单点编辑已有图 | modification_scope、preserve_constraints、forbidden_changes |
+| reference_guided | reference_guided | 参考图各定角色生成新图 | reference_images、spatial |
+| image_composition | compose | 多参考图融合构图 | reference_images、spatial |
+
+必填校验只在声明 `task_type` 时生效（缺失 → 退出码 4，并列出字段名）；不声明时保持旧行为，缺失的可选字段在渲染时清理为空。
+
+##### 2.3.2 视觉规格扩展字段（扁平契约）
+
+以下字段与 2.3 表同属 `semantic_analysis` 顶层，**必须是字符串或字符串数组**：任何键的值是嵌套对象（dict）都会以退出码 4 拒绝，避免 `str(dict)` 把 Python 表示写进 Prompt。
+
+| 字段 | 类型 | 说明与示例 |
+|---|---|---|
+| subject_position | string | 主体位置，如 `"画面左侧三分线，人物朝画面右侧行走"` |
+| subject_scale | string | 主体占比，如 `"人物约占画面高度三分之一"` |
+| shot_type | string | 景别，如 `"中景"`、`"特写"` |
+| camera_angle | string | 机位角度，如 `"平视略仰，镜头与人物胸口齐平"` |
+| spatial | string | 空间关系：前/中/背景各有什么、谁遮挡谁，如 `"前景积水倒映霓虹，中景行人与透明伞，背景为虚化的广告灯牌"` |
+| material | string | 材质质感：`"透明伞面挂着水珠，湿滑柏油路面，金属灯箱"` |
+| preserve_constraints | string[] | 必须保留的要素，如 `["人物姿态与服装", "街道材质与反光"]` |
+| forbidden_changes | string[] | 禁止发生的变化，如 `["不改变镜头焦段", "不新增画面文字"]` |
+| modification_scope | string[] | 编辑范围（一次只改一件事），如 `["仅替换背景灯牌内容"]` |
+| reference_images | string[] | 参考图角色表，每项 `"图N：角色说明"`，如 `["图1：人物姿态与服装参考", "图2：霓虹配色与灯光参考"]` |
+| task_type | string | 五枚举任务模式，见 2.3.1 |
+| uncertainty | string[] | 素材无法确认的项，如 `["广告牌具体文字 unknown"]`；**不进 Prompt 正文**，仅在说明中提示需人工确认（细则见阶段 3） |
+
+参考图编号规则：每项必须以「图N：」开头，编号在同一 `reference_images` 内唯一；缺编号或编号重复 → 退出码 4。渲染时一行一张，确保模型按图对应角色。数组字段渲染分隔：`reference_images` 逐行；其余按内容语言选择「、」或 `", "`。
 
 #### 2.4 视频模态字段（modality=video）
 
@@ -528,7 +563,7 @@ storyboard 为对象数组，每项字段如下（与 `prompt_framework.md` 2.4 
 | `midjourney` | Midjourney V8.2 | 8.2 | image | positive / negative / style_transfer | `mj` |
 | `stable_diffusion` | Stable Diffusion 3.5 | 3.5 | image | positive / negative / params / style_transfer | `sd`, `sd3.5` |
 | `flux2` | FLUX.2 [pro] | 2 | image | positive / params / style_transfer | `flux`, `flux2` |
-| `gpt_image` | GPT Image 2.5 | 2.5 | image | prompt / params / edit | `gpt-image`, `dalle` |
+| `gpt_image` | GPT Image 2.5 | 2.5 | image | prompt / params / recreate / edit / reference_guided / compose | `gpt-image`, `dalle` |
 | `nano_banana` | Nano Banana Pro | 3 | image | prompt / params / edit | `nano-banana`, `nb` |
 | `gpt4_claude` | GPT-5.5 / Claude 5.5 | 5.5 | text / image / video | replicate / optimize（文本）；replicate（图/视频）；storyboard（视频） | `gpt4`, `gpt-5.5`, `claude-5.5` |
 | `deepseek` | DeepSeek V4.1 Flash 1017 | 4.1 | text / image / video | replicate / optimize；image replicate；video storyboard | `ds`, `deepseek-flash`, `deepseek-1017` |
@@ -536,7 +571,7 @@ storyboard 为对象数组，每项字段如下（与 `prompt_framework.md` 2.4 
 | `runway` | Runway Gen-4.5 | 4.5 | video | storyboard / replicate / params | `runway`, `gen-4.5` |
 | `veo3` | Veo 3.1 | 3.1 | video | storyboard / negative / params | `veo`, `veo-3.1` |
 
-`kind_requires` 控制条件渲染：`negative` 仅在 `negative_words` 非空时输出，`style_transfer` / `edit` 仅在 `target_style` 非空时输出。避免产出空负向块或空改写指令。
+`kind_requires` 控制条件渲染：`negative` 仅在 `negative_words` 非空时输出，`style_transfer` / `edit` 仅在 `target_style` 非空时输出。避免产出空负向块或空改写指令。门控字段可以是任意 `optional_fields` / `default_params` 中的字段（如 GPT Image 的 `reference_images`），为数组时按「存在非空项」判定。可选字段缺省时默认只清空标签文字并保留空行；模板声明 `"clean_empty_label_lines": true` 后整行连同换行删除（GPT Image 规格书式排版使用）。
 
 ### 3. 图像模型
 
@@ -576,24 +611,45 @@ Guidance: 4.5, Steps: 28, Aspect ratio: 16:9
 
 #### 3.4 GPT Image 2.5
 
-```text
-Create an image with the following specification.
+五种任务模式各对应一个用途（kind），编译时按 `task_type` / `--kind` 只渲染其中一个（映射见 `prompt_framework.md` 2.3.1 节）：
 
-Subject: ...
-Scene: ...
-Style: ...
-Lighting: ...
-Color: ...
-Composition: ...
-Camera: ...
-Quality: ...
-Text in image: ...
-References: ...
-Constraints: render all text exactly as written; no extra text, logos, or watermarks. {negative_words}
+```text
+prompt（文生图）
+Create an image with the following specification.
+Subject: ... Position: ... Scale: ... Spatial layout: ... Scene: ...
+Shot: ... Camera angle: ... Style: ... Lighting: ... Color: ...
+Composition: ... Camera: ... Material: ... Quality: ... Text in image: ...
+References: ... Constraints: render all text exactly as written; no extra text, logos, or watermarks. {negative_words}
+
+recreate（按参考图复刻）
+Recreate the referenced image as faithfully as possible.
+Subject / Position / Scale / Spatial layout / Shot / Camera angle / Lighting / Color / Material / Style
+Preserve: ... Avoid: ... Do not invent details that are not visible in the reference; do not restyle the image.
+
+edit（单点编辑）
+Edit the provided image.
+Change: ... Modification scope: ...
+Preserve unchanged: ... Do not change: ...
+Keep all other content, composition, lighting, color and existing text exactly as is.
+
+reference_guided（参考图定角色生成新图）
+Create an image using the provided references.
+Reference roles:（每张参考图一行，图N：角色说明）
+Subject / Spatial layout / Style / Lighting / Color / Composition / Material
+Constraints: use each reference only for its assigned role; do not transfer unlisted attributes. {negative_words}
+
+compose（多参考图融合）
+Compose a new image from the provided references.
+Element sources:（每张参考图一行）
+Placement / Scale / Spatial layout / Style / Lighting / Color / Composition
+Constraints: match perspective, light direction, color temperature and material across all elements; do not simply collage the references.
 ```
 
 - 结构化「规格书」优于长串关键词；`Text in image` 只放需要精确渲染的原文，要求逐字复现。
-- 支持多轮编辑：`edit` 用途一次只改一件事（`target_style`），并显式要求保留主体身份、构图、光影与已有文字。
+- `edit` 一次只改一件事：`Change` 写修改目标（`target_style`），`Modification scope` 限定范围，`Preserve unchanged` / `Do not change` 分别写保留项与禁改项；`edit` 仅在提供 `modification_scope` 时渲染。
+- `recreate` 复刻参考图，`reference_guided` 让每张参考图只承担指定角色，`compose` 把多个参考元素合成同一画面（要求透视/光向/色温/材质一致，而不是拼贴）。
+- `reference_images` 每项格式为「图N：角色说明」，编号必须唯一且连续可辨；缺编号或重复 → 退出码 4。参考图逐行渲染，一行一张。
+- 本模板启用 `clean_empty_label_lines`：可选字段缺失时整行删除，避免规格书留下孤立空行（默认模板只清空标签、保留空行，以维持既有输出）。
 - 常用画幅共 10 种；模板默认 `16:9`，需要方形/竖版时改 `aspect_ratio`。
 
 #### 3.5 Nano Banana Pro（Gemini 3 Pro Image）
@@ -770,6 +826,6 @@ python scripts/prompt_compiler.py scenes --analysis story.json \
 
 1. 在 `assets/templates/` 新增 `<model>.json`，至少包含 `model` / `display_name` / `vendor` / `version` / `last_verified` / `alias` / `default_params` / `modalities`。
 2. `alias` 不得与其他模型冲突（编译器检测到冲突会退出码 4）。
-3. 可选字段放 `optional_fields`，条件渲染放 `kind_requires`，默认参数放 `default_params`。
+3. 可选字段放 `optional_fields`，条件渲染放 `kind_requires`，默认参数放 `default_params`；规格书式排版可加 `"clean_empty_label_lines": true` 删除空标签整行。
 4. 运行 `python tools/verify.py`，模板元数据、别名冲突、渲染清理会被自动检查。
 5. 同步更新本文件第 2 节注册表；不要改编译器代码。

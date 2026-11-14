@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "tool": "agent",
+  "modality": "image",
+  "semantic_analysis": {
+    "summary": [
+      "雨夜霓虹街道，行人撑透明伞占据左侧三分线",
+      "前景积水倒映霓虹，中景人物与伞，背景虚化灯牌",
+      "高对比冷色调，电影感雨夜氛围"
+    ],
+    "suggestions": [
+      "参考图编号与画面元素一一对应，避免模型串用素材"
+    ],
+    "task_type": "image_composition",
+    "subject": "雨夜街头一名撑透明伞的年轻行人",
+    "subject_position": "画面左侧三分线，人物朝画面右侧行走",
+    "subject_scale": "人物约占画面高度三分之一",
+    "scene": "雨夜霓虹街道，潮湿反光地面",
+    "spatial": "前景积水倒映霓虹，中景行人与透明伞，背景为虚化的广告灯牌",
+    "shot_type": "中景",
+    "camera_angle": "平视略仰，镜头与人物胸口齐平",
+    "composition": "三分法构图，人物位于左侧三分线，灯牌留白于右上方",
+    "lighting": "霓虹侧光与轮廓光，高对比夜色",
+    "color": "深蓝紫主色调，霓虹橙与青色点缀",
+    "style": "赛博朋克，电影感雨夜",
+    "material": "透明伞面挂着水珠，湿滑柏油路面，金属灯箱",
+    "photo_params": "广角镜头 24mm，f/2.8，深景深",
+    "quality_words": "ultra detailed, 8K, cinematic lighting",
+    "negative_words": "blurry, low quality, watermark, extra text",
+    "target_style": "赛博朋克，电影感雨夜",
+    "text_content": "APS 2077",
+    "reference_images": [
+      "图1：人物姿态与服装参考",
+      "图2：霓虹配色与灯光参考"
+    ],
+    "reference_note": "参考图 1：人物姿态；参考图 2：霓虹配色",
+    "preserve_constraints": [
+      "人物姿态与服装",
+      "街道材质与反光"
+    ],
+    "forbidden_changes": [
+      "不改变镜头焦段",
+      "不新增画面文字"
+    ],
+    "modification_scope": [
+      "仅替换背景灯牌内容"
+    ],
+    "uncertainty": [
+      "广告牌具体文字 unknown"
+    ]
+  }
+}

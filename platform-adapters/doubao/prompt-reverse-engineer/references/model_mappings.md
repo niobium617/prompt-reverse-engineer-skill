@@ -20,7 +20,7 @@
 | `midjourney` | Midjourney V8.2 | 8.2 | image | positive / negative / style_transfer | `mj` |
 | `stable_diffusion` | Stable Diffusion 3.5 | 3.5 | image | positive / negative / params / style_transfer | `sd`, `sd3.5` |
 | `flux2` | FLUX.2 [pro] | 2 | image | positive / params / style_transfer | `flux`, `flux2` |
-| `gpt_image` | GPT Image 2.5 | 2.5 | image | prompt / params / edit | `gpt-image`, `dalle` |
+| `gpt_image` | GPT Image 2.5 | 2.5 | image | prompt / params / recreate / edit / reference_guided / compose | `gpt-image`, `dalle` |
 | `nano_banana` | Nano Banana Pro | 3 | image | prompt / params / edit | `nano-banana`, `nb` |
 | `gpt4_claude` | GPT-5.5 / Claude 5.5 | 5.5 | text / image / video | replicate / optimize（文本）；replicate（图/视频）；storyboard（视频） | `gpt4`, `gpt-5.5`, `claude-5.5` |
 | `deepseek` | DeepSeek V4.1 Flash 1017 | 4.1 | text / image / video | replicate / optimize；image replicate；video storyboard | `ds`, `deepseek-flash`, `deepseek-1017` |
@@ -28,7 +28,7 @@
 | `runway` | Runway Gen-4.5 | 4.5 | video | storyboard / replicate / params | `runway`, `gen-4.5` |
 | `veo3` | Veo 3.1 | 3.1 | video | storyboard / negative / params | `veo`, `veo-3.1` |
 
-`kind_requires` 控制条件渲染：`negative` 仅在 `negative_words` 非空时输出，`style_transfer` / `edit` 仅在 `target_style` 非空时输出。避免产出空负向块或空改写指令。
+`kind_requires` 控制条件渲染：`negative` 仅在 `negative_words` 非空时输出，`style_transfer` / `edit` 仅在 `target_style` 非空时输出。避免产出空负向块或空改写指令。门控字段可以是任意 `optional_fields` / `default_params` 中的字段（如 GPT Image 的 `reference_images`），为数组时按「存在非空项」判定。可选字段缺省时默认只清空标签文字并保留空行；模板声明 `"clean_empty_label_lines": true` 后整行连同换行删除（GPT Image 规格书式排版使用）。
 
 ## 3. 图像模型
 
@@ -68,24 +68,45 @@ Guidance: 4.5, Steps: 28, Aspect ratio: 16:9
 
 ### 3.4 GPT Image 2.5
 
-```text
-Create an image with the following specification.
+五种任务模式各对应一个用途（kind），编译时按 `task_type` / `--kind` 只渲染其中一个（映射见 `prompt_framework.md` 2.3.1 节）：
 
-Subject: ...
-Scene: ...
-Style: ...
-Lighting: ...
-Color: ...
-Composition: ...
-Camera: ...
-Quality: ...
-Text in image: ...
-References: ...
-Constraints: render all text exactly as written; no extra text, logos, or watermarks. {negative_words}
+```text
+prompt（文生图）
+Create an image with the following specification.
+Subject: ... Position: ... Scale: ... Spatial layout: ... Scene: ...
+Shot: ... Camera angle: ... Style: ... Lighting: ... Color: ...
+Composition: ... Camera: ... Material: ... Quality: ... Text in image: ...
+References: ... Constraints: render all text exactly as written; no extra text, logos, or watermarks. {negative_words}
+
+recreate（按参考图复刻）
+Recreate the referenced image as faithfully as possible.
+Subject / Position / Scale / Spatial layout / Shot / Camera angle / Lighting / Color / Material / Style
+Preserve: ... Avoid: ... Do not invent details that are not visible in the reference; do not restyle the image.
+
+edit（单点编辑）
+Edit the provided image.
+Change: ... Modification scope: ...
+Preserve unchanged: ... Do not change: ...
+Keep all other content, composition, lighting, color and existing text exactly as is.
+
+reference_guided（参考图定角色生成新图）
+Create an image using the provided references.
+Reference roles:（每张参考图一行，图N：角色说明）
+Subject / Spatial layout / Style / Lighting / Color / Composition / Material
+Constraints: use each reference only for its assigned role; do not transfer unlisted attributes. {negative_words}
+
+compose（多参考图融合）
+Compose a new image from the provided references.
+Element sources:（每张参考图一行）
+Placement / Scale / Spatial layout / Style / Lighting / Color / Composition
+Constraints: match perspective, light direction, color temperature and material across all elements; do not simply collage the references.
 ```
 
 - 结构化「规格书」优于长串关键词；`Text in image` 只放需要精确渲染的原文，要求逐字复现。
-- 支持多轮编辑：`edit` 用途一次只改一件事（`target_style`），并显式要求保留主体身份、构图、光影与已有文字。
+- `edit` 一次只改一件事：`Change` 写修改目标（`target_style`），`Modification scope` 限定范围，`Preserve unchanged` / `Do not change` 分别写保留项与禁改项；`edit` 仅在提供 `modification_scope` 时渲染。
+- `recreate` 复刻参考图，`reference_guided` 让每张参考图只承担指定角色，`compose` 把多个参考元素合成同一画面（要求透视/光向/色温/材质一致，而不是拼贴）。
+- `reference_images` 每项格式为「图N：角色说明」，编号必须唯一且连续可辨；缺编号或重复 → 退出码 4。参考图逐行渲染，一行一张。
+- 本模板启用 `clean_empty_label_lines`：可选字段缺失时整行删除，避免规格书留下孤立空行（默认模板只清空标签、保留空行，以维持既有输出）。
 - 常用画幅共 10 种；模板默认 `16:9`，需要方形/竖版时改 `aspect_ratio`。
 
 ### 3.5 Nano Banana Pro（Gemini 3 Pro Image）
@@ -262,6 +283,6 @@ python scripts/prompt_compiler.py scenes --analysis story.json \
 
 1. 在 `assets/templates/` 新增 `<model>.json`，至少包含 `model` / `display_name` / `vendor` / `version` / `last_verified` / `alias` / `default_params` / `modalities`。
 2. `alias` 不得与其他模型冲突（编译器检测到冲突会退出码 4）。
-3. 可选字段放 `optional_fields`，条件渲染放 `kind_requires`，默认参数放 `default_params`。
+3. 可选字段放 `optional_fields`，条件渲染放 `kind_requires`，默认参数放 `default_params`；规格书式排版可加 `"clean_empty_label_lines": true` 删除空标签整行。
 4. 运行 `python tools/verify.py`，模板元数据、别名冲突、渲染清理会被自动检查。
 5. 同步更新本文件第 2 节注册表；不要改编译器代码。
