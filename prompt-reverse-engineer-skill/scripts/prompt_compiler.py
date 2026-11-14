@@ -179,6 +179,18 @@ NEW_LIST_FIELDS = ("preserve_constraints", "forbidden_changes",
 # 列表字段的连接方式：reference_images 每项一行，其余按语言选择分隔符
 LIST_JOINERS = {"reference_images": "\n"}
 REF_ID_RE = re.compile(r"图\s*(\d+)")
+# 参考图角色枚举（prompt_framework.md 2.3.3 / image_rules.md 第十一节）
+REFERENCE_ROLES = (
+    "edit_target", "identity_reference", "pose_reference",
+    "clothing_reference", "style_reference", "composition_reference",
+    "background_reference", "object_reference",
+)
+REFERENCE_ROLE_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(" + "|".join(REFERENCE_ROLES) + r")(?![A-Za-z0-9_])")
+# uncertainty 每项必须以置信度标签开头：observed / inferred / unknown
+UNCERTAINTY_TAG_RE = re.compile(r"^(observed|inferred|unknown)\s*[:：]\s*\S", re.I)
+UNCERTAINTY_ITEM_RE = re.compile(r"^(observed|inferred|unknown)\s*[:：]\s*(.+)$",
+                                 re.I | re.S)
 MODALITY_NAMES = {"text", "image", "video"}
 KIND_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -243,10 +255,21 @@ def validate_semantic(semantic, where="semantic_analysis"):
             if not match:
                 err(f"reference_images[{index}] 缺少「图N」编号：{item}")
             numbers.append(int(match.group(1)))
+            roles = REFERENCE_ROLE_RE.findall(item)
+            if not roles:
+                err(f"reference_images[{index}] 缺少角色枚举（"
+                    f"{'/'.join(REFERENCE_ROLES)}）：{item}")
+            if len(set(roles)) > 1:
+                err(f"reference_images[{index}] 声明了多个角色"
+                    f"（{', '.join(roles)}）；每张图只定一个角色")
         duplicated = sorted({n for n in numbers if numbers.count(n) > 1})
         if duplicated:
             err("reference_images 编号重复："
                 + ", ".join(f"图{n}" for n in duplicated))
+    for index, item in enumerate(semantic.get("uncertainty") or [], 1):
+        if not UNCERTAINTY_TAG_RE.match(str(item).strip()):
+            err(f"uncertainty[{index}] 必须以置信度标签开头"
+                f"（observed: / inferred: / unknown:）：{item}")
 
 
 def validate_task_contract(semantic, where="semantic_analysis"):
@@ -353,9 +376,13 @@ def template_errors(filename, t):
             leftover = re.sub(r"\{\w+\}", "", tmpl)
             if "{" in leftover or "}" in leftover:
                 err(f"modalities.{modality}.{kind} 含未闭合的大括号")
-            unknown = sorted(set(FIELD_RE.findall(tmpl)) - allowed_fields)
+            placeholders = set(FIELD_RE.findall(tmpl))
+            unknown = sorted(placeholders - allowed_fields)
             if unknown:
                 err(f"modalities.{modality}.{kind} 引用了未知占位符：{', '.join(unknown)}")
+            if "uncertainty" in placeholders:
+                err(f"modalities.{modality}.{kind} 不得引用 {{uncertainty}}："
+                    "不确定项只进说明，不进 Prompt 正文")
 
     requires = t.get("kind_requires", {})
     if not isinstance(requires, dict):
@@ -627,6 +654,137 @@ def report_compile_errors(invalid_all, missing_all, where=""):
                 f"（补全 semantic_analysis 后重试）", 4)
 
 
+REVIEW_STATUS = {"pass": "通过", "warn": "待复核", "manual": "人工确认"}
+
+
+def _uncertainty_leaks(semantic, texts):
+    """返回 (标签, 内容) 列表：uncertainty 项原文出现在编译结果正文中。"""
+    leaks = []
+    for item in semantic.get("uncertainty") or []:
+        match = UNCERTAINTY_ITEM_RE.match(str(item).strip())
+        if not match:
+            continue
+        detail = match.group(2).strip()
+        if len(detail) < 4:
+            continue
+        if any(detail in text for text in texts):
+            leaks.append((match.group(1).lower(), detail))
+    return leaks
+
+
+def uncertainty_warnings(semantic, texts):
+    """unknown 项泄漏进正文时的提示（不改变退出码）。"""
+    return [f"uncertainty 的 unknown 项疑似进入正文：{detail}"
+            for tag, detail in _uncertainty_leaks(semantic, texts) if tag == "unknown"]
+
+
+def build_review_checklist(semantic, prompts):
+    """GPT Image 输出末尾的六项审查清单（不参与总分）。
+
+    只做确定性结构检查：能自动判断的给 pass/warn，其余标 manual 交人工确认。
+    """
+    texts = [p["text"] for p in prompts]
+    task = semantic.get("task_type")
+    items = []
+
+    def add(key, item, status, detail):
+        items.append({"key": key, "item": item, "status": status, "detail": detail})
+
+    # 1. 核心视觉信息
+    required = TASK_REQUIRED.get(task, []) if task else []
+    missing = [f for f in required if not _has_value(semantic, f)]
+    if missing:
+        add("core_info", "核心视觉信息是否遗漏", "warn",
+            "缺少必填字段：" + "、".join(missing))
+    elif not _has_value(semantic, "subject"):
+        add("core_info", "核心视觉信息是否遗漏", "warn", "缺少 subject（画面主体）")
+    else:
+        add("core_info", "核心视觉信息是否遗漏", "pass", "必填视觉字段齐全")
+
+    # 2. 重复描述（完全相同的字段/列表项）
+    candidates = []
+    for field in ("preserve_constraints", "forbidden_changes",
+                  "modification_scope", "reference_images"):
+        candidates.extend(str(v) for v in semantic.get(field) or [])
+    for field in ("subject", "scene", "style", "lighting", "color",
+                  "composition", "spatial", "material"):
+        value = str(semantic.get(field) or "").strip()
+        if value:
+            candidates.append(value)
+    normalized = [re.sub(r"[\s，,。.;；：:、]+", "", c).lower() for c in candidates]
+    duplicated = sorted({c for c in normalized if len(c) >= 4 and normalized.count(c) > 1})
+    if duplicated:
+        add("duplicate", "是否有重复描述", "warn",
+            "重复内容：" + "、".join(duplicated[:3]))
+    else:
+        add("duplicate", "是否有重复描述", "pass", "未发现完全相同字段/条目")
+
+    # 3. 冲突指令（景别、机位互斥）
+    def hit(field, needles):
+        value = str(semantic.get(field) or "").lower()
+        return any(n.lower() in value for n in needles)
+
+    conflicts = []
+    if hit("shot_type", ("特写", "close-up", "closeup")) and \
+            hit("shot_type", ("远景", "全景", "wide shot", "long shot")):
+        conflicts.append("shot_type 同时给了特写与远景")
+    if hit("camera_angle", ("仰拍", "低角度", "low angle")) and \
+            hit("camera_angle", ("俯拍", "高角度", "high angle", "鸟瞰")):
+        conflicts.append("camera_angle 同时给了仰拍与俯拍")
+    add("conflict", "是否有冲突指令", "warn" if conflicts else "pass",
+        "；".join(conflicts) or "未发现互斥景别/机位")
+
+    # 4. 把推测当事实
+    leaks = _uncertainty_leaks(semantic, texts)
+    if leaks:
+        add("inference", "是否把推测当事实", "warn",
+            "uncertainty 项出现在正文：" + "、".join(f"{detail}（{tag}）"
+                                              for tag, detail in leaks[:3]))
+    else:
+        add("inference", "是否把推测当事实", "pass",
+            "未发现 uncertainty 项进入正文")
+
+    # 5. 参考图角色
+    refs = semantic.get("reference_images") or []
+    if not refs:
+        add("reference_role", "参考图角色是否混淆", "pass", "无参考图")
+    else:
+        roles = []
+        for item in refs:
+            found = REFERENCE_ROLE_RE.findall(item)
+            if found:
+                roles.append(found[0])
+        shared = sorted({r for r in roles if roles.count(r) > 1})
+        if shared:
+            add("reference_role", "参考图角色是否混淆", "warn",
+                "多张图共用角色：" + "、".join(shared) + "；请在条目中写明优先级")
+        else:
+            add("reference_role", "参考图角色是否混淆", "pass",
+                f"{len(refs)} 张参考图角色互不重复")
+
+    # 6. 保留约束
+    preserve_ok = _has_value(semantic, "preserve_constraints")
+    forbidden_ok = _has_value(semantic, "forbidden_changes")
+    if task == "image_editing" and not (preserve_ok and forbidden_ok):
+        add("preserve", "是否缺少保留约束", "warn",
+            "编辑任务需同时写明 preserve_constraints 与 forbidden_changes")
+    elif task == "image_recreation" and not (preserve_ok or forbidden_ok):
+        add("preserve", "是否缺少保留约束", "warn",
+            "复刻任务建议写明保留项或禁止变化项")
+    else:
+        add("preserve", "是否缺少保留约束", "pass", "保留/禁止项已覆盖或非必需")
+    return items
+
+
+def review_markdown(items):
+    lines = ["", "## 审查清单（不参与总分）", "",
+             "| 检查项 | 结论 | 说明 |", "|---|---|---|"]
+    for item in items:
+        detail = item["detail"].replace("|", "\\|")
+        lines.append(f"| {item['item']} | {REVIEW_STATUS[item['status']]} | {detail} |")
+    return lines
+
+
 def cmd_compile(args):
     analysis = load_analysis(args.analysis)
     semantic = analysis["semantic_analysis"]
@@ -657,6 +815,8 @@ def cmd_compile(args):
         "prompts": prompts,
         "skipped": skipped,
     }
+    if any(p["model"] == "gpt_image" for p in prompts):
+        result["review_checklist"] = build_review_checklist(semantic, prompts)
     emit(result, args.output)
 
 
@@ -997,6 +1157,11 @@ def cmd_all(args):
                    "injection_flags": injection_flags},
         "score_report": report,
     }
+    warnings = uncertainty_warnings(semantic, [p["text"] for p in prompts])
+    if warnings:
+        result["warnings"] = warnings
+    if any(p["model"] == "gpt_image" for p in prompts):
+        result["review_checklist"] = build_review_checklist(semantic, prompts)
     if args.format == "json":
         emit(result, args.output)
     else:
@@ -1050,6 +1215,10 @@ def emit_text(result, output):
     r = result.get("score_report")
     if r:
         lines += report_markdown(r)
+    if result.get("review_checklist"):
+        lines += review_markdown(result["review_checklist"])
+    if result.get("warnings"):
+        lines += ["", "## 审查提示", ""] + [f"- {w}" for w in result["warnings"]]
     text = "\n".join(lines) + "\n"
     if output:
         with open(output, "w", encoding="utf-8") as fh:

@@ -25,7 +25,7 @@ description: "多模态 Prompt 逆向工程技能。当用户提供一段文本�
 ## 3. 各模态分析要点
 
 - **文本**：角色定位（作者身份/专业领域/人设/受众）+ 写作风格（语言特点/情绪倾向/表达方式/关键词习惯）+ 结构逻辑（开头/展开/组织/结尾）+ 约束规则（字数/格式/禁止内容）。脚本信号可辅助：标题层级、列表/加粗密度、emoji 与感叹号频次、Top 关键词。
-- **图像**：按七段结构分析——核心主体（身份/外形/特征，先写）→ 动作与状态 → 场景（地点/环境/时间/氛围）→ 艺术风格 → 光影色调（光影+色彩）→ 镜头构图（视角/景别/构图方式）→ 画质与质感（摄影参数+质量词）。脚本信号：主色/亮度/饱和度/色温、构图网格、清晰度。术语库与负向三类/格式规范见 `references/image_rules.md`。
+- **图像**：按七段结构分析——核心主体（身份/外形/特征，先写）→ 动作与状态 → 场景（地点/环境/时间/氛围）→ 艺术风格 → 光影色调（光影+色彩）→ 镜头构图（视角/景别/构图方式）→ 画质与质感（摄影参数+质量词）。脚本信号：主色/亮度/饱和度/色温、构图网格、清晰度。有参考图时在 `reference_images` 按角色枚举逐张标注（`prompt_framework.md` 2.3.3）；不可确认的信息按 `observed/inferred/unknown` 打标签写入 `uncertainty`，`unknown:` 项不得写进 Prompt（2.3.4）。术语库与负向三类/格式规范见 `references/image_rules.md`。
 - **视频**：脚本镜头切分 + **逐关键帧多模态分析** → 故事结构（起承转合）+ 分镜表（景别/运镜/时长/画面内容/台词）+ 人物 + 环境氛围 + 灯光。镜头语言见 `references/video_rules.md`。
 - **叙事文本（场景化）**：全局基调先行（题材/风格/角色表）→ 场景切分（**时间/地点/人物关系任一变化即新场景**；剧本按场次标记、散文按叙事块，信号来自 `analyze_scenes.py`）→ 每场景独立提炼图片七段（`references/image_rules.md`）与视频分镜（`references/video_rules.md`），风格沿用全局基调保持全篇一致。
 
@@ -36,7 +36,7 @@ description: "多模态 Prompt 逆向工程技能。当用户提供一段文本�
 1. **元信息卡**：一行表格列出模态、来源、目标模型（含版本号）、宿主能力（原生视觉 / 长上下文 / 脚本可执行）。
 2. **分析摘要**：特征要点 3-8 条（引用脚本数据与关键帧观察）。
 3. **Prompt 列表**：每个目标模型一条——小标题 `模型展示名（版本） · 用途` + 代码块包裹完整 Prompt。MJ 输出 `/imagine` 原样可粘贴（negative 版整段带 `--no`）；SD 正负分离并附参数行；FLUX.2 无负向、按自然语言长句；GPT Image / Nano Banana 用分段标签（GPT Image 按 `task_type` 出五种任务模式之一：文生图 / 复刻 / 编辑 / 参考生成 / 融合）；文本模型用 Markdown 六要素，DeepSeek 版额外带首行模型快照/思考档与独立「推理要求」段。未指定模型时输出 Midjourney V8.2 + GPT-5.5/Claude 5.5 两版本。
-4. **评分报告**：Markdown 表格（维度 / 权重 / 得分 / 依据）+ 总分与等级 + 1-2 条优化建议。`prompt_compiler.py all --format md` 可直接产出该排版。
+4. **评分报告**：Markdown 表格（维度 / 权重 / 得分 / 依据）+ 总分与等级 + 1-2 条优化建议。`prompt_compiler.py all --format md` 可直接产出该排版。目标模型含 GPT Image 时末尾另附六项审查清单（不参与总分，`prompt_framework.md` 3.1）；「待复核」项要在使用提示中说明处理方式。
 5. **使用提示**：说明哪些占位需替换、如何微调（换风格词、换比例参数）；负向词不被某模型支持时（如 FLUX.2）明确告知；有参考图时说明每张图的角色。
 
 **场景化输出**（叙事文本分支）固定组织：
@@ -90,12 +90,12 @@ description: "多模态 Prompt 逆向工程技能。当用户提供一段文本�
 
 模板自检：`python <技能目录>/scripts/prompt_compiler.py validate-templates` 一次列出全部问题（元数据/日期/占位符/大括号/`kind_requires`），有错退出码 4；新增模型后先跑一次。
 
-统一约定：信封 `{schema_version, tool, modality, input, local_features}`；退出码 `0 成功 / 1 用法（含无模型支持该用途）/ 2 输入不可读 / 3 下载失败或超限 / 4 契约错误（解码失败、缺字段、嵌套对象、类型不符、参考图编号冲突、task_type 与 --kind 冲突）/ 5 安全阻断`；同输入输出逐字节一致（幂等）。字段契约与评分细则唯一权威见 `references/prompt_framework.md`。
+统一约定：信封 `{schema_version, tool, modality, input, local_features}`；退出码 `0 成功 / 1 用法（含无模型支持该用途）/ 2 输入不可读 / 3 下载失败或超限 / 4 契约错误（解码失败、缺字段、嵌套对象、类型不符、参考图编号/角色冲突、uncertainty 缺置信度标签、模板引用 uncertainty、task_type 与 --kind 冲突）/ 5 安全阻断`；同输入输出逐字节一致（幂等）。字段契约与评分细则唯一权威见 `references/prompt_framework.md`。
 
 ## 7. 参考索引
 
 - `references/prompt_framework.md` —— 六要素结构 + 字段契约（含 2.3.1 task_type 五用途、2.3.2 视觉规格扩展字段、2.5 节 story 场景化）+ 评分细则 + 安全规则 + 建议库 + 扩展指南（**必读**）
-- `references/image_rules.md` —— 摄影参数/构图/光影/色彩/风格词库 + 七段结构与负向三类
+- `references/image_rules.md` —— 摄影参数/构图/光影/色彩/风格词库 + 七段结构与负向三类 + 空间/材质/编辑约束术语 + 参考图角色对照
 - `references/video_rules.md` —— 景别/运镜/叙事/分镜规范
 - `references/model_mappings.md` —— 十模型格式映射表（MJ V8.2 / SD 3.5 / FLUX.2 / GPT Image 2.5 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1）+ 场景化默认模型 + DeepSeek 思考档位 + 版本迁移注记
 - `assets/templates/*.json` —— 机器渲染模板（新增模型=新增模板文件，自动注册）

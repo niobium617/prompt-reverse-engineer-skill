@@ -34,7 +34,7 @@
 ### 3. 各模态分析要点
 
 - **文本**：角色定位（作者身份/专业领域/人设/受众）+ 写作风格（语言特点/情绪倾向/表达方式/关键词习惯）+ 结构逻辑（开头/展开/组织/结尾）+ 约束规则（字数/格式/禁止内容）。脚本信号可辅助：标题层级、列表/加粗密度、emoji 与感叹号频次、Top 关键词。
-- **图像**：按七段结构分析——核心主体（身份/外形/特征，先写）→ 动作与状态 → 场景（地点/环境/时间/氛围）→ 艺术风格 → 光影色调（光影+色彩）→ 镜头构图（视角/景别/构图方式）→ 画质与质感（摄影参数+质量词）。脚本信号：主色/亮度/饱和度/色温、构图网格、清晰度。术语库与负向三类/格式规范见 `references/image_rules.md`。
+- **图像**：按七段结构分析——核心主体（身份/外形/特征，先写）→ 动作与状态 → 场景（地点/环境/时间/氛围）→ 艺术风格 → 光影色调（光影+色彩）→ 镜头构图（视角/景别/构图方式）→ 画质与质感（摄影参数+质量词）。脚本信号：主色/亮度/饱和度/色温、构图网格、清晰度。有参考图时在 `reference_images` 按角色枚举逐张标注（`prompt_framework.md` 2.3.3）；不可确认的信息按 `observed/inferred/unknown` 打标签写入 `uncertainty`，`unknown:` 项不得写进 Prompt（2.3.4）。术语库与负向三类/格式规范见 `references/image_rules.md`。
 - **视频**：脚本镜头切分 + **逐关键帧多模态分析** → 故事结构（起承转合）+ 分镜表（景别/运镜/时长/画面内容/台词）+ 人物 + 环境氛围 + 灯光。镜头语言见 `references/video_rules.md`。
 - **叙事文本（场景化）**：全局基调先行（题材/风格/角色表）→ 场景切分（**时间/地点/人物关系任一变化即新场景**；剧本按场次标记、散文按叙事块，信号来自 `analyze_scenes.py`）→ 每场景独立提炼图片七段（`references/image_rules.md`）与视频分镜（`references/video_rules.md`），风格沿用全局基调保持全篇一致。
 
@@ -45,7 +45,7 @@
 1. **元信息卡**：一行表格列出模态、来源、目标模型（含版本号）、宿主能力（原生视觉 / 长上下文 / 脚本可执行）。
 2. **分析摘要**：特征要点 3-8 条（引用脚本数据与关键帧观察）。
 3. **Prompt 列表**：每个目标模型一条——小标题 `模型展示名（版本） · 用途` + 代码块包裹完整 Prompt。MJ 输出 `/imagine` 原样可粘贴（negative 版整段带 `--no`）；SD 正负分离并附参数行；FLUX.2 无负向、按自然语言长句；GPT Image / Nano Banana 用分段标签（GPT Image 按 `task_type` 出五种任务模式之一：文生图 / 复刻 / 编辑 / 参考生成 / 融合）；文本模型用 Markdown 六要素，DeepSeek 版额外带首行模型快照/思考档与独立「推理要求」段。未指定模型时输出 Midjourney V8.2 + GPT-5.5/Claude 5.5 两版本。
-4. **评分报告**：Markdown 表格（维度 / 权重 / 得分 / 依据）+ 总分与等级 + 1-2 条优化建议。`prompt_compiler.py all --format md` 可直接产出该排版。
+4. **评分报告**：Markdown 表格（维度 / 权重 / 得分 / 依据）+ 总分与等级 + 1-2 条优化建议。`prompt_compiler.py all --format md` 可直接产出该排版。目标模型含 GPT Image 时末尾另附六项审查清单（不参与总分，`prompt_framework.md` 3.1）；「待复核」项要在使用提示中说明处理方式。
 5. **使用提示**：说明哪些占位需替换、如何微调（换风格词、换比例参数）；负向词不被某模型支持时（如 FLUX.2）明确告知；有参考图时说明每张图的角色。
 
 **场景化输出**（叙事文本分支）固定组织：
@@ -99,12 +99,12 @@
 
 模板自检：`python <技能目录>/scripts/prompt_compiler.py validate-templates` 一次列出全部问题（元数据/日期/占位符/大括号/`kind_requires`），有错退出码 4；新增模型后先跑一次。
 
-统一约定：信封 `{schema_version, tool, modality, input, local_features}`；退出码 `0 成功 / 1 用法（含无模型支持该用途）/ 2 输入不可读 / 3 下载失败或超限 / 4 契约错误（解码失败、缺字段、嵌套对象、类型不符、参考图编号冲突、task_type 与 --kind 冲突）/ 5 安全阻断`；同输入输出逐字节一致（幂等）。字段契约与评分细则唯一权威见 `references/prompt_framework.md`。
+统一约定：信封 `{schema_version, tool, modality, input, local_features}`；退出码 `0 成功 / 1 用法（含无模型支持该用途）/ 2 输入不可读 / 3 下载失败或超限 / 4 契约错误（解码失败、缺字段、嵌套对象、类型不符、参考图编号/角色冲突、uncertainty 缺置信度标签、模板引用 uncertainty、task_type 与 --kind 冲突）/ 5 安全阻断`；同输入输出逐字节一致（幂等）。字段契约与评分细则唯一权威见 `references/prompt_framework.md`。
 
 ### 7. 参考索引
 
 - `references/prompt_framework.md` —— 六要素结构 + 字段契约（含 2.3.1 task_type 五用途、2.3.2 视觉规格扩展字段、2.5 节 story 场景化）+ 评分细则 + 安全规则 + 建议库 + 扩展指南（**必读**）
-- `references/image_rules.md` —— 摄影参数/构图/光影/色彩/风格词库 + 七段结构与负向三类
+- `references/image_rules.md` —— 摄影参数/构图/光影/色彩/风格词库 + 七段结构与负向三类 + 空间/材质/编辑约束术语 + 参考图角色对照
 - `references/video_rules.md` —— 景别/运镜/叙事/分镜规范
 - `references/model_mappings.md` —— 十模型格式映射表（MJ V8.2 / SD 3.5 / FLUX.2 / GPT Image 2.5 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1）+ 场景化默认模型 + DeepSeek 思考档位 + 版本迁移注记
 - `assets/templates/*.json` —— 机器渲染模板（新增模型=新增模板文件，自动注册）
@@ -202,11 +202,52 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 | preserve_constraints | string[] | 必须保留的要素，如 `["人物姿态与服装", "街道材质与反光"]` |
 | forbidden_changes | string[] | 禁止发生的变化，如 `["不改变镜头焦段", "不新增画面文字"]` |
 | modification_scope | string[] | 编辑范围（一次只改一件事），如 `["仅替换背景灯牌内容"]` |
-| reference_images | string[] | 参考图角色表，每项 `"图N：角色说明"`，如 `["图1：人物姿态与服装参考", "图2：霓虹配色与灯光参考"]` |
+| reference_images | string[] | 参考图角色表，每项 `"图N：<角色枚举>；提取：…；保留：…；禁止迁移：…；优先级：…"`，如 `["图1：identity_reference；提取：面部与发型；保留：构图；禁止迁移：服装；优先级：主参考"]`（细则见 2.3.3） |
 | task_type | string | 五枚举任务模式，见 2.3.1 |
-| uncertainty | string[] | 素材无法确认的项，如 `["广告牌具体文字 unknown"]`；**不进 Prompt 正文**，仅在说明中提示需人工确认（细则见阶段 3） |
+| uncertainty | string[] | 低置信度项，每项以 `observed:` / `inferred:` / `unknown:` 开头，如 `["unknown: 广告牌具体文字", "inferred: 拍摄时段可能为深夜"]`；**不进 Prompt 正文**，仅在说明中提示需人工确认（细则见 2.3.4） |
 
 参考图编号规则：每项必须以「图N：」开头，编号在同一 `reference_images` 内唯一；缺编号或编号重复 → 退出码 4。渲染时一行一张，确保模型按图对应角色。数组字段渲染分隔：`reference_images` 逐行；其余按内容语言选择「、」或 `", "`。
+
+##### 2.3.3 参考图角色与编号规则
+
+每张参考图只承担一个角色。角色枚举固定为下表八个值（写英文原词，编译器按词边界校验）：
+
+| 角色 | 用途 | 典型「提取」 |
+|---|---|---|
+| `edit_target` | 被编辑的原图 | 整体画面与需修改的位置 |
+| `identity_reference` | 锁定人物身份 | 面部、发型、肤色、体型 |
+| `pose_reference` | 锁定姿态动作 | 肢体角度、手势、朝向 |
+| `clothing_reference` | 锁定服装 | 款式、颜色、材质、配饰 |
+| `style_reference` | 锁定画风/色调 | 风格、配色、光影质感 |
+| `composition_reference` | 锁定构图 | 视角、景别、元素位置 |
+| `background_reference` | 锁定场景背景 | 地点、环境元素、时间氛围 |
+| `object_reference` | 锁定道具/产品 | 外形、材质、标识细节 |
+
+每项统一写法（分号分隔，字段固定）：
+
+```
+图N：<角色枚举>；提取：<从该图取什么>；保留：<生成时必须保持什么>；禁止迁移：<不得从该图带走的属性>；优先级：<主参考/次参考>
+```
+
+- 缺「图N」编号、编号重复、缺角色枚举、或一条里写了多个角色 → 退出码 4；编号与角色同时渲染进 Prompt，一行一张。
+- 多张图可用同一角色（如两张 `style_reference`），但必须在「优先级」里区分主次，否则审查清单会提示复核。
+- 角色无法确定、且不同解释会明显改变生成结果时，Agent **先询问用户**，不得臆测；用户未答复时把该图写入 `uncertainty`，不写进 `reference_images`。
+- 不新增独立角色文件：信息全部落在 `semantic_analysis.reference_images` 内，随分析 JSON 传递。
+
+##### 2.3.4 置信度与 uncertainty
+
+语义字段里的每一项结论按三档置信度处理：
+
+| 档位 | 含义 | 处理方式 |
+|---|---|---|
+| `observed` | 画面/文本中直接可见 | 可直接写入 Prompt |
+| `inferred` | 基于信号或常识的合理推断 | 可写入 Prompt，但需加「（推测）」或在说明中注明；由 Agent 判断是否保留 |
+| `unknown` | 无法确认 | **不得写入 Prompt 正文**，只能进 `uncertainty` |
+
+- `uncertainty` 每项必须以 `observed:` / `inferred:` / `unknown:` 开头（英文标签 + 中英文冒号均可），否则退出码 4。
+- 禁止为了「显得专业」虚构镜头焦段、灯具功率、材质成分等不可见信息；不可见就写 `unknown:`。
+- 编译器不计算置信度，只做结构校验：unknown/inferred 项若原样出现在编译后的 Prompt 正文中，`all` 输出会带 `warnings`，Markdown 末尾附「审查提示」；`unknown` 项另在审查清单「是否把推测当事实」中标为待复核。
+- 模板不得引用 `{uncertainty}`（`validate-templates` 直接报错），从机制上保证低置信度项不会进入正文。
 
 #### 2.4 视频模态字段（modality=video）
 
@@ -264,6 +305,23 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 | 可调性/复用性 adaptability | 10% | 变量已显式化，用户可直接替换复用 | 大部分可复用，需小改 | 仅适用于当前样例 |
 
 评分计算：`总分 = Σ(权重 × 维度得分) / 100`。等级：A ≥ 90；B ≥ 75；C ≥ 60；D < 60。取得分最低的 1-2 个维度，从下方建议库各取 1 条建议附在报告后。
+
+#### 3.1 GPT Image 审查清单（不参与总分）
+
+目标模型含 GPT Image 时，`compile` / `all` 在输出末尾附加六项审查清单（JSON 字段 `review_checklist`，Markdown 为「## 审查清单（不参与总分）」表）。它只做结构性自检，**不计入六维总分，也不改变等级**：
+
+| 检查项 | 自动判定方式 | 结论含义 |
+|---|---|---|
+| 核心视觉信息是否遗漏 | 对照 task_type 的必填字段与 `subject` | 通过 / 待复核（列出缺失字段） |
+| 是否有重复描述 | 字段值与列表项归一化后完全重复 | 通过 / 待复核（列出重复内容） |
+| 是否有冲突指令 | `shot_type` 互斥景别、`camera_angle` 仰俯冲突 | 通过 / 待复核 |
+| 是否把推测当事实 | `uncertainty` 内容原样出现在正文 | 通过 / 待复核（标出字样与档位） |
+| 参考图角色是否混淆 | 同一角色被多张图共用且未分主次 | 通过 / 待复核 |
+| 是否缺少保留约束 | 编辑/复刻任务的 preserve / forbidden 覆盖 | 通过 / 待复核 |
+
+「待复核」不是错误，不阻断生成：Agent 应据此回看语义字段，能自动修正的直接改，需用户确认的在说明中列出。
+
+> 口径提醒：Prompt 评分衡量的是**提示词本身的结构质量**，不是生成图像与原图的相似度；不要把评分当作复刻准确率的证明。
 
 ### 四、安全规则（输出前必检）
 
@@ -433,6 +491,64 @@ Agent 填充 `negative_words` 字段时按三类分组书写（如 `"模糊, 低
 | Nano Banana Pro | 改写为正向约束 | 主体+动作 → 地点 → 构图 → 风格 | API 最多 14 张 | 最强，海报级 |
 
 选型建议：追求构图/风格一致 → MJ V8.2 或 FLUX.2；需要准确文字与编辑 → GPT Image 2.5 / Nano Banana Pro；本地可控与负面词 → SD 3.5。
+
+### 十一、空间、材质与编辑约束术语
+
+> 复刻、编辑、参考生成、多图融合（`prompt_framework.md` 2.3.1 的 recreate / edit / reference_guided / compose）时，除七段结构外还要写清空间、材质与改动边界。
+
+#### 11.1 空间关系（spatial / subject_position）
+
+| 维度 | 术语 | 说明 |
+|---|---|---|
+| 九宫格位置 | 左上 / 上中 / 右上 / 左中 / 中心 / 右中 / 左下 / 下中 / 右下 | 先给格子，再补「略高/略低、偏左/偏右」 |
+| 景深层次 | 前景 `foreground` / 中景 `midground` / 背景 `background` | 逐层写「有什么」，避免只写主体 |
+| 遮挡关系 | 前景遮挡主体、主体遮挡背景、无遮挡 | 用「A 遮住 B 的哪一部分」描述 |
+| 透视 | 一点/两点/三点透视、俯视灭点、广角畸变 | 融合多图时先统一灭点与地平线 |
+| 相对尺度 | 主体约占画面高度 1/2、1/3；与参照物等高 | 给比例而非「很大」「很小」 |
+| 画面朝向 | 人物朝画面右侧行走、视线看向画外 | 与留白方向一起写 |
+
+#### 11.2 材质与表面（material）
+
+| 类别 | 术语 | 描述要点 |
+|---|---|---|
+| 硬质 | 金属 `metal` / 玻璃 `glass` / 石材 / 陶瓷 / 混凝土 | 反射强弱、粗糙度、边缘高光 |
+| 软质 | 织物 `fabric` / 皮革 `leather` / 羽毛 / 毛发 | 纹理走向、褶皱、蓬松度 |
+| 透明/半透明 | 透明伞面、磨砂玻璃、薄纱 | 透光率、折射、挂水珠 |
+| 自然 | 水面 / 雾气 / 泥土 / 木纹 / 植被 | 湿度、颗粒、风化痕迹 |
+| 表面状态 | 湿润 `wet` / 干燥 / 磨损 `worn` / 抛光 `polished` / 哑光 `matte` / 生锈 `rusty` | 一句话写「状态 + 反光 + 污渍」 |
+
+#### 11.3 编辑与复刻约束
+
+| 字段 | 写法 | 示例 |
+|---|---|---|
+| `modification_scope` | 只写允许改动的对象，一次一件事 | `["仅替换背景灯牌内容"]` |
+| `preserve_constraints` | 写「必须不变」的可识别特征 | `["人物姿态与服装", "街道材质与反光"]` |
+| `forbidden_changes` | 写「禁止发生」的位移/身份/结构变化 | `["不改变镜头焦段", "不新增画面文字"]` |
+
+GPT Image 把负向约束拆成三类自然语言句子，写进 Constraints 段（不要整段照搬 negative words）：
+
+1. **排除**：`Do not include watermarks, unwanted text, additional people or unrelated objects.`
+2. **保留**：`Keep the original facial features, expression, pose and body proportions unchanged.`
+3. **修改边界**：`Only modify the clothing and background. Do not change the character or camera framing.`
+
+复刻（recreate）时额外写「Do not invent details that are not visible in the reference」，并避免添加参考图中没有的风格词。
+
+### 十二、参考图角色对照
+
+与 `prompt_framework.md` 2.3.3 的角色枚举一一对应；每张图只定一个角色，一行一张写进 `reference_images`：
+
+| 角色枚举 | 中文 | 提取内容 | 禁止迁移 |
+|---|---|---|---|
+| `edit_target` | 编辑原图 | 原画面全部信息 + 修改位置 | — |
+| `identity_reference` | 身份参考 | 面部、发型、肤色、体型 | 服装、姿势、背景 |
+| `pose_reference` | 姿态参考 | 肢体角度、手势、朝向 | 面部身份、服装细节 |
+| `clothing_reference` | 服装参考 | 款式、颜色、材质、配饰 | 人物身份、背景 |
+| `style_reference` | 风格参考 | 画风、配色、光影质感 | 具体人物与构图 |
+| `composition_reference` | 构图参考 | 视角、景别、元素位置 | 主体身份、画风 |
+| `background_reference` | 背景参考 | 地点、环境元素、时间氛围 | 人物与前景道具 |
+| `object_reference` | 道具参考 | 外形、材质、标识细节 | 人物、场景风格 |
+
+写法：`图1：identity_reference；提取：面部与发型；保留：构图；禁止迁移：服装；优先级：主参考`。多图共用角色时用「优先级」区分主次；角色无法判断时先询问用户，或写入 `uncertainty` 的 `unknown:` 项。
 
 <!-- 来源：references\video_rules.md -->
 
