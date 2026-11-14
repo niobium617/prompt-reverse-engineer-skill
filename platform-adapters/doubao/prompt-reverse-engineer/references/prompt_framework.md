@@ -58,6 +58,41 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 | text_content | 可选 | 需要画面精确渲染的文字（海报标题、招牌、字幕），如 `"APS 2077"`。GPT Image / Nano Banana / MJ 会显式标注 |
 | reference_note | 可选 | 参考图说明：每张图的角色与用途，如 `"参考图 1：人物造型；参考图 2：霓虹配色"`。写清「哪张图控制什么」，避免模型混用 |
 
+#### 2.3.1 任务模式（task_type）与五用途
+
+`semantic_analysis.task_type` 取以下五枚举之一，`prompt_compiler.py` 据此只渲染对应用途（kind）；也可在 `compile` / `all` 用 `--kind <kind>` 显式指定。两者同时给出且不一致 → 退出码 4。只给 `task_type` 时，模板没有该用途的模型保持原有全部渲染；显式 `--kind` 且没有任何模型支持 → 退出码 1。不传 `task_type` / `--kind` 时行为与旧版一致（渲染模板内全部适用用途）。
+
+| task_type | kind | 含义 | 声明后必填的扩展字段 |
+|---|---|---|---|
+| text_to_image | prompt | 文生图（默认） | 无 |
+| image_recreation | recreate | 按参考图复刻 | subject_position、spatial |
+| image_editing | edit | 单点编辑已有图 | modification_scope、preserve_constraints、forbidden_changes |
+| reference_guided | reference_guided | 参考图各定角色生成新图 | reference_images、spatial |
+| image_composition | compose | 多参考图融合构图 | reference_images、spatial |
+
+必填校验只在声明 `task_type` 时生效（缺失 → 退出码 4，并列出字段名）；不声明时保持旧行为，缺失的可选字段在渲染时清理为空。
+
+#### 2.3.2 视觉规格扩展字段（扁平契约）
+
+以下字段与 2.3 表同属 `semantic_analysis` 顶层，**必须是字符串或字符串数组**：任何键的值是嵌套对象（dict）都会以退出码 4 拒绝，避免 `str(dict)` 把 Python 表示写进 Prompt。
+
+| 字段 | 类型 | 说明与示例 |
+|---|---|---|
+| subject_position | string | 主体位置，如 `"画面左侧三分线，人物朝画面右侧行走"` |
+| subject_scale | string | 主体占比，如 `"人物约占画面高度三分之一"` |
+| shot_type | string | 景别，如 `"中景"`、`"特写"` |
+| camera_angle | string | 机位角度，如 `"平视略仰，镜头与人物胸口齐平"` |
+| spatial | string | 空间关系：前/中/背景各有什么、谁遮挡谁，如 `"前景积水倒映霓虹，中景行人与透明伞，背景为虚化的广告灯牌"` |
+| material | string | 材质质感：`"透明伞面挂着水珠，湿滑柏油路面，金属灯箱"` |
+| preserve_constraints | string[] | 必须保留的要素，如 `["人物姿态与服装", "街道材质与反光"]` |
+| forbidden_changes | string[] | 禁止发生的变化，如 `["不改变镜头焦段", "不新增画面文字"]` |
+| modification_scope | string[] | 编辑范围（一次只改一件事），如 `["仅替换背景灯牌内容"]` |
+| reference_images | string[] | 参考图角色表，每项 `"图N：角色说明"`，如 `["图1：人物姿态与服装参考", "图2：霓虹配色与灯光参考"]` |
+| task_type | string | 五枚举任务模式，见 2.3.1 |
+| uncertainty | string[] | 素材无法确认的项，如 `["广告牌具体文字 unknown"]`；**不进 Prompt 正文**，仅在说明中提示需人工确认（细则见阶段 3） |
+
+参考图编号规则：每项必须以「图N：」开头，编号在同一 `reference_images` 内唯一；缺编号或编号重复 → 退出码 4。渲染时一行一张，确保模型按图对应角色。数组字段渲染分隔：`reference_images` 逐行；其余按内容语言选择「、」或 `", "`。
+
 ### 2.4 视频模态字段（modality=video）
 
 | 字段 | 必填 | 说明与示例 |

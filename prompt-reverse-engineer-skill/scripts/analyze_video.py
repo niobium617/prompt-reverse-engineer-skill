@@ -2,9 +2,17 @@
 # -*- coding: utf-8 -*-
 """视频本地信号提取脚本（prompt-reverse-engineer 技能组件）。
 
-做镜头切分（相邻帧颜色直方图差）、关键帧抽取（JPEG 写临时目录，路径进 JSON 供
+做镜头切分（相邻帧颜色直方图差）、关键帧抽取（JPEG 写工作目录，路径进 JSON 供
 Agent Read 后做多模态语义分析）、运镜估计（Farneback 光流）、逐秒亮度曲线。
-退出码：0 成功 / 1 用法错误 / 2 输入不可读 / 3 URL 下载失败 / 4 解码失败
+
+资源约定：
+  - 单次解码只保留当前帧与统计量，不缓存全部抽样帧；
+  - 镜头切分与关键帧抽取分两遍顺序解码，避免逐镜头 seek/重开；
+  - 本地文件直接交给 OpenCV 读取，不复制、不整文件入内存；
+  - stdin / URL 先落盘到工作目录，分析结束后删除副本；
+  - 关键帧是输出产物，保留在 <workdir>/video_<sha8>/keyframes/ 供 Agent 读取。
+
+退出码：0 成功 / 1 用法错误 / 2 输入不可读 / 3 下载失败或超过体积上限 / 4 解码失败
 """
 import argparse
 import hashlib
@@ -14,6 +22,7 @@ import os
 import re
 import sys
 import tempfile
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -28,29 +37,113 @@ HIST_BINS = [8, 8, 4]  # HSV 分桶
 MIN_SHOT_SECONDS = 0.4  # 小于该时长的镜头与前一镜头合并
 MOTION_SILENT = 0.02    # 光流均值低于该值判静止
 MOTION_STRONG = 0.15    # 高于该值判强烈运动
+CHUNK = 64 * 1024
 
 
-def load_bytes(args):
+class InputTooLarge(Exception):
+    """输入超过 --max-bytes 上限。"""
+
+
+def default_workdir():
+    """仓库内运行时用 <repo>/.tmp；安装态回退系统临时目录。"""
+    env = os.environ.get("APS_WORKDIR")
+    if env:
+        return Path(env)
+    repo = Path(__file__).resolve().parents[2]
+    if (repo / ".git").exists() or (repo / "README.md").is_file():
+        return repo / ".tmp"
+    return Path(tempfile.gettempdir()) / "aps_video"
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(CHUNK), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def copy_limited(stream, dest, max_bytes):
+    """把流写入 dest，同时计算 sha256；超过上限抛 InputTooLarge。"""
+    digest = hashlib.sha256()
+    total = 0
+    with open(dest, "wb") as out:
+        while True:
+            chunk = stream.read(CHUNK)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise InputTooLarge(f"输入超过大小上限 {max_bytes} 字节")
+            digest.update(chunk)
+            out.write(chunk)
+    return digest.hexdigest(), total
+
+
+def prepare_input(args, base):
+    """返回 (video_path, source, kind, sha256, size_bytes, temp_copy)。
+
+    temp_copy 是本次运行创建的临时视频副本，分析结束后删除；本地文件为 None。
+    """
     source = args.input
     if source == "-":
-        data = sys.stdin.buffer.read()
-        if not data:
+        incoming = tempfile.NamedTemporaryFile(
+            dir=base, prefix="incoming_", suffix=".bin", delete=False)
+        incoming.close()
+        try:
+            sha, size = copy_limited(sys.stdin.buffer, incoming.name, args.max_bytes)
+        except InputTooLarge as exc:
+            os.unlink(incoming.name)
+            print(f"错误：{exc}", file=sys.stderr)
+            sys.exit(3)
+        except OSError as exc:
+            os.unlink(incoming.name)
+            print(f"错误：stdin 读取失败：{exc}", file=sys.stderr)
+            sys.exit(2)
+        if size == 0:
+            os.unlink(incoming.name)
             print("错误：stdin 无输入", file=sys.stderr)
             sys.exit(2)
-        return data, source, "stdin"
+        return _settle_temp(incoming.name, base, sha, source, "stdin", size)
+
     if re.match(r"^https?://", source):
         try:
             data = fetch_url(source, timeout=args.timeout, max_bytes=args.max_bytes)
         except DownloadError as exc:
             print(f"错误：URL 下载失败：{exc}", file=sys.stderr)
             sys.exit(3)
-        return data, source, "url"
+        sha = hashlib.sha256(data).hexdigest()
+        incoming = tempfile.NamedTemporaryFile(
+            dir=base, prefix="incoming_", suffix=".bin", delete=False)
+        with incoming:
+            incoming.write(data)
+        return _settle_temp(incoming.name, base, sha, source, "url", len(data))
+
+    path = Path(source)
     try:
-        with open(source, "rb") as fh:
-            return fh.read(), source, "file"
+        size = path.stat().st_size
     except OSError as exc:
         print(f"错误：文件不可读：{exc}", file=sys.stderr)
         sys.exit(2)
+    if size > args.max_bytes:
+        print(f"错误：输入超过大小上限 {args.max_bytes} 字节（实际 {size}）",
+              file=sys.stderr)
+        sys.exit(3)
+    try:
+        sha = sha256_file(path)
+    except OSError as exc:
+        print(f"错误：文件不可读：{exc}", file=sys.stderr)
+        sys.exit(2)
+    return str(path), source, "file", sha, size, None
+
+
+def _settle_temp(incoming_path, base, sha, source, kind, size):
+    """把临时副本移到与本输入 sha 绑定的确定性目录，返回最终路径。"""
+    run_dir = Path(base) / f"video_{sha[:8]}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    target = run_dir / "input.bin"
+    os.replace(incoming_path, target)
+    return str(target), source, kind, sha, size, target
 
 
 def rounded(value, ndigits=4):
@@ -108,8 +201,23 @@ def estimate_motion(prev_gray, curr_gray):
     return level, direction, zoom
 
 
+def dominant_color_hex(hsv):
+    hist = hist_of(hsv)
+    dom = np.unravel_index(int(np.argmax(hist)), HIST_BINS)
+    h_val, s_val, v_val = (d * 255 // (b - 1) for d, b in zip(dom, HIST_BINS))
+    hsv_px = np.uint8([[[h_val, s_val, v_val]]])
+    bgr_px = cv2.cvtColor(hsv_px, cv2.COLOR_HSV2BGR)[0][0]
+    return "#%02X%02X%02X" % (int(bgr_px[2]), int(bgr_px[1]), int(bgr_px[0]))
+
+
 def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
             keyframes_dir: str):
+    keyframes_dir = os.path.abspath(str(keyframes_dir))
+    os.makedirs(keyframes_dir, exist_ok=True)
+    # 同一输入重复运行时清掉上次的关键帧，避免 stride/时长变化留下多余文件
+    for stale in Path(keyframes_dir).glob("shot_*.jpg"):
+        stale.unlink()
+
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print("错误：无法解码为视频", file=sys.stderr)
@@ -126,14 +234,11 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
         frame_count = int(max_seconds * fps)
         truncated = True
 
+    # 第一遍：只算直方图差与亮度，不保留帧数据
     frame_idx = 0
     prev_hist = None
-    prev_gray = None
     shot_frames = []  # 每个镜头的帧索引列表
     frame_infos = []  # (frame_idx, seconds, brightness)
-    os.makedirs(keyframes_dir, exist_ok=True)  # 确定性目录（幂等：同输入同路径，内容覆盖写）
-    sampled_gray_cache = {}
-
     while True:
         ok, frame = cap.read()
         if not ok or frame_idx >= frame_count:
@@ -142,8 +247,7 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             hist = hist_of(hsv)
             if prev_hist is not None:
-                diff = cv2.compareHist(prev_hist, hist, cv2.HISTCMP_CORREL)
-                distance = 1.0 - diff
+                distance = 1.0 - cv2.compareHist(prev_hist, hist, cv2.HISTCMP_CORREL)
                 if distance > SHOT_THRESHOLD:
                     shot_frames.append([])  # 新镜头
             prev_hist = hist
@@ -151,9 +255,7 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
                 shot_frames.append([])
             shot_frames[-1].append(frame_idx)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            sampled_gray_cache[frame_idx] = gray
             frame_infos.append((frame_idx, frame_idx / fps, float(gray.mean())))
-            prev_gray = gray
         frame_idx += 1
     cap.release()
 
@@ -171,51 +273,77 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
             merged.append(sf)
     merged = [sf for sf in merged if sf]
 
-    shot_list = []
+    # 只登记需要取色的帧：每镜头首帧（运镜基准）与中点帧（关键帧）
+    wanted = {}
     for i, sf in enumerate(merged):
+        wanted.setdefault(sf[0], set()).add((i, "first"))
+        wanted.setdefault(sf[len(sf) // 2], set()).add((i, "mid"))
+
+    records = {}
+    first_gray = {}
+    last_frame = None
+    last_gray = None
+
+    def record_shot(i, frame, gray, base_gray):
+        sf = merged[i]
         start_s = round(sf[0] / fps, 3)
         end_s = round(sf[-1] / fps, 3)
-        mid = sf[len(sf) // 2]
-        mid_gray = sampled_gray_cache[mid]
-        bgr = cv2.cvtColor(mid_gray, cv2.COLOR_GRAY2BGR)
-        # 关键帧取中点帧彩色原图：需要重读（用 seek 回读保证颜色正确）
         key_path = os.path.join(keyframes_dir, f"shot_{i + 1:02d}_keyframe.jpg")
-        cap2 = cv2.VideoCapture(video_path)
-        cap2.set(cv2.CAP_PROP_POS_FRAMES, mid)
-        ok2, frame2 = cap2.read()
-        cap2.release()
-        if not ok2:
-            frame2 = cv2.cvtColor(mid_gray, cv2.COLOR_GRAY2BGR)
-        cv2.imwrite(key_path, frame2, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        shot_hsv = cv2.cvtColor(frame2, cv2.COLOR_BGR2HSV)
-        shot_hist = hist_of(shot_hsv)
-        dom = np.unravel_index(int(np.argmax(shot_hist)), HIST_BINS)
-        h_val, s_val, v_val = (d * 255 // (b - 1) for d, b in zip(dom, HIST_BINS))
-        hsv_px = np.uint8([[[h_val, s_val, v_val]]])
-        bgr_px = cv2.cvtColor(hsv_px, cv2.COLOR_HSV2BGR)[0][0]
-        dom_hex = "#%02X%02X%02X" % (int(bgr_px[2]), int(bgr_px[1]), int(bgr_px[0]))
-        # 运镜估计：用镜头首帧与尾帧
-        first_gray = sampled_gray_cache[sf[0]]
-        motion_level, motion_direction, zoom = estimate_motion(first_gray, mid_gray)
+        cv2.imwrite(key_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        dom_hex = dominant_color_hex(cv2.cvtColor(frame, cv2.COLOR_BGR2HSV))
+        motion_level, motion_direction, zoom = estimate_motion(base_gray, gray)
         if motion_level < MOTION_SILENT:
             shot_type = "静止"
         elif motion_level > MOTION_STRONG:
             shot_type = "强烈运动"
         else:
             shot_type = "镜头运动"
-        shot_list.append({
+        records[i] = {
             "index": i + 1,
             "start_s": start_s,
             "end_s": end_s,
             "duration_s": round(end_s - start_s, 3),
             "keyframe_path": os.path.abspath(key_path),
-            "avg_brightness": rounded(mid_gray.mean()),
+            "avg_brightness": rounded(gray.mean()),
             "dominant_color_hex": dom_hex,
             "motion_level": rounded(motion_level),
             "motion_direction": motion_direction,
             "zoom": zoom,
             "shot_type_hint": shot_type,
-        })
+        }
+
+    # 第二遍：顺序解码到目标帧，取首帧灰度与中点彩色帧
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print("错误：无法解码为视频", file=sys.stderr)
+        sys.exit(4)
+    frame_idx = 0
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok or frame_idx >= frame_count:
+                break
+            if frame_idx % stride == 0 and frame_idx in wanted:
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                last_frame, last_gray = frame, gray
+                for i, tag in sorted(wanted[frame_idx]):
+                    if tag == "first":
+                        first_gray[i] = gray
+                    else:
+                        record_shot(i, frame, gray, first_gray.pop(i, gray))
+            frame_idx += 1
+    finally:
+        cap.release()
+
+    # 解码异常导致漏帧时用最后一个成功帧兜底，保证输出结构完整
+    for i in range(len(merged)):
+        if i not in records:
+            if last_frame is None:
+                print("错误：视频无可解码帧", file=sys.stderr)
+                sys.exit(4)
+            record_shot(i, last_frame, last_gray, first_gray.pop(i, last_gray))
+
+    shot_list = [records[i] for i in range(len(merged))]
 
     # 逐秒亮度曲线
     brightness_curve = []
@@ -241,7 +369,7 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
             "fourcc": fourcc or "unknown",
             "file_size": int(data_size),
             "truncated": truncated,
-            "keyframes_dir": os.path.abspath(keyframes_dir),
+            "keyframes_dir": keyframes_dir,
         },
         "shots": {"shot_count": len(shot_list), "shot_list": shot_list},
         "brightness_curve": brightness_curve,
@@ -257,17 +385,34 @@ def main():
     parser.add_argument("--stride", type=int, default=1, help="抽帧步长")
     parser.add_argument("--timeout", type=float, default=15.0, help="URL 下载超时秒数")
     parser.add_argument("--max-bytes", type=int, default=512 * 1024 * 1024,
-                        help="URL 下载大小上限（字节，默认 512 MiB；仅公网地址）")
+                        help="输入大小上限（字节，默认 512 MiB；本地/URL/stdin 均生效）")
+    parser.add_argument("--workdir", default=None,
+                        help="工作目录（默认仓库 .tmp/，安装态回退系统临时目录）；"
+                             "关键帧写入 <workdir>/video_<sha8>/keyframes/")
     args = parser.parse_args()
 
-    data, source, kind = load_bytes(args)
-    sha = hashlib.sha256(data).hexdigest()
-    tmp_dir = os.path.join(tempfile.gettempdir(), f"pre_video_{sha[:8]}")
-    os.makedirs(tmp_dir, exist_ok=True)
-    video_path = os.path.join(tmp_dir, "input_video.bin")
-    with open(video_path, "wb") as fh:
-        fh.write(data)
-    keyframes_dir = os.path.join(tempfile.gettempdir(), f"pre_keyframes_{sha[:8]}")
+    base = Path(args.workdir) if args.workdir else default_workdir()
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        if args.workdir:
+            print(f"错误：工作目录不可用：{exc}", file=sys.stderr)
+            sys.exit(2)
+        base = Path(tempfile.gettempdir()) / "aps_video"
+        base.mkdir(parents=True, exist_ok=True)
+
+    video_path, source, kind, sha, size, temp_copy = prepare_input(args, base)
+    keyframes_dir = base / f"video_{sha[:8]}" / "keyframes"
+
+    try:
+        local_features = analyze(video_path, size, args.max_seconds, args.stride,
+                                 str(keyframes_dir))
+    finally:
+        if temp_copy is not None:
+            try:
+                os.unlink(temp_copy)
+            except OSError:
+                pass
 
     envelope = {
         "schema_version": SCHEMA_VERSION,
@@ -277,10 +422,9 @@ def main():
             "source": source,
             "kind": kind,
             "sha256": sha,
-            "size_bytes": len(data),
+            "size_bytes": size,
         },
-        "local_features": analyze(video_path, len(data), args.max_seconds, args.stride,
-                                   keyframes_dir),
+        "local_features": local_features,
     }
     out = json.dumps(envelope, ensure_ascii=False, sort_keys=True)
     if args.output:

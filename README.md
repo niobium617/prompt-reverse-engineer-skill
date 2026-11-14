@@ -44,7 +44,7 @@
 | 图像 | **Midjourney V8.2** | `/imagine prompt: ... --ar 16:9 --v 8.2`；负向用 `--no`；角色一致性用 Edit Model |
 | 图像 | **Stable Diffusion 3.5** | Positive / Negative 严格分离 + Steps 28 / CFG 4.5 / DPM++ 2M 参数行 |
 | 图像 | **FLUX.2 [pro]** | 自然语言长句，**不支持 negative**，参考图标注角色 |
-| 图像 | **GPT Image 2.5** | 结构化规格书（Subject/Scene/Style/…/Constraints），文字逐字复现 |
+| 图像 | **GPT Image 2.5** | 结构化规格书（Subject/Scene/Style/…/Constraints），文字逐字复现；五种任务模式（文生图/复刻/编辑/参考生成/融合）分别出稿 |
 | 图像 | **Nano Banana Pro** | 分段标签 + 1K/2K/4K，最多 14 张参考图，文字渲染强 |
 | 文本 | **GPT-5.5 / Claude 5.5** | Markdown 标题组织六要素，System + User 结构 |
 | 文本 | **DeepSeek V4.1 Flash** | 首行模型快照 + 思考档（`low`/`high`/`max`）+ 独立「推理要求」段 |
@@ -92,9 +92,8 @@
 |---|---|---|
 | Python 3.10+ | 运行分析/编译脚本 | 脚本模式必需 |
 | opencv-python、pillow、numpy | 图片/视频信号提取 | 脚本模式必需 |
-| requests | URL 输入自动下载 | URL 输入时必需 |
 
-> 纯指令降级模式（豆包粘贴版）无任何依赖。安装依赖：`pip install opencv-python pillow numpy requests`
+> 纯指令降级模式（豆包粘贴版）无任何依赖。安装依赖：`pip install opencv-python pillow numpy`（URL 下载用标准库 `urllib`，无需额外包）
 
 ### 2.2 安装（五平台）
 
@@ -168,6 +167,17 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 > 「把这张图的风格迁移成宫崎骏动画风」
 > 「再出一版 FLUX.2 和 Nano Banana，画面文字写 APS 2077」
 
+**GPT Image 2.5 五种任务模式**：文生图 / 复刻参考图 / 编辑已有图 / 参考图各自定角色生成新图 / 多参考图融合。Agent 在 `semantic_analysis.task_type` 写入对应枚举（`text_to_image` / `image_recreation` / `image_editing` / `reference_guided` / `image_composition`），脚本只渲染该用途；也可在编译时显式指定：
+
+```bash
+# 编辑已有图（一次只改一件事）
+python prompt-reverse-engineer-skill/scripts/prompt_compiler.py compile   --analysis image.json --models gpt_image --kind edit
+# 用两张参考图合成新画面
+... --models gpt_image --kind compose
+```
+
+`--kind` 与 `task_type` 冲突退出 4；参考图用 `reference_images: ["图1：人物姿态", "图2：霓虹配色"]` 逐行标注角色，缺编号或编号重复退出 4。五种模式的模板与字段见 `references/model_mappings.md` 3.4 节、`references/prompt_framework.md` 2.3.1–2.3.2 节。
+
 ### 3.4 视频模式（短视频/广告/电影片段）
 
 **输入**：本地视频路径或 URL。
@@ -197,6 +207,7 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 | （不指定） | 默认 **Midjourney V8.2 + GPT-5.5/Claude 5.5** 双版本 |
 | 「也出 SD 版」/「转成 Sora」/「出 Veo 版」 | 追加对应模型 |
 | 「也出 FLUX.2 / GPT Image / Nano Banana」 | 追加对应图像模板 |
+| 「复刻这张图」/「编辑这张图」/「用这两张参考图合成」 | GPT Image 对应 `recreate` / `edit` / `reference_guided`、`compose` 用途（见 3.3 节） |
 | 「也出 DeepSeek 版」 | 追加 DeepSeek 格式（含思考档位，见 `model_mappings.md` 第 8 节） |
 | 「全部模型」 | 全部 10 种格式输出（`--models all`） |
 | 指定了未注册的模型名 | 回退默认双版本并说明 |
@@ -237,18 +248,23 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 │   ├── codex/…/.codex-plugin/plugin.json
 │   ├── deepseek/README.md             # DeepSeek Harness 适配说明（~/.dsh/skills）
 │   └── doubao/                        # 豆包：上传 zip + 粘贴指令双产物
+├── docs/                              # 项目文档
+│   ├── 2026-11-14-项目改进方案.md     # 工程与 GPT Image 专项改进方案
+│   └── DEVLOG.md                      # 阶段开发记录（改动/验证/回滚）
+├── tasks/
+│   └── todo.md                        # 分阶段任务清单
 └── tools/
     ├── install.py                     # 一键安装（junction/copy，幂等，--dry-run）
-    ├── verify.py                      # 离线端到端验证（24 项断言）
+    ├── verify.py                      # 离线端到端验证（26 项断言）
     └── fixtures/                      # 金标语义分析 JSON（契约测试/字段范例）
 ```
 
 ### 4.2 脚本通用约定
 
 - **统一信封**：`{schema_version, tool, modality, input{source,kind,sha256,size_bytes}, local_features}`
-- **统一退出码**：`0 成功 / 1 用法错误 / 2 输入不可读 / 3 下载失败 / 4 解码失败或缺字段 / 5 安全阻断`
+- **统一退出码**：`0 成功 / 1 用法错误（含无模型支持指定用途） / 2 输入不可读 / 3 下载失败或超过体积上限 / 4 契约错误（解码失败、缺字段、嵌套对象、类型不符、参考图编号冲突、task_type 与 --kind 冲突） / 5 安全阻断`
 - **确定性幂等**：同输入两次运行输出逐字节一致（固定分桶算法、无时间戳、无随机数、键排序）
-- **无状态**：不写配置文件；仅视频关键帧写入系统临时目录（路径返回 JSON 供 Agent 读取）
+- **无状态**：不写配置文件；视频关键帧写入 `--workdir`（默认仓库 `.tmp/`，安装态回退系统临时目录），路径返回 JSON 供 Agent 读取；stdin/URL 的视频副本分析后删除
 - **输入统一**：本地路径 / `-`(stdin) / `http(s)://` URL 三种形式；URL 仅允许公网 http(s)，私网/回环/链路本地/含凭据地址直接拒绝（退出码 3），重定向逐跳复检，并有 `--max-bytes` 大小上限（文本/场景 32 MiB、图片 64 MiB、视频 512 MiB）
 
 ### 4.3 数据契约（三层）
@@ -275,7 +291,7 @@ L3 编译器 → Agent：     {prompts[], score_report{}, filter{blocked, matche
 python tools/verify.py
 ```
 
-24 项断言、全部离线、可重复执行：
+26 项断言、全部离线、可重复执行：
 
 | 层 | 覆盖 |
 |---|---|
@@ -286,6 +302,7 @@ python tools/verify.py
 | 豆包兼容 | YAML frontmatter 校验 + zip 内文件齐全 + 包内编译器独立运行成功 |
 | DeepSeek 模型 | 别名（`deepseek`/`ds`/`deepseek-flash`/`deepseek-1017`）解析一致 + 三模态渲染含模型名/思考档/推理段 + 不混入默认集合 |
 | 模板层 | 10 个模型模板元数据齐全；FLUX.2 无负向、GPT Image/Nano Banana/Veo/Runway/Sora 结构正确；Markdown 排版；模板别名冲突→退出码 4 |
+| 任务模式 | GPT Image 五用途互斥渲染（`--kind` / `task_type` 映射）；编辑顺序 Change→Scope→Preserve→Do not change；参考图逐行带编号；嵌套对象/编号缺失重复/未知 task_type/冲突→退出码 4，无模型支持→退出码 1 |
 | 安全加固 | 全角、词内/词间零宽、大小写西里尔同形字 5 类绕过仍阻断；纯注入措辞（`act as if`/`ignore all prior rules`）只进 `injection_flags` 不阻断；`validate-templates` 全量通过且 5 类坏模板均报错；私网/回环/凭据/非 http URL 被拒，四脚本退出码 3 |
 | 四场景 | ① 营销文案→GPT Prompt（角色/风格/结构约束）② 赛博朋克图→MJ Prompt（`/imagine`+`--no`+风格迁移）③ 10 秒视频→分镜 Prompt（镜头数=分镜段落数）④ 剧本→逐场景 Prompt（每场景 MJ/SD/Sora 2 齐全 + 逐场景评分） |
 

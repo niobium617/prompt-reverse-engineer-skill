@@ -10,10 +10,16 @@
   scenes   叙事文本逐场景编译（image + video）
   validate-templates  校验模板元数据/占位符/用途契约（全部错误一次列出）
 
+任务模式：semantic_analysis.task_type（五枚举）经 TASK_KINDS 映射到用途（kind）；
+compile/all 也可用 --kind 显式选择。两者同时给出且不一致→退出码 4；
+只给 task_type 时，模板若有该用途则只渲染该用途，无该用途的模型保持原有全部渲染。
+不传 task_type / --kind 时行为与旧版一致（渲染模板内全部适用用途）。
+
 规则权威来源：references/prompt_framework.md（字段契约、评分细则、安全规则）。
 注意：本文件 DIMENSIONS/SUGGESTIONS 与 prompt_framework.md 第三、五节镜像，
 修改必须两处同步。新增模型=在 assets/templates/ 新增 *.json 模板，零代码改动。
-退出码：0 成功 / 1 用法错误(含未知模型) / 2 输入不可读 / 4 契约错误(缺字段/坏评分) / 5 安全阻断
+退出码：0 成功 / 1 用法错误(含未知模型/无模型支持该用途) / 2 输入不可读 /
+        4 契约错误(缺字段/坏评分/嵌套对象/类型不符/编号冲突) / 5 安全阻断
 """
 import argparse
 import hashlib
@@ -143,7 +149,36 @@ KNOWN_FIELDS = {
     "text_content", "reference_note", "story", "storyboard", "character",
     "camera", "atmosphere", "audio", "narration", "dialogue", "duration",
     "aspect_ratio",
+    # GPT Image 扁平视觉契约（prompt_framework.md 2.3 节）
+    "subject_position", "subject_scale", "shot_type", "camera_angle",
+    "spatial", "material", "preserve_constraints", "forbidden_changes",
+    "modification_scope", "reference_images", "task_type", "uncertainty",
 }
+
+# 任务模式 → 用途（kind）；与 prompt_framework.md 2.3 节、
+# model_mappings.md GPT Image 一节镜像。
+TASK_KINDS = {
+    "text_to_image": "prompt",
+    "image_recreation": "recreate",
+    "image_editing": "edit",
+    "reference_guided": "reference_guided",
+    "image_composition": "compose",
+}
+# 声明 task_type 后强制检查的必填字段（不声明时不校验，保持旧行为）
+TASK_REQUIRED = {
+    "text_to_image": [],
+    "image_recreation": ["subject_position", "spatial"],
+    "image_editing": ["modification_scope", "preserve_constraints", "forbidden_changes"],
+    "reference_guided": ["reference_images", "spatial"],
+    "image_composition": ["reference_images", "spatial"],
+}
+NEW_STRING_FIELDS = ("subject_position", "subject_scale", "shot_type",
+                     "camera_angle", "spatial", "material")
+NEW_LIST_FIELDS = ("preserve_constraints", "forbidden_changes",
+                   "modification_scope", "reference_images", "uncertainty")
+# 列表字段的连接方式：reference_images 每项一行，其余按语言选择分隔符
+LIST_JOINERS = {"reference_images": "\n"}
+REF_ID_RE = re.compile(r"图\s*(\d+)")
 MODALITY_NAMES = {"text", "image", "video"}
 KIND_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -172,12 +207,80 @@ def load_json(path, what):
         die(f"{what}不是合法 JSON：{exc}", 4)
 
 
+def _has_value(semantic, field):
+    value = semantic.get(field)
+    if isinstance(value, list):
+        return any(str(item).strip() for item in value)
+    return bool(str(value or "").strip())
+
+
+def validate_semantic(semantic, where="semantic_analysis"):
+    """按扁平契约校验新增视觉字段：嵌套对象、类型、task_type 枚举、参考图编号。"""
+    def err(message):
+        die(f"{where}：{message}", 4)
+
+    if not isinstance(semantic, dict):
+        err("必须是对象")
+    for key, value in semantic.items():
+        if isinstance(value, dict):
+            err(f"{key} 是对象（dict）；契约要求扁平字段，请改为字符串或字符串数组")
+    for key in NEW_STRING_FIELDS:
+        if key in semantic and not isinstance(semantic[key], str):
+            err(f"{key} 必须是字符串")
+    for key in NEW_LIST_FIELDS:
+        if key in semantic and not (
+                isinstance(semantic[key], list)
+                and all(isinstance(item, str) for item in semantic[key])):
+            err(f"{key} 必须是字符串数组")
+    task = semantic.get("task_type")
+    if task is not None and task not in TASK_KINDS:
+        err(f"task_type 必须是 {'/'.join(TASK_KINDS)} 之一，当前：{task!r}")
+    refs = semantic.get("reference_images")
+    if refs:
+        numbers = []
+        for index, item in enumerate(refs, 1):
+            match = REF_ID_RE.search(item)
+            if not match:
+                err(f"reference_images[{index}] 缺少「图N」编号：{item}")
+            numbers.append(int(match.group(1)))
+        duplicated = sorted({n for n in numbers if numbers.count(n) > 1})
+        if duplicated:
+            err("reference_images 编号重复："
+                + ", ".join(f"图{n}" for n in duplicated))
+
+
+def validate_task_contract(semantic, where="semantic_analysis"):
+    """声明 task_type 时检查该任务必填字段，缺失即退出码 4（不声明则不校验）。"""
+    task = semantic.get("task_type")
+    if not task:
+        return
+    missing = [f for f in TASK_REQUIRED[task] if not _has_value(semantic, f)]
+    if missing:
+        die(f"{where}：task_type={task} 缺少必填字段：{', '.join(missing)}", 4)
+
+
+def resolve_kind(semantic, cli_kind, where="semantic_analysis"):
+    """返回 (kind, strict)。
+
+    strict=True 表示 --kind 显式指定：没有模型支持该用途时退出码 1。
+    只给 task_type 时是该任务的建议用途，不支持的模型保持原有全部渲染。
+    """
+    task = semantic.get("task_type")
+    if not task:
+        return cli_kind, bool(cli_kind)
+    mapped = TASK_KINDS[task]
+    if cli_kind and cli_kind != mapped:
+        die(f"{where}：task_type={task} 对应用途 {mapped}，与 --kind {cli_kind} 冲突", 4)
+    return cli_kind or mapped, bool(cli_kind)
+
+
 def load_analysis(path):
     data = load_json(path, "分析文件")
     if "semantic_analysis" not in data:
         die("分析文件缺少 semantic_analysis 字段（字段规范见 prompt_framework.md）", 4)
     if "modality" not in data or data["modality"] not in ("text", "image", "video", "story"):
         die("分析文件缺少有效 modality 字段（text/image/video/story）", 4)
+    validate_semantic(data["semantic_analysis"])
     return data
 
 
@@ -265,7 +368,8 @@ def template_errors(filename, t):
                     isinstance(f, str) and f.strip() for f in fields):
                 err(f"kind_requires.{kind} 必须是字符串数组")
                 continue
-            unknown = sorted(set(fields) - KNOWN_FIELDS)
+            # 允许门控 default_params / optional_fields 中的字段（如 reference_images）
+            unknown = sorted(set(fields) - allowed_fields)
             if unknown:
                 err(f"kind_requires.{kind} 引用了未知字段：{', '.join(unknown)}")
     return errors
@@ -343,15 +447,30 @@ def resolve_models(spec, registry):
 # ---------------------------------------------------------------------------
 # compile
 # ---------------------------------------------------------------------------
+def join_values(field, items):
+    """列表字段连接：reference_images 每项一行；其余按语言选分隔符。"""
+    items = [str(v).strip() for v in items if str(v).strip()]
+    joiner = LIST_JOINERS.get(field)
+    if joiner:
+        return joiner.join(items)
+    if items and all(item.isascii() for item in items):
+        return ", ".join(items)
+    return "、".join(items)
+
+
 def format_field(field, value):
     """把 semantic 字段值规范为模板可渲染的字符串。
 
     - 字符串：原样（去首尾空白）
-    - 字符串列表：用顿号连接（如 negative_words）
+    - 字符串列表：按字段选择分隔符（见 join_values）
     - 分镜对象数组（storyboard）：按 video_rules.md 分镜规范渲染为逐行文本
+    - 嵌套对象：拒绝（模板只支持单层 {field} 占位，dict 会被 str() 成 repr）
     """
     if isinstance(value, str):
         return value.strip()
+    if isinstance(value, dict):
+        raise ValueError(
+            f"字段 {field} 的值是对象（dict）；契约要求扁平字段，请改为字符串或字符串数组")
     if isinstance(value, list):
         if value and isinstance(value[0], dict):
             lines = []
@@ -376,18 +495,25 @@ def format_field(field, value):
                     line += f"（台词：{dialogue}）"
                 lines.append(line)
             return "\n".join(lines)
-        return "、".join(str(v).strip() for v in value if str(v).strip())
+        return join_values(field, value)
     return str(value)
 
 
-def clean_rendered(text):
-    """清理可选字段留空造成的空标签、重复标点与多余空行（确定性处理）。"""
+def clean_rendered(text, drop_empty_label_lines=False):
+    """清理可选字段留空造成的空标签、重复标点与多余空行（确定性处理）。
+
+    drop_empty_label_lines 由模板的 clean_empty_label_lines 开关控制：
+    默认只清空标签文字（保留空行，存量模板输出逐字节不变）；
+    开启后整行连同换行一起删除，避免规格书式模板留下孤立空行。
+    """
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    # 整行只有「标签：」或「Label: .」时删除（仅删空值行，不碰有内容的行）
-    text = re.sub(
-        r"(?m)^[ \t]*[^\n:：]{1,24}[:：][ \t]*[.。；;，,、]?[ \t]*$",
-        "", text,
-    )
+    # 只匹配「整行仅有标签 + 标点」的情况，必须锚定行尾，
+    # 否则会误删「标签：内容」这类有内容行的标签部分
+    label_only = r"(?m)^[ \t]*[^\n:：]{1,24}[:：][ \t]*[.。；;，,、]?[ \t]*"
+    if drop_empty_label_lines:
+        text = re.sub(label_only + r"(?:\n|\Z)", "", text)
+    else:
+        text = re.sub(label_only + r"$", "", text)
     # 空文字槽位：文字「」以及其前的逗号
     text = re.sub(r"[，,]\s*文字「\s*」", "", text)
     text = re.sub(r"(?m)^[ \t]*文字「\s*」[ \t]*$", "", text)
@@ -404,23 +530,27 @@ def clean_rendered(text):
 
 
 def render_one(template, kind, modality, semantic):
-    """返回 (status, payload)。status: ok / missing / skip
+    """返回 (status, payload)。status: ok / missing / skip / invalid
 
     kind_requires 用于「只有提供某字段才渲染该用途」的场景，
     例如没有 target_style 时不输出 style_transfer / edit。
+    invalid 表示字段值无法渲染（如嵌套对象），payload 为错误消息。
     """
     section = template.get("modalities", {}).get(modality, {})
     if kind not in section:
         return "skip", None
     for required in template.get("kind_requires", {}).get(kind, []):
-        if not str(semantic.get(required, "")).strip():
+        if not _has_value(semantic, required):
             return "skip", None
     template_str = section[kind]
     fields = sorted(FIELD_RE.findall(template_str))
     optional = set(template.get("optional_fields", []))
     context, missing = {}, []
     for field in fields:
-        rendered = format_field(field, semantic[field]) if field in semantic else ""
+        try:
+            rendered = format_field(field, semantic[field]) if field in semantic else ""
+        except ValueError as exc:
+            return "invalid", str(exc)
         if rendered:
             context[field] = rendered
         elif field in template.get("default_params", {}):
@@ -435,7 +565,9 @@ def render_one(template, kind, modality, semantic):
         text = template_str.format(**context)
     except (KeyError, IndexError, ValueError):
         return "missing", sorted(set(fields) - set(context))
-    return "ok", clean_rendered(text)
+    return "ok", clean_rendered(
+        text, drop_empty_label_lines=bool(template.get("clean_empty_label_lines"))
+    )
 
 
 def prompt_record(template, model, kind, text):
@@ -451,21 +583,48 @@ def prompt_record(template, model, kind, text):
     }
 
 
-def compile_prompts(registry, models, modality, semantic):
-    """按模型列表渲染某模态，返回 (prompts, skipped, missing_all)。"""
-    prompts, skipped, missing_all = [], [], []
+def compile_prompts(registry, models, modality, semantic, kind=None, strict=False):
+    """按模型列表渲染某模态，返回 (prompts, skipped, missing_all, invalid_all)。
+
+    kind 为 None 时渲染模板内全部用途（旧行为）；指定时只渲染该用途：
+    strict=True（--kind 显式指定）下不支持的模型进 skipped，全部不支持由调用方退出码 1；
+    strict=False（仅由 task_type 推导）下不支持的模型维持全部渲染。
+    """
+    prompts, skipped, missing_all, invalid_all = [], [], [], []
     for model in models:
         template = registry[model]
-        if modality not in template.get("modalities", {}):
+        section = template.get("modalities", {})
+        if modality not in section:
             skipped.append({"model": model, "reason": f"模板不支持 {modality} 模态"})
             continue
-        for kind in template["modalities"][modality]:
-            status, payload = render_one(template, kind, modality, semantic)
+        kinds = list(section[modality])
+        if kind:
+            if kind in kinds:
+                kinds = [kind]
+            elif strict:
+                skipped.append({"model": model, "reason": f"模板不支持用途 {kind}"})
+                continue
+        for each in kinds:
+            status, payload = render_one(template, each, modality, semantic)
             if status == "ok":
-                prompts.append(prompt_record(template, model, kind, payload))
+                prompts.append(prompt_record(template, model, each, payload))
             elif status == "missing":
-                missing_all.append((model, kind, payload))
-    return prompts, skipped, missing_all
+                missing_all.append((model, each, payload))
+            elif status == "invalid":
+                invalid_all.append((model, each, payload))
+    return prompts, skipped, missing_all, invalid_all
+
+
+def report_compile_errors(invalid_all, missing_all, where=""):
+    """优先报契约错误（无法渲染的值），再报缺失字段；均退出码 4。"""
+    prefix = f"{where}：" if where else ""
+    if invalid_all:
+        model, kind, message = invalid_all[0]
+        die(f"{prefix}{model}/{kind} 契约错误：{message}", 4)
+    if missing_all:
+        for model, kind, fields in missing_all:
+            die(f"{prefix}{model}/{kind} 缺失字段：{', '.join(fields)}"
+                f"（补全 semantic_analysis 后重试）", 4)
 
 
 def cmd_compile(args):
@@ -480,12 +639,14 @@ def cmd_compile(args):
         die(f"未知模型：{', '.join(unknown)}（可用：{', '.join(sorted(registry))}）", 1)
     if not models:
         die("未解析到任何模型", 1)
+    validate_task_contract(semantic)
+    kind, strict = resolve_kind(semantic, args.kind)
 
-    prompts, skipped, missing_all = compile_prompts(registry, models, modality, semantic)
-    if missing_all:
-        for model, kind, fields in missing_all:
-            die(f"{model}/{kind} 缺失字段：{', '.join(fields)}"
-                f"（补全 semantic_analysis 后重试）", 4)
+    prompts, skipped, missing_all, invalid_all = compile_prompts(
+        registry, models, modality, semantic, kind=kind, strict=strict)
+    report_compile_errors(invalid_all, missing_all)
+    if strict and kind and not prompts:
+        die(f"没有模型支持用途 {kind}（可用用途见模板 modalities）", 1)
 
     result = {
         "schema_version": SCHEMA_VERSION,
@@ -787,12 +948,14 @@ def cmd_all(args):
         die(f"未知模型：{', '.join(unknown)}（可用：{', '.join(sorted(registry))}）", 1)
     if not models:
         die("未解析到任何模型", 1)
+    validate_task_contract(semantic)
+    kind, strict = resolve_kind(semantic, args.kind)
 
-    prompts, skipped, missing_all = compile_prompts(registry, models, modality, semantic)
-    if missing_all:
-        for model, kind, fields in missing_all:
-            die(f"{model}/{kind} 缺失字段：{', '.join(fields)}"
-                f"（补全 semantic_analysis 后重试）", 4)
+    prompts, skipped, missing_all, invalid_all = compile_prompts(
+        registry, models, modality, semantic, kind=kind, strict=strict)
+    report_compile_errors(invalid_all, missing_all)
+    if strict and kind and not prompts:
+        die(f"没有模型支持用途 {kind}（可用用途见模板 modalities）", 1)
 
     all_matches, injection_flags = [], []
     sanitized_prompts = []
@@ -973,16 +1136,19 @@ def cmd_scenes(args):
         if scene_no not in scene_dims:
             die(f"场景 {scene_no} 缺少评分条目", 4)
         title = scene.get("title") or f"场景 {scene_no}"
-        image_prompts, _, image_missing = compile_prompts(
-            registry, image_models, "image", scene)
-        video_prompts, _, video_missing = compile_prompts(
-            registry, video_models, "video", scene)
+        where = f"场景 {scene_no}（{title}）"
+        validate_semantic(scene, where)
+        # 场景若声明 task_type，按同一契约校验必填字段并只渲染该用途
+        validate_task_contract(scene, where)
+        scene_kind, _ = resolve_kind(scene, None, where)
+        image_prompts, _, image_missing, image_invalid = compile_prompts(
+            registry, image_models, "image", scene, kind=scene_kind)
+        video_prompts, _, video_missing, video_invalid = compile_prompts(
+            registry, video_models, "video", scene, kind=scene_kind)
         prompts = image_prompts + video_prompts
-        missing_all = image_missing + video_missing
-        if missing_all:
-            for model, kind, fields in missing_all:
-                die(f"场景 {scene_no}（{title}）{model}/{kind} 缺失字段：{', '.join(fields)}"
-                    f"（补全 semantic_analysis.scenes[{scene_no}] 后重试）", 4)
+        report_compile_errors(image_invalid + video_invalid,
+                              image_missing + video_missing,
+                              where=f"场景 {scene_no}（{title}）")
 
         matches, injection_flags, sanitized = [], [], []
         for p in prompts:
@@ -1105,6 +1271,9 @@ def main():
     p_compile.add_argument("--analysis", required=True, help="分析 JSON（含 modality + semantic_analysis）")
     p_compile.add_argument("--models", default="default",
                            help="模型列表（逗号分隔/别名）或 default（MJ+GPT4）/all")
+    p_compile.add_argument("--kind",
+                           help="只渲染指定用途（如 recreate/edit/reference_guided/compose）；"
+                                "与 task_type 冲突或没有模型支持时退出码 4/1")
     p_compile.add_argument("--template-dir", default=str(DEFAULT_TEMPLATE_DIR))
     p_compile.add_argument("-o", "--output")
 
@@ -1125,6 +1294,8 @@ def main():
     p_all = sub.add_parser("all", help="compile + filter + score 串联")
     p_all.add_argument("--analysis", required=True)
     p_all.add_argument("--models", default="default")
+    p_all.add_argument("--kind",
+                       help="只渲染指定用途（同 compile --kind）")
     p_all.add_argument("--dims", help="Agent 评分 JSON：[{key, score, note}]")
     p_all.add_argument("--auto", action="store_true")
     p_all.add_argument("--sanitize", action="store_true")
