@@ -257,7 +257,7 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py compile   --anal
 └── tools/
     ├── install.py                     # 一键安装（junction/copy，幂等，--dry-run）
     ├── gen_examples.py                # 从 fixtures 重新生成四模态示例（确定性）
-    ├── verify.py                      # 离线端到端验证（38 项断言）
+    ├── verify.py                      # 离线端到端验证（44 项断言）
     └── fixtures/                      # 金标语义分析 JSON（契约测试/字段范例）
 ```
 
@@ -293,19 +293,19 @@ L3 编译器 → Agent：     {prompts[], score_report{}, filter{blocked, matche
 python tools/verify.py
 ```
 
-38 项断言、全部离线、可重复执行：
+44 项断言、全部离线、可重复执行：
 
 | 层 | 覆盖 |
 |---|---|
 | 单元层 | 四脚本跑示例输入：退出码/信封/关键字段 + 幂等（两次运行逐字节一致）；analyze_scenes 剧本→场次标记、散文→候选块+时间地点提示 |
 | 契约层 | 编译渲染（总分=加权和、建议 1-2 条）+ 越狱样例阻断（退出码 5）+ `--sanitize` 替换放行 |
-| 负向层 | 缺字段（退出码 4 报字段名）/ 未知模型 / 坏文件 / 重复评分维度 / 重复与跳号 scene_no / 场景缺字段（报场景号）/ 场景黑名单 |
+| 负向层 | 缺字段（退出码 4 报字段名）/ 未知模型 / 坏文件 / 重复评分维度 / 重复与跳号 scene_no / 参考图缺角色或多角色 / uncertainty 缺置信度标签 / 场景缺字段（报场景号）/ 场景黑名单 |
 | 安装层 | junction 创建与幂等、config.toml 标记块仅一次（Windows）；copy 模式安装/幂等/`--force`（全平台）；无 `tomllib` 的 Python 3.10 降级告警并退出 0 |
 | 豆包兼容 | YAML frontmatter 校验 + zip 内文件齐全 + 包内编译器独立运行成功 |
 | DeepSeek 模型 | 别名（`deepseek`/`ds`/`deepseek-flash`/`deepseek-1017`）解析一致 + 三模态渲染含模型名/思考档/推理段 + 不混入默认集合 |
-| 模板层 | 10 个模型模板元数据齐全且在对应模态均渲染非空 Prompt；FLUX.2 无负向、GPT Image/Nano Banana/Veo/Runway/Sora 结构正确；Markdown 排版；模板别名冲突→退出码 4 |
+| 模板层 | 10 个模型模板元数据齐全且在对应模态均渲染非空 Prompt；FLUX.2 无负向、GPT Image/Nano Banana/Veo/Runway/Sora 结构正确；Markdown 排版；模板别名冲突→退出码 4；GPT Image 六项审查清单齐全且不参与总分；模板引用 `{uncertainty}` 被拒 |
 | 任务模式 | GPT Image 五用途互斥渲染（`--kind` / `task_type` 映射）；编辑顺序 Change→Scope→Preserve→Do not change；参考图逐行带编号；嵌套对象/编号缺失重复/未知 task_type/冲突→退出码 4，无模型支持→退出码 1 |
-| 一致性 | `VERSION` 与 codex 清单版本一致；清单描述含十模型与 DeepSeek；豆包脚本文案与 `scripts/*.py` 同步；豆包三产物两次生成哈希一致；README 依赖声明与脚本导入一致；README 断言数与实际一致；四模态示例可由 `gen_examples.py` 逐字节复现 |
+| 一致性 | `VERSION` 与 codex 清单版本一致；清单描述含十模型与 DeepSeek；豆包脚本文案与 `scripts/*.py` 同步；豆包三产物两次生成哈希一致；README 依赖声明与脚本导入一致；README 断言数与实际一致；四模态示例可由 `gen_examples.py` 逐字节复现；8 个参考图角色在 references 中齐全；unknown 项进正文会提示而不改变总分 |
 | 安全加固 | 全角、词内/词间零宽、大小写西里尔同形字 5 类绕过仍阻断；纯注入措辞（`act as if`/`ignore all prior rules`）只进 `injection_flags` 不阻断；`validate-templates` 全量通过且 5 类坏模板均报错；私网/回环/凭据/非 http URL 被拒，四脚本退出码 3 |
 | 四场景 | ① 营销文案→GPT Prompt（角色/风格/结构约束）② 赛博朋克图→MJ Prompt（`/imagine`+`--no`+风格迁移）③ 10 秒视频→分镜 Prompt（镜头数=分镜段落数）④ 剧本→逐场景 Prompt（每场景 MJ/SD/Sora 2 齐全 + 逐场景评分） |
 

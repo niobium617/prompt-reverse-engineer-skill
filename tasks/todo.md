@@ -35,10 +35,10 @@
 
 ## 阶段 3：参考图、置信度、评分清单
 
-- [ ] `reference_images` 角色枚举与编号规则写入文档
-- [ ] `uncertainty` 规则：`unknown` 不进正文
-- [ ] GPT Image 审查清单出现在输出末尾（不参与总分）
-- [ ] `image_rules.md` 补空间/材质/编辑约束术语
+- [x] `reference_images` 角色枚举与编号规则写入文档
+- [x] `uncertainty` 规则：`unknown` 不进正文
+- [x] GPT Image 审查清单出现在输出末尾（不参与总分）
+- [x] `image_rules.md` 补空间/材质/编辑约束术语
 
 ## 阶段 4：迭代与差异分析（可选）
 

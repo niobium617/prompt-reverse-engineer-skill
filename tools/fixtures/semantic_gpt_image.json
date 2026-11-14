@@ -30,8 +30,8 @@
     "target_style": "赛博朋克，电影感雨夜",
     "text_content": "APS 2077",
     "reference_images": [
-      "图1：人物姿态与服装参考",
-      "图2：霓虹配色与灯光参考"
+      "图1：identity_reference；提取：面部与发型；保留：人物姿态与服装；禁止迁移：背景配色；优先级：主参考",
+      "图2：style_reference；提取：霓虹配色与灯光；保留：整体色温；禁止迁移：人物身份；优先级：次参考"
     ],
     "reference_note": "参考图 1：人物姿态；参考图 2：霓虹配色",
     "preserve_constraints": [
@@ -46,7 +46,8 @@
       "仅替换背景灯牌内容"
     ],
     "uncertainty": [
-      "广告牌具体文字 unknown"
+      "unknown: 广告牌具体文字",
+      "inferred: 拍摄时段可能为深夜"
     ]
   }
 }
