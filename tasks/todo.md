@@ -25,13 +25,13 @@
 ## 阶段 2：一致性与 CI
 
 - [x] README 删除 `requests`，依赖表与临时目录描述修正
-- [ ] `install.py` 动态扫描脚本清单，删除"4 个"硬编码
-- [ ] `install.py` 在 Python 3.10 降级 `tomllib` 校验并继续
-- [ ] 新增根目录 `VERSION`，`plugin.json` 与之对齐
-- [ ] 新增 `tools/gen_examples.py`，verify 断言示例可复现
-- [ ] `verify.py` 新增 12–14 条断言
-- [ ] CI 改为全分支 push + PR，新增 Windows 安装冒烟
-- [ ] 断言数量同步到 README
+- [x] `install.py` 动态扫描脚本清单，删除"4 个"硬编码
+- [x] `install.py` 在 Python 3.10 降级 `tomllib` 校验并继续
+- [x] 新增根目录 `VERSION`，`plugin.json` 与之对齐
+- [x] 新增 `tools/gen_examples.py`，verify 断言示例可复现
+- [x] `verify.py` 新增 12–14 条断言
+- [x] CI 改为全分支 push + PR，新增 Windows 安装冒烟
+- [x] 断言数量同步到 README
 
 ## 阶段 3：参考图、置信度、评分清单
 

@@ -1,6 +1,6 @@
 {
   "name": "prompt-reverse-engineer",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "多模态 Prompt 逆向工程：将文本/图片/视频/剧本作品拆解还原为可复用的专业 Prompt，适配 Midjourney V8.2 / Stable Diffusion 3.5 / FLUX.2 / GPT Image 2.5 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1 等模型格式，附百分制质量评分。",
   "author": {
     "name": "niobium617"

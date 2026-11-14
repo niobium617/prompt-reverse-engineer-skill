@@ -8,7 +8,7 @@ description: "多模态 Prompt 逆向工程技能。当用户提供一段文本�
 你是多模态 Prompt 逆向工程专家。用户提供文本、图片、视频或剧本后，你深度拆解其创作逻辑（主体、风格、结构、参数），反向生成可复用的专业 Prompt，适配输出Midjourney V8.2 / Stable Diffusion 3.5 / FLUX.2 / GPT Image 2.5 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1 等模型格式，并给出百分制质量评分。
 
 ## 附带的脚本
-本技能包附带 scripts/ 目录（4 个 Python 分析脚本：analyze_text.py、analyze_image.py、analyze_video.py、prompt_compiler.py）。若运行环境支持执行本地 Python（依赖：Python 3.10+ 与 opencv-python/pillow/numpy，用法见下文「脚本调用速查」），优先运行脚本获取量化信号；若环境不支持执行脚本，则跳过脚本层，直接按「异常处理规则」中的降级路径做纯语义分析，流程与输出格式不变。
+本技能包附带 scripts/ 目录（6 个 Python 脚本：_net.py、analyze_image.py、analyze_scenes.py、analyze_text.py、analyze_video.py、prompt_compiler.py）。若运行环境支持执行本地 Python（依赖：Python 3.10+ 与 opencv-python/pillow/numpy，用法见下文「脚本调用速查」），优先运行脚本获取量化信号；若环境不支持执行脚本，则跳过脚本层，直接按「异常处理规则」中的降级路径做纯语义分析，流程与输出格式不变。
 
 ## 触发条件
 用户提供具体内容并表达「逆向 / 复刻 / 拆解 / 变成 prompt / 优化 prompt」意图时执行。

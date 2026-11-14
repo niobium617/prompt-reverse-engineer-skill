@@ -736,6 +736,8 @@ def parse_dims(path):
         key = item.get("key")
         if key not in known:
             die(f"未知评分维度：{key}", 4)
+        if key in seen:
+            die(f"评分维度重复：{key}", 4)
         score = item.get("score")
         if not isinstance(score, (int, float)) or not 0 <= score <= 100:
             die(f"维度 {key} 得分须为 0-100 的数字", 4)
@@ -1078,6 +1080,20 @@ def cmd_scenes(args):
     scenes = semantic.get("scenes")
     if not isinstance(scenes, list) or not scenes:
         die("story 分析缺少非空 scenes 数组（字段规范见 prompt_framework.md 2.5 节）", 4)
+    # scene_no 必须是 1..N 的连续整数：重复或跳号会让场景评分表对不上号
+    scene_numbers = []
+    for scene in scenes:
+        no = scene.get("scene_no") if isinstance(scene, dict) else None
+        if not isinstance(no, int):
+            die("场景缺少整数 scene_no 字段：" +
+                json.dumps(scene, ensure_ascii=False)[:120], 4)
+        scene_numbers.append(no)
+    duplicates = sorted({n for n in scene_numbers if scene_numbers.count(n) > 1})
+    if duplicates:
+        die(f"场景 scene_no 重复：{', '.join(str(n) for n in duplicates)}", 4)
+    if scene_numbers != list(range(1, len(scene_numbers) + 1)):
+        die("场景 scene_no 必须从 1 连续编号，当前：" +
+            ", ".join(str(n) for n in scene_numbers), 4)
 
     registry = load_registry(args.template_dir)
     if not registry:
@@ -1106,6 +1122,8 @@ def cmd_scenes(args):
                 key = d.get("key")
                 if key not in known:
                     die(f"未知评分维度：{key}", 4)
+                if key in seen:
+                    die(f"场景 {scene_no} 评分维度重复：{key}", 4)
                 score = d.get("score")
                 if not isinstance(score, (int, float)) or not 0 <= score <= 100:
                     die(f"维度 {key} 得分须为 0-100 的数字", 4)

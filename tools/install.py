@@ -69,6 +69,9 @@ def agent_roots(target_root):
 
 
 def is_junction(path: Path) -> bool:
+    """Windows 判断 reparse point；POSIX 上等价物是符号链接。"""
+    if os.name != "nt":
+        return path.is_symlink()
     try:
         st = os.lstat(str(path))
     except OSError:
@@ -77,8 +80,10 @@ def is_junction(path: Path) -> bool:
 
 
 def junction_target(path: Path):
-    """读取 junction 的目标路径（fsutil 解析 reparse point 中 printName）。"""
+    """读取链接目标：Windows 解析 junction reparse point；POSIX 直接 readlink。"""
     try:
+        if os.name != "nt":
+            return Path(os.readlink(str(path)))
         out = subprocess.run(
             ["cmd", "/c", "dir", str(path)], capture_output=True, text=True, timeout=30
         ).stdout
@@ -91,10 +96,29 @@ def junction_target(path: Path):
     return None
 
 
+def remove_link(path: Path):
+    """删除链接本身（不跟随）：Windows junction 用 rmdir，POSIX 符号链接用 unlink。"""
+    if os.name != "nt" and path.is_symlink():
+        path.unlink()
+    else:
+        os.rmdir(str(path))
+
+
 def make_junction(link: Path, source: Path, dry_run: bool, actions: list):
+    """建目录链接：Windows 用 mklink /J；POSIX 用 os.symlink（无需特权的等价物）。"""
     if dry_run:
         actions.append(("junction", str(link), "-> " + str(source)))
         return True
+    if os.name != "nt":
+        try:
+            if link.is_symlink():
+                if Path(os.readlink(str(link))).resolve() == Path(source).resolve():
+                    return True
+                link.unlink()
+            os.symlink(str(source), str(link), target_is_directory=True)
+            return True
+        except OSError:
+            return False
     result = subprocess.run(
         ["cmd", "/c", "mklink", "/J", str(link), str(source)],
         capture_output=True, text=True, timeout=60,
@@ -119,7 +143,7 @@ def install_dir_platform(platform, mode, target_root, dry_run, force, actions):
             actions.append(("rebuild", platform, f"{dest} 指向异源，重建 junction"))
             if not dry_run:
                 try:
-                    os.rmdir(str(dest))
+                    remove_link(dest)
                 except OSError as exc:
                     actions.append(("error", platform, f"移除旧 junction 失败：{exc}"))
                     return
@@ -163,7 +187,7 @@ def install_codex(mode, target_root, dry_run, force, actions):
             else:
                 actions.append(("rebuild", "codex", "skills junction 指向异源，重建"))
                 if not dry_run:
-                    os.rmdir(str(plugin_skills))
+                    remove_link(plugin_skills)
                 make_junction(plugin_skills, SKILL_SRC, dry_run, actions)
                 actions.append(("ok", "codex", f"junction {plugin_skills} -> {SKILL_SRC}"))
         elif plugin_skills.exists():
@@ -202,17 +226,17 @@ def install_codex(mode, target_root, dry_run, force, actions):
         return
     try:
         import tomllib  # Python 3.11+
-    except ModuleNotFoundError:
-        actions.append(("error", "codex",
-                        f"校验 {config_path} 需要 Python 3.11+（tomllib）；"
-                        "请改用 3.11+ 运行 install.py，或按 platform-adapters/README.md "
-                        "手动追加注册块"))
-        return
-    try:
-        tomllib.loads(text)
-    except Exception as exc:
-        actions.append(("error", "codex", f"config.toml 解析失败，不修改：{exc}"))
-        return
+    except (ModuleNotFoundError, ImportError):
+        tomllib = None
+        actions.append(("warn", "codex",
+                        f"Python < 3.11（无 tomllib），跳过 {config_path} 的 TOML "
+                        "语义校验，仅做标记块检查"))
+    if tomllib is not None:
+        try:
+            tomllib.loads(text)
+        except Exception as exc:
+            actions.append(("error", "codex", f"config.toml 解析失败，不修改：{exc}"))
+            return
     block = (
         f"\n{MARKER_BEGIN}\n"
         "[marketplaces.aps-local]\n"
@@ -233,6 +257,14 @@ def install_codex(mode, target_root, dry_run, force, actions):
 
 def build_doubao_body():
     """把 SKILL.md + references 扁平化为单一中文指令正文（确定性）。"""
+    scripts = sorted(p.name for p in (SKILL_SRC / "scripts").glob("*.py"))
+    script_note = (
+        f"本技能包附带 scripts/ 目录（{len(scripts)} 个 Python 脚本："
+        + "、".join(scripts) + "）。若运行环境支持执行"
+        "本地 Python（依赖：Python 3.10+ 与 opencv-python/pillow/numpy，用法见下文"
+        "「脚本调用速查」），优先运行脚本获取量化信号；若环境不支持执行脚本，则跳过"
+        "脚本层，直接按「异常处理规则」中的降级路径做纯语义分析，流程与输出格式不变。"
+    )
     lines = [
         "# Prompt 逆向工程专家（豆包技能）",
         "",
@@ -243,11 +275,7 @@ def build_doubao_body():
         "等模型格式，并给出百分制质量评分。",
         "",
         "## 附带的脚本",
-        "本技能包附带 scripts/ 目录（4 个 Python 分析脚本：analyze_text.py、"
-        "analyze_image.py、analyze_video.py、prompt_compiler.py）。若运行环境支持执行"
-        "本地 Python（依赖：Python 3.10+ 与 opencv-python/pillow/numpy，用法见下文"
-        "「脚本调用速查」），优先运行脚本获取量化信号；若环境不支持执行脚本，则跳过"
-        "脚本层，直接按「异常处理规则」中的降级路径做纯语义分析，流程与输出格式不变。",
+        script_note,
         "",
         "## 触发条件",
         "用户提供具体内容并表达「逆向 / 复刻 / 拆解 / 变成 prompt / 优化 prompt」意图时执行。",
@@ -365,7 +393,7 @@ def main():
     print("== 安装汇总 ==")
     for kind, name, detail in actions:
         tag = {"ok": "[OK]", "skip": "[SKIP]", "mkdir": "[MKDIR]", "junction": "[LINK]",
-               "rebuild": "[REBUILD]", "error": "[ERROR]"}.get(kind, "[?]")
+               "rebuild": "[REBUILD]", "warn": "[WARN]", "error": "[ERROR]"}.get(kind, "[?]")
         print(f"{tag} {name}: {detail}")
     errors = [a for a in actions if a[0] == "error"]
     if args.dry_run:

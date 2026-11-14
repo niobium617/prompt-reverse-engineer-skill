@@ -118,3 +118,154 @@
 ### 脱敏
 
 本文不含密钥、账号、绝对用户路径（除仓库内相对路径）。
+
+## 2026-11-14 阶段 2：一致性与 CI
+
+### 摘要
+
+新增 `VERSION`（2.1.0）作为版本单一源并对齐 codex 清单；`install.py` 动态扫描脚本清单、Python 3.10 无 `tomllib` 时降级告警并继续；新增 `tools/gen_examples.py`，四模态示例改由 fixtures 确定性生成；`verify.py` 从 26 项扩到 38 项（含 copy 模式安装、3.10 降级、一致性检查）；CI 改为全分支推送 + Windows 安装冒烟。`verify.py` 38/38 PASS。
+
+### 背景（基线）
+
+- 基线断言：26/26 PASS；`.github/workflows/verify.yml` 仅 `push: [main]`，单 ubuntu 作业。
+- `install.py` 豆包文案写死「4 个 Python 分析脚本」，实际 6 个。
+- `install.py` 直接 `import tomllib`（3.11+），CI 的 3.10 作业遇 codex 安装会失败。
+- 无 `VERSION`；codex `plugin.json` 版本停在 `2.0.0`，最新 tag 仍是 `v1.4.0`。
+- 四模态 `assets/examples/*/output.md` 为手写，建议条数 3 条与契约「1–2 条」不符，且随模板改动漂移。
+- `verify.py` 安装层在非 Windows 直接跳过，CI 对安装逻辑零覆盖。
+
+### 变更清单
+
+| 文件 | 旧 | 新 |
+|---|---|---|
+| `VERSION` | 无 | 新增，内容 `2.1.0`（版本单一源） |
+| `platform-adapters/codex/.../plugin.json` | `2.0.0` | `2.1.0`，与 `VERSION` 对齐 |
+| `tools/gen_examples.py` | 无 | 新增：从 `tools/fixtures/semantic_*.json` 调用编译器生成四模态 `output.md`；`--check` 逐字节校验 |
+| `assets/examples/*/output.md` | 手写（含元信息卡/摘要，建议 3 条） | 由生成器确定性输出（编译器 `--format md` 正文 + 标题/来源注记，建议数随评分器） |
+| `tools/install.py` | 豆包文案写死「4 个 Python 分析脚本」及 4 个文件名 | 扫描 `scripts/*.py` 动态生成数量与清单（当前 6 个） |
+| 同上 | 无 `tomllib` → `[ERROR]` 并跳过安装 | `[WARN]` 提示降级后继续追加标记块，退出 0 |
+| `scripts/prompt_compiler.py` | 重复评分维度静默接受；场景号重复/跳号不校验 | 重复维度（全局与逐场景）退出 4；`scene_no` 必须为 1..N 连续整数，否则退出 4 |
+| `tools/verify.py` | 26 项；无 `--filter` | 38 项（新增 12 项见下）；`--filter SUBSTR` 供分平台冒烟；`stderr` 同步 UTF-8 |
+| `.github/workflows/verify.yml` | `push: [main]`，单 ubuntu 作业 | `push: ["**"]` + PR；新增 `windows-latest` 作业跑 `--filter 安装层` |
+| `README.md` | 26 项断言；目录树无 `VERSION`/`gen_examples.py` | 38 项断言；目录树与验证表补一致性/安装降级条目 |
+| `platform-adapters/doubao/*` | 与技能本体不同步（zip 未含阶段 1 最新文档） | 重新生成（zip 383035 → 381051 字节） |
+
+新增 12 项断言：
+
+1. 一致性/VERSION 与清单（`VERSION` ↔ `plugin.json.version`）
+2. 一致性/Codex 清单文案（十模型描述 + DeepSeek 关键词）
+3. 一致性/豆包脚本清单（文案数量/文件名 ↔ `scripts/*.py`）
+4. 一致性/豆包产物可复现（两次生成哈希一致）
+5. 一致性/依赖声明（README 无 `requests`，第三方导入均已声明）
+6. 一致性/README 断言数（README 写的数字 ↔ 实际 checks 数）
+7. 一致性/示例可复现（`gen_examples.py --check`）
+8. 安装层/copy 模式冒烟（安装/幂等/`--force`，全平台）
+9. 安装层/Python 3.10 降级（模拟无 `tomllib`，`[WARN]` + 退出 0 + 标记块写入）
+10. 负向层/重复评分维度（退出 4）
+11. 负向层/场景编号（重复/跳号均退出 4）
+12. 模板层/十模型全量渲染（10 个模板在对应模态均输出非空 Prompt）
+
+### 生效方式
+
+- 新增/修改模板或 fixtures 后运行 `python tools/gen_examples.py` 重新生成示例，再 `python tools/install.py --platform doubao` 同步豆包产物。
+- 版本发布前只需改 `VERSION`，`verify.py` 会检查 codex 清单是否同步。
+- CI：ubuntu 3.10/3.12 跑全部 38 项；windows 3.12 跑 `--filter 安装层` 3 项。
+
+### 验证（真实输出）
+
+```
+[PASS] 安装层/copy 模式冒烟 — copy 模式安装/幂等/--force 覆盖通过（Linux/Windows 通用）
+[PASS] 安装层/Python 3.10 降级 — 模拟 Python 3.10（无 tomllib）降级告警并继续，退出 0
+[PASS] 一致性/VERSION 与清单 — VERSION=2.1.0 与 codex plugin.json 一致
+[PASS] 一致性/豆包脚本清单 — 6 个脚本清单与 scripts/*.py 一致
+[PASS] 一致性/豆包产物可复现 — 豆包三产物两次生成哈希一致（固定时间戳可复现）
+[PASS] 一致性/依赖声明 — README 依赖声明与 scripts 导入一致（无 requests）
+[PASS] 一致性/README 断言数 — README 断言数 38 与实际一致
+[PASS] 一致性/示例可复现 — 四模态 output.md 与 gen_examples.py 生成结果逐字节一致
+
+== 验证汇总 ==
+通过 38 / 38
+全部通过 ✔
+```
+
+补充验证：
+
+- `python tools/verify.py --filter 安装层` → 3/3 PASS。Windows 未实机验证，交由 CI `windows-latest` 作业覆盖。
+- 重复评分维度实测提示「评分维度重复：theme_clarity」；场景号实测提示「场景 scene_no 重复：1」「场景 scene_no 必须从 1 连续编号，当前：1, 3」。
+- 示例生成器两次运行输出逐字节一致（换行归一化为 LF，避免 Windows CRLF 漂移）。
+
+### 偏差
+
+- 示例 `output.md` 原含手写的元信息卡/分析摘要，现改为编译器确定性输出；分析摘要属 Agent 语义产物，无法由脚本复现，为消除漂移按方案 P1-3 舍弃。
+- `last_updated`（codex config.toml 固定时间戳）仍为常量，未按阶段 2 清单外计划 P1-9 改为从 `VERSION` 派生。
+- 未新增方案 §5.4 中的「未知字段警告」与「旧模板输出快照」：前者需区分场景对象自带字段，易误报；后者与示例逐字节断言职责重叠。
+
+### 回滚
+
+`git revert` 本阶段提交即可。`VERSION` 为新增文件，删除不影响运行；示例回滚后回到手写版本，`gen_examples --check` 断言需同步删除。无数据迁移。
+
+### 脱敏
+
+本文不含密钥、账号、绝对用户路径（除仓库内相对路径）。
+## 2026-11-14 修复：Linux CI 安装层断言失败（junction → symlink）
+
+### 摘要
+
+`install.py` 的 codex 安装路径在非 Windows 平台直接调用 `cmd /c mklink`，抛
+`FileNotFoundError` 导致 GitHub Actions ubuntu 作业在「安装层/Python 3.10 降级」失败；
+改为 POSIX 用 `os.symlink`、Windows 保持 junction。
+
+### 背景（基线）
+
+- 本地 Windows：`python tools/verify.py` → 44/44 通过。
+- PR #6 / #7 首次 CI：ubuntu 3.10、3.12 两个作业均 FAIL，43/44，唯一失败项即上述断言；
+  windows-latest 安装冒烟通过。
+
+### 变更清单（旧值 → 新值）
+
+| 位置 | 旧值 | 新值 |
+|---|---|---|
+| `make_junction` | 无条件 `cmd /c mklink /J` | `os.name == "nt"` 用 mklink；POSIX 用 `os.symlink`（已存在同源链接则跳过） |
+| `is_junction` | 仅识别 Windows reparse point | POSIX 返回 `path.is_symlink()` |
+| `junction_target` | 仅 `cmd /c dir` 解析 | POSIX 用 `os.readlink` |
+| 链接删除（2 处） | `os.rmdir` | 新增 `remove_link`：符号链接 `unlink`，junction `rmdir` |
+
+### 生效方式
+
+随分支配送，无需额外操作；非 Windows 用户以 junction 模式安装时自动得到符号链接，
+行为与 Windows 等价。
+
+### 验证（真实输出）
+
+修复后本地 Windows：
+
+```text
+== 验证汇总 ==
+通过 44 / 44
+全部通过 ✔
+```
+
+（阶段 2 分支同补丁：38 / 38 通过。）
+
+GitHub Actions 修复后：
+
+```text
+4360839914 chore/stage2-consistency-ci completed success
+4360843948 chore/stage2-consistency-ci completed success
+4360801938 feat/stage3-reference-confidence-review completed success
+4360796526 feat/stage3-reference-confidence-review completed success
+```
+
+### 偏差
+
+- Windows 工作区 `core.autocrlf=true` 时，重新检出后的 `image_rules.md` 为 CRLF，
+  重新生成的豆包 zip 会比提交版本多 17 字节；CI（LF 检出）与提交一致。未引入
+  `.gitattributes` 强制换行，避免一次性重写全仓库行尾，留待发布阶段评估。
+
+### 回滚
+
+`git revert` 本修复提交；Windows 行为不变，POSIX 恢复为安装报错（不使用）。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径。

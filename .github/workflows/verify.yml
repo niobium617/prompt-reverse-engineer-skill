@@ -2,7 +2,8 @@ name: verify
 
 on:
   push:
-    branches: [main]
+    # 全分支推送都验证：特性分支在开 PR 前即可暴露问题
+    branches: ["**"]
   pull_request:
 
 permissions:
@@ -30,5 +31,19 @@ jobs:
       - name: 安装依赖
         run: python -m pip install --upgrade pip opencv-python-headless pillow numpy
 
-      - name: 离线端到端验证（26 项断言，无网络、无 API）
+      - name: 离线端到端验证（38 项断言，无网络、无 API）
         run: python tools/verify.py
+
+  install-smoke:
+    name: Windows 安装冒烟
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # junction 仅在 Windows 存在，故单开作业；不跑全量断言，避免重复装 opencv
+      - name: 安装层冒烟（junction / copy / Python 3.10 降级）
+        run: python tools/verify.py --filter 安装层
