@@ -47,6 +47,6 @@
 
 ## 阶段 5：发布
 
-- [ ] `VERSION` 递增，tag 与 release notes
-- [ ] 重新生成豆包 zip 与 Codex 清单
-- [ ] 更新仓库描述、README 模型数与断言数
+- [x] `VERSION` 递增，tag 与 release notes
+- [x] 重新生成豆包 zip 与 Codex 清单
+- [x] 更新仓库描述、README 模型数与断言数

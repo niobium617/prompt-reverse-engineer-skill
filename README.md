@@ -250,14 +250,15 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py compile   --anal
 │   └── doubao/                        # 豆包：上传 zip + 粘贴指令双产物
 ├── docs/                              # 项目文档
 │   ├── 2026-11-14-项目改进方案.md     # 工程与 GPT Image 专项改进方案
-│   └── DEVLOG.md                      # 阶段开发记录（改动/验证/回滚）
+│   ├── DEVLOG.md                      # 阶段开发记录（改动/验证/回滚）
+│   └── RELEASE.md                     # 发布检查表（版本源/tag/Release）
 ├── tasks/
 │   └── todo.md                        # 分阶段任务清单
 ├── VERSION                            # 版本单一源（codex plugin.json 与之对齐）
 └── tools/
     ├── install.py                     # 一键安装（junction/copy，幂等，--dry-run）
     ├── gen_examples.py                # 从 fixtures 重新生成四模态示例（确定性）
-    ├── verify.py                      # 离线端到端验证（44 项断言）
+    ├── verify.py                      # 离线端到端验证（45 项断言）
     └── fixtures/                      # 金标语义分析 JSON（契约测试/字段范例）
 ```
 
@@ -293,7 +294,7 @@ L3 编译器 → Agent：     {prompts[], score_report{}, filter{blocked, matche
 python tools/verify.py
 ```
 
-44 项断言、全部离线、可重复执行：
+45 项断言、全部离线、可重复执行：
 
 | 层 | 覆盖 |
 |---|---|

@@ -14,7 +14,7 @@
   9. 模板契约：validate-templates 全量校验 + 五类坏模板逐项报错
  10. GPT Image 五任务模式：--kind/task_type 映射、编辑顺序、参考图编号、契约错误退出 4
  11. 下载防护：私网/回环/凭据 URL 拒绝，分析脚本退出码 3
- 12. 一致性：VERSION/清单/依赖/README 断言数/示例复现/豆包产物可复现/角色文档
+ 12. 一致性：VERSION/清单/依赖/README 断言数/示例复现/豆包产物可复现与换行/角色文档
  13. 安装降级：copy 模式（全平台）、无 tomllib 的 Python 3.10 降级
  14. 参考图与置信度：角色枚举校验、uncertainty 标签、泄漏提示、审查清单不计分
 
@@ -1021,6 +1021,26 @@ def main():
         assert first == second, "两次生成豆包产物哈希不一致（时间戳/排序不确定）"
         return True, "豆包三产物两次生成哈希一致（固定时间戳可复现）"
 
+    def doubao_newlines():
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "aps_install", REPO / "tools" / "install.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        assert module.normalize_newlines("a\r\nb\rc") == "a\nb\nc", \
+            "normalize_newlines 未把 CRLF/CR 归一为 LF"
+        text = (REPO / "platform-adapters" / "doubao" /
+                "doubao_instruction.md").read_bytes()
+        assert b"\r\n" not in text, "doubao_instruction.md 含 CRLF"
+        import zipfile as _zf
+        zip_path = (REPO / "platform-adapters" / "doubao" /
+                    "prompt-reverse-engineer.zip")
+        with _zf.ZipFile(str(zip_path)) as zf:
+            for rel in zf.namelist():
+                if Path(rel).suffix.lower() in {".md", ".py", ".json", ".txt"}:
+                    assert b"\r\n" not in zf.read(rel), f"zip 内 {rel} 含 CRLF"
+        return True, "豆包产物归一为 LF；normalize_newlines 覆盖 CRLF/CR"
+
     def dependency_docs():
         readme = (REPO / "README.md").read_text(encoding="utf-8")
         assert "requests" not in readme, "README 仍声明 requests 依赖"
@@ -1197,6 +1217,7 @@ def main():
         ("一致性/Codex 清单文案", codex_manifest_sync),
         ("一致性/豆包脚本清单", doubao_script_inventory),
         ("一致性/豆包产物可复现", doubao_reproducible),
+        ("一致性/豆包产物换行", doubao_newlines),
         ("一致性/依赖声明", dependency_docs),
         ("一致性/README 断言数", readme_assertion_counts),
         ("一致性/示例可复现", examples_reproducible),
