@@ -69,6 +69,9 @@ def agent_roots(target_root):
 
 
 def is_junction(path: Path) -> bool:
+    """Windows 判断 reparse point；POSIX 上等价物是符号链接。"""
+    if os.name != "nt":
+        return path.is_symlink()
     try:
         st = os.lstat(str(path))
     except OSError:
@@ -77,8 +80,10 @@ def is_junction(path: Path) -> bool:
 
 
 def junction_target(path: Path):
-    """读取 junction 的目标路径（fsutil 解析 reparse point 中 printName）。"""
+    """读取链接目标：Windows 解析 junction reparse point；POSIX 直接 readlink。"""
     try:
+        if os.name != "nt":
+            return Path(os.readlink(str(path)))
         out = subprocess.run(
             ["cmd", "/c", "dir", str(path)], capture_output=True, text=True, timeout=30
         ).stdout
@@ -91,10 +96,29 @@ def junction_target(path: Path):
     return None
 
 
+def remove_link(path: Path):
+    """删除链接本身（不跟随）：Windows junction 用 rmdir，POSIX 符号链接用 unlink。"""
+    if os.name != "nt" and path.is_symlink():
+        path.unlink()
+    else:
+        os.rmdir(str(path))
+
+
 def make_junction(link: Path, source: Path, dry_run: bool, actions: list):
+    """建目录链接：Windows 用 mklink /J；POSIX 用 os.symlink（无需特权的等价物）。"""
     if dry_run:
         actions.append(("junction", str(link), "-> " + str(source)))
         return True
+    if os.name != "nt":
+        try:
+            if link.is_symlink():
+                if Path(os.readlink(str(link))).resolve() == Path(source).resolve():
+                    return True
+                link.unlink()
+            os.symlink(str(source), str(link), target_is_directory=True)
+            return True
+        except OSError:
+            return False
     result = subprocess.run(
         ["cmd", "/c", "mklink", "/J", str(link), str(source)],
         capture_output=True, text=True, timeout=60,
@@ -119,7 +143,7 @@ def install_dir_platform(platform, mode, target_root, dry_run, force, actions):
             actions.append(("rebuild", platform, f"{dest} 指向异源，重建 junction"))
             if not dry_run:
                 try:
-                    os.rmdir(str(dest))
+                    remove_link(dest)
                 except OSError as exc:
                     actions.append(("error", platform, f"移除旧 junction 失败：{exc}"))
                     return
@@ -163,7 +187,7 @@ def install_codex(mode, target_root, dry_run, force, actions):
             else:
                 actions.append(("rebuild", "codex", "skills junction 指向异源，重建"))
                 if not dry_run:
-                    os.rmdir(str(plugin_skills))
+                    remove_link(plugin_skills)
                 make_junction(plugin_skills, SKILL_SRC, dry_run, actions)
                 actions.append(("ok", "codex", f"junction {plugin_skills} -> {SKILL_SRC}"))
         elif plugin_skills.exists():
