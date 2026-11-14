@@ -207,6 +207,89 @@
 ### 脱敏
 
 本文不含密钥、账号、绝对用户路径（除仓库内相对路径）。
+
+## 2026-11-14 阶段 3：参考图、置信度与审查清单
+
+### 摘要
+
+落实方案 §5.3.6–§5.3.9：参考图角色从自由文本改为八值枚举并逐项校验；`uncertainty` 要求 `observed/inferred/unknown` 标签，模板禁止引用；GPT Image 输出末尾新增六项审查清单（不参与总分）。文档补齐角色/置信度细则与空间、材质、编辑约束术语。
+
+### 背景（基线）
+
+- 阶段 2 结束：`python tools/verify.py` → 38/38。
+- 基线问题：`reference_images` 仅校验「图N」编号，角色靠自由文本，多图易串用；`uncertainty` 无格式约束，`unknown` 项可能被写进正文；GPT Image 只有六维评分，缺结构性自检；`image_rules.md` 无空间/材质/编辑约束术语。
+
+### 变更清单
+
+| 文件 | 旧值 | 新值 |
+|---|---|---|
+| `prompt_compiler.py` | 参考图只校验编号 | 增加 `REFERENCE_ROLES` 八枚举：缺角色、一条多角色 → 退出码 4 |
+| `prompt_compiler.py` | `uncertainty` 无校验 | 每项须以 `observed:`/`inferred:`/`unknown:` 开头，否则退出码 4 |
+| `prompt_compiler.py` | 模板可引用任意已声明字段 | `{uncertainty}` 占位符 → `validate-templates` 退出码 4 |
+| `prompt_compiler.py` | 无审查清单 | `build_review_checklist()` 六项；`all`/`compile` 的 JSON 输出 `review_checklist`，Markdown 末尾渲染；unknown 泄漏写入 `warnings` + 「审查提示」 |
+| `prompt_framework.md` | 2.3.2 仅一行说明 | 新增 2.3.3 角色枚举/写法/冲突规则、2.3.4 置信度三档、3.1 审查清单口径 |
+| `image_rules.md` | 无空间/材质/编辑约束术语 | 新增第十一节（空间九宫格/景深/遮挡/材质/编辑三类约束）与第十二节（角色对照表） |
+| `SKILL.md` | 未提参考图角色/审查清单 | 图像要点补角色与置信度；输出格式补审查清单；退出码补角色/标签/模板引用 |
+| `semantic_gpt_image.json` | 参考图无角色；uncertainty 无标签 | 两张图改为 `identity_reference` / `style_reference` 完整写法；uncertainty 改为 `unknown:`/`inferred:` |
+| `verify.py` | 38 项断言 | 44 项：参考图角色、uncertainty 标签、审查清单、模板引用禁令、泄漏提示、角色文档一致性 |
+| `platform-adapters/doubao/*` | 阶段 2 文档 | 重新生成（instruction/SKILL/references/zip） |
+| `README.md` | 38 项断言 | 44 项断言与验证表同步 |
+
+新增 6 项断言：
+
+1. 负向层/参考图角色（缺角色、一条多角色、编号重复 → 4）
+2. 负向层/uncertainty 标签（缺标签 → 4；三档合法标签放行）
+3. 模板层/GPT Image 审查清单（六项齐全、总分不变、非 GPT Image 不输出、Markdown 置于评分后）
+4. 模板层/uncertainty 不入正文（`validate-templates` 拒绝 `{uncertainty}`）
+5. 一致性/参考图角色文档（8 个角色在两份 references 中齐全）
+6. 一致性/uncertainty 泄漏提示（unknown 进正文 → `warnings` + 清单待复核 + Markdown 提示）
+
+### 生效方式
+
+- 图像分析时 `reference_images` 每项写成 `图N：<角色枚举>；提取：…；保留：…；禁止迁移：…；优先级：…`。
+- 不可确认信息写进 `uncertainty`，以 `observed:` / `inferred:` / `unknown:` 开头；`unknown` 只进说明。
+- 目标含 GPT Image 时，`all --format md` 末尾自动附加审查清单；JSON 消费方读 `review_checklist`。
+- 改参考文档后运行 `python tools/install.py --platform doubao` 同步豆包包。
+
+### 验证（真实输出）
+
+```
+[PASS] 负向层/参考图角色 — 缺角色/一条多角色/编号重复 均退出码 4 并指明原因
+[PASS] 负向层/uncertainty 标签 — 缺标签退出码 4；observed/inferred/unknown 三档均放行
+[PASS] 模板层/GPT Image 五任务模式 — 五用途互斥；编辑顺序 Change→Scope→Preserve→Do not change；参考图逐行；task_type 五种映射；6 类契约错误退出 4；冲突退出 4；无模型支持退出 1
+[PASS] 模板层/GPT Image 审查清单 — 六项审查清单齐全；总分仍等于六维加权和；非 GPT Image 不输出；Markdown 置于评分之后
+[PASS] 模板层/uncertainty 不入正文 — validate-templates 拒绝 {uncertainty} 占位符（退出码 4）
+[PASS] 一致性/参考图角色文档 — 8 个参考图角色在两份 references 中齐全，SKILL.md 已引用
+[PASS] 一致性/uncertainty 泄漏提示 — unknown 进正文 → warnings + 审查清单待复核 + Markdown 审查提示
+
+== 验证汇总 ==
+通过 44 / 44
+全部通过 ✔
+```
+
+补充验证：
+
+- `all --analysis tools/fixtures/semantic_gpt_image.json --models gpt_image --auto --format md` 末尾输出「## 审查清单（不参与总分）」，6 项全部「通过」，总分仍为 82.5（B）。
+- 同一 fixture 走 `mj` 时 JSON 无 `review_checklist`，确认清单只作用于 GPT Image。
+- 手工构造 `uncertainty=["广告牌文字"]` → `错误：semantic_analysis：uncertainty[1] 必须以置信度标签开头…`，退出码 4。
+- 手工构造 `reference_images=["图1：人物姿态参考"]` → 退出码 4 并列出八枚举。
+
+### 偏差
+
+- 角色只校验「枚举词 + 单角色 + 编号」，`提取/保留/禁止迁移/优先级` 作为必写格式写进文档但未机器校验：自由文本措辞差异大，硬校验误报率高。
+- 审查清单是确定性结构启发式，不是语义判断；六项均自动给结论，暂未使用「人工确认」状态。
+- 清单仅对 `gpt_image` 模型输出（按方案命名），未扩展到其他图像模型。
+- `uncertainty` 泄漏只提示不阻断，符合方案「仅提示」的约定；真正禁止依赖模板占位符禁令。
+- `image_rules.md` 新增内容追加为第十一/十二节，未重排既有章节，避免破坏文内「第八节」「第十节」引用。
+
+### 回滚
+
+`git revert` 本阶段提交即可。回滚后需重新生成豆包包与示例（`python tools/install.py --platform doubao`、`python tools/gen_examples.py`），并删除 `verify.py` 中新增 6 项断言、恢复 README 断言数为 38。无数据迁移。
+
+### 脱敏
+
+本文不含密钥、账号、绝对用户路径（除仓库内相对路径）。
+
 ## 2026-11-14 修复：Linux CI 安装层断言失败（junction → symlink）
 
 ### 摘要

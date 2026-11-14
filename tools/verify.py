@@ -14,8 +14,9 @@
   9. 模板契约：validate-templates 全量校验 + 五类坏模板逐项报错
  10. GPT Image 五任务模式：--kind/task_type 映射、编辑顺序、参考图编号、契约错误退出 4
  11. 下载防护：私网/回环/凭据 URL 拒绝，分析脚本退出码 3
- 12. 一致性：VERSION/清单/依赖/README 断言数/示例复现/豆包产物可复现
+ 12. 一致性：VERSION/清单/依赖/README 断言数/示例复现/豆包产物可复现/角色文档
  13. 安装降级：copy 模式（全平台）、无 tomllib 的 Python 3.10 降级
+ 14. 参考图与置信度：角色枚举校验、uncertainty 标签、泄漏提示、审查清单不计分
 
 用法：python tools/verify.py [--filter 子串]
 退出码：0 全部通过；1 存在失败项；2 参数错误。
@@ -644,7 +645,7 @@ def main():
         assert "仅替换背景灯牌内容" in texts["edit"], "编辑模式缺修改范围"
         assert "不新增画面文字" in texts["edit"], "编辑模式缺禁改项"
         # 3) 参考图逐行渲染；复刻模式保留空间与保留约束
-        refs = "图1：人物姿态与服装参考\n图2：霓虹配色与灯光参考"
+        refs = "\n".join(fixture["semantic_analysis"]["reference_images"])
         for kind in ("reference_guided", "compose"):
             assert refs in texts[kind], f"{kind} 参考图未逐行渲染"
         assert "Spatial layout:" in texts["recreate"], "复刻模式缺空间布局"
@@ -665,8 +666,9 @@ def main():
         bad_cases = [
             ("嵌套对象", dict(no_task, task_type="image_recreation",
                              spatial={"前景": "积水"})),
-            ("参考图缺编号", dict(no_task, reference_images=["人物参考"])),
-            ("参考图编号重复", dict(no_task, reference_images=["图1：a", "图1：b"])),
+            ("参考图缺编号", dict(no_task, reference_images=["identity_reference 人物参考"])),
+            ("参考图编号重复", dict(no_task, reference_images=[
+                "图1：identity_reference a", "图1：style_reference b"])),
             ("未知 task_type", dict(no_task, task_type="video_magic")),
             ("编辑缺字段", {k: v for k, v in
                             dict(no_task, task_type="image_editing").items()
@@ -691,6 +693,143 @@ def main():
         return True, ("五用途互斥；编辑顺序 Change→Scope→Preserve→Do not change；"
                       "参考图逐行；task_type 五种映射；6 类契约错误退出 4；"
                       "冲突退出 4；无模型支持退出 1")
+
+    # ---------------- 9.5 参考图角色与置信度 ----------------
+    def gpt_image_contracts():
+        fixture = json.loads(
+            (FIXTURES / "semantic_gpt_image.json").read_text(encoding="utf-8"))
+        base = fixture["semantic_analysis"]
+        case_dir = TMP / "gpt_image_contracts"
+        shutil.rmtree(str(case_dir), ignore_errors=True)
+        case_dir.mkdir(parents=True)
+
+        def write(name, semantic):
+            path = case_dir / f"{name}.json"
+            path.write_text(json.dumps({
+                "schema_version": "1.0", "tool": "agent", "modality": "image",
+                "semantic_analysis": semantic,
+            }, ensure_ascii=False), encoding="utf-8")
+            return path
+
+        def compile_file(path):
+            return run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                        "--analysis", path, "--models", "gpt_image"])
+
+        cases = [
+            ("缺少角色", ["图1：人物姿态参考"], "角色枚举"),
+            ("多个角色", ["图1：identity_reference 与 style_reference"], "多个角色"),
+            ("编号重复", ["图1：identity_reference a", "图1：style_reference b"], "编号重复"),
+        ]
+        for label, refs, needle in cases:
+            rc, _, err = compile_file(write(
+                f"bad_{needle}", dict(base, reference_images=refs)))
+            assert rc == 4, f"{label} 应退出码 4，实际 {rc}"
+            assert needle in decode(err), f"{label} 未报出「{needle}」：{decode(err)[:160]}"
+        return True, "缺角色/一条多角色/编号重复 均退出码 4 并指明原因"
+
+    def uncertainty_tags():
+        base = json.loads(
+            (FIXTURES / "semantic_gpt_image.json").read_text(encoding="utf-8")
+        )["semantic_analysis"]
+        tags_dir = TMP / "uncertainty_tags"
+        shutil.rmtree(str(tags_dir), ignore_errors=True)
+        tags_dir.mkdir(parents=True)
+
+        def compile_semantic(name, semantic):
+            path = tags_dir / f"{name}.json"
+            path.write_text(json.dumps({
+                "schema_version": "1.0", "tool": "agent", "modality": "image",
+                "semantic_analysis": semantic,
+            }, ensure_ascii=False), encoding="utf-8")
+            return run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                        "--analysis", path, "--models", "gpt_image"])
+
+        rc, _, err = compile_semantic("bad", dict(base, uncertainty=["广告牌文字"]))
+        assert rc == 4, f"缺标签应退出码 4，实际 {rc}"
+        assert "置信度标签" in decode(err), f"未提示置信度标签：{decode(err)[:160]}"
+        for tag in ("observed", "inferred", "unknown"):
+            rc, _, err = compile_semantic(
+                f"ok_{tag}", dict(base, uncertainty=[f"{tag}: 示例信息"]))
+            assert rc == 0, f"{tag} 标签应放行，实际 {rc}：{decode(err)[:160]}"
+        return True, "缺标签退出码 4；observed/inferred/unknown 三档均放行"
+
+    def uncertainty_leak():
+        base = json.loads(
+            (FIXTURES / "semantic_gpt_image.json").read_text(encoding="utf-8")
+        )["semantic_analysis"]
+        base.pop("task_type", None)  # 让 prompt 用途渲染 subject
+        base["subject"] = base["subject"] + "，广告牌具体文字清晰可见"
+        leak_dir = TMP / "uncertainty_leak"
+        shutil.rmtree(str(leak_dir), ignore_errors=True)
+        leak_dir.mkdir(parents=True)
+        path = leak_dir / "leak.json"
+        path.write_text(json.dumps({
+            "schema_version": "1.0", "tool": "agent", "modality": "image",
+            "semantic_analysis": base,
+        }, ensure_ascii=False), encoding="utf-8")
+        cmd = [PYTHON, SCRIPTS / "prompt_compiler.py", "all",
+               "--analysis", path, "--models", "gpt_image", "--auto"]
+        rc, out, err = run(cmd + ["--format", "json"])
+        data = stdout_json(rc, out, err)
+        warnings = data.get("warnings") or []
+        assert any("unknown" in w and "广告牌具体文字" in w for w in warnings), \
+            f"未提示 unknown 泄漏：{warnings}"
+        inference = next(i for i in data["review_checklist"] if i["key"] == "inference")
+        assert inference["status"] == "warn", "审查清单未把推测当事实标为待复核"
+        rc, out, err = run(cmd + ["--format", "md"])
+        text = decode(out)
+        assert "## 审查提示" in text and "广告牌具体文字" in text, \
+            "Markdown 缺少审查提示"
+        return True, "unknown 进正文 → warnings + 审查清单待复核 + Markdown 审查提示"
+
+    def uncertainty_template_ban():
+        tpl_dir = TMP / "uncertainty_tpl"
+        shutil.rmtree(str(tpl_dir), ignore_errors=True)
+        tpl_dir.mkdir(parents=True)
+        tpl = json.loads(
+            (SKILL / "assets" / "templates" / "gpt_image.json").read_text(encoding="utf-8"))
+        tpl["modalities"]["image"]["prompt"] += "\nUncertain: {uncertainty}"
+        (tpl_dir / "gpt_image.json").write_text(
+            json.dumps(tpl, ensure_ascii=False), encoding="utf-8")
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py",
+                            "validate-templates", "--template-dir", tpl_dir])
+        assert rc == 4, f"模板引用 uncertainty 应退出码 4，实际 {rc}"
+        errors = json.loads(decode(out))["errors"]
+        assert any("不得引用" in e and "uncertainty" in e for e in errors), \
+            f"未报出 uncertainty 占位符禁用：{errors}"
+        return True, "validate-templates 拒绝 {uncertainty} 占位符（退出码 4）"
+
+    def gpt_image_review_checklist():
+        fixture_path = FIXTURES / "semantic_gpt_image.json"
+        cmd = [PYTHON, SCRIPTS / "prompt_compiler.py", "all",
+               "--analysis", fixture_path, "--models", "gpt_image", "--auto"]
+        rc, out, err = run(cmd + ["--format", "json"])
+        data = stdout_json(rc, out, err)
+        items = data.get("review_checklist")
+        assert isinstance(items, list) and len(items) == 6, \
+            f"审查清单应为 6 项，实际 {items}"
+        keys = [i["key"] for i in items]
+        assert keys == ["core_info", "duplicate", "conflict", "inference",
+                        "reference_role", "preserve"], f"审查项顺序/内容异常：{keys}"
+        assert all(i["status"] in ("pass", "warn", "manual") for i in items), \
+            "存在非法审查结论"
+        report = data["score_report"]
+        recomputed = round(sum(WEIGHTS[d["key"]] * d["score"]
+                               for d in report["dimensions"]) / 100.0, 1)
+        assert report["total"] == recomputed, "审查清单影响了总分"
+        # 非 GPT Image 模型不输出清单
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "all",
+                            "--analysis", FIXTURES / "semantic_image.json",
+                            "--models", "mj", "--auto", "--format", "json"])
+        other = stdout_json(rc, out, err)
+        assert "review_checklist" not in other, "非 GPT Image 模型不应有审查清单"
+        # Markdown：清单在评分报告之后
+        rc, out, err = run(cmd + ["--format", "md"])
+        text = decode(out)
+        assert "## 审查清单（不参与总分）" in text, "Markdown 缺少审查清单"
+        assert text.index("## 审查清单") > text.index("## 评分报告"), "清单不在评分报告之后"
+        return True, ("六项审查清单齐全；总分仍等于六维加权和；"
+                      "非 GPT Image 不输出；Markdown 置于评分之后")
 
     # ---------------- 10. 安全加固（归一化 + 注入标记） ----------------
     def security_normalization():
@@ -911,6 +1050,19 @@ def main():
         assert rc == 0, f"示例已漂移：{decode(out)[:400]}{decode(err)[:200]}"
         return True, "四模态 output.md 与 gen_examples.py 生成结果逐字节一致"
 
+    def reference_role_docs():
+        roles = ("edit_target", "identity_reference", "pose_reference",
+                 "clothing_reference", "style_reference", "composition_reference",
+                 "background_reference", "object_reference")
+        for name in ("prompt_framework.md", "image_rules.md"):
+            text = (SKILL / "references" / name).read_text(encoding="utf-8")
+            missing = [role for role in roles if role not in text]
+            assert not missing, f"{name} 缺少角色枚举：{missing}"
+        skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        assert "2.3.3" in skill_text and "uncertainty" in skill_text, \
+            "SKILL.md 未指向参考图角色/置信度细则"
+        return True, "8 个参考图角色在两份 references 中齐全，SKILL.md 已引用"
+
     def install_copy_smoke():
         target = TMP / "install_copy"
         shutil.rmtree(str(target), ignore_errors=True)
@@ -1017,6 +1169,8 @@ def main():
         ("负向层/坏文件", negative_bad_file),
         ("负向层/重复评分维度", negative_duplicate_dims),
         ("负向层/场景编号", negative_scene_numbering),
+        ("负向层/参考图角色", gpt_image_contracts),
+        ("负向层/uncertainty 标签", uncertainty_tags),
         ("安装层/install 冒烟", install_smoke),
         ("安装层/copy 模式冒烟", install_copy_smoke),
         ("安装层/Python 3.10 降级", install_without_tomllib),
@@ -1032,6 +1186,8 @@ def main():
         ("DeepSeek/目标模型模板", deepseek_template),
         ("模板层/多模型契约与排版", new_templates_contract),
         ("模板层/GPT Image 五任务模式", gpt_image_modes),
+        ("模板层/GPT Image 审查清单", gpt_image_review_checklist),
+        ("模板层/uncertainty 不入正文", uncertainty_template_ban),
         ("模板层/十模型全量渲染", all_templates_render),
         ("安全层/归一化绕过", security_normalization),
         ("安全层/注入标记", injection_flags),
@@ -1044,6 +1200,8 @@ def main():
         ("一致性/依赖声明", dependency_docs),
         ("一致性/README 断言数", readme_assertion_counts),
         ("一致性/示例可复现", examples_reproducible),
+        ("一致性/参考图角色文档", reference_role_docs),
+        ("一致性/uncertainty 泄漏提示", uncertainty_leak),
     ]
     global CHECKS_TOTAL
     CHECKS_TOTAL = len(checks)

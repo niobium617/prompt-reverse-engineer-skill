@@ -134,3 +134,61 @@ Agent 填充 `negative_words` 字段时按三类分组书写（如 `"模糊, 低
 | Nano Banana Pro | 改写为正向约束 | 主体+动作 → 地点 → 构图 → 风格 | API 最多 14 张 | 最强，海报级 |
 
 选型建议：追求构图/风格一致 → MJ V8.2 或 FLUX.2；需要准确文字与编辑 → GPT Image 2.5 / Nano Banana Pro；本地可控与负面词 → SD 3.5。
+
+## 十一、空间、材质与编辑约束术语
+
+> 复刻、编辑、参考生成、多图融合（`prompt_framework.md` 2.3.1 的 recreate / edit / reference_guided / compose）时，除七段结构外还要写清空间、材质与改动边界。
+
+### 11.1 空间关系（spatial / subject_position）
+
+| 维度 | 术语 | 说明 |
+|---|---|---|
+| 九宫格位置 | 左上 / 上中 / 右上 / 左中 / 中心 / 右中 / 左下 / 下中 / 右下 | 先给格子，再补「略高/略低、偏左/偏右」 |
+| 景深层次 | 前景 `foreground` / 中景 `midground` / 背景 `background` | 逐层写「有什么」，避免只写主体 |
+| 遮挡关系 | 前景遮挡主体、主体遮挡背景、无遮挡 | 用「A 遮住 B 的哪一部分」描述 |
+| 透视 | 一点/两点/三点透视、俯视灭点、广角畸变 | 融合多图时先统一灭点与地平线 |
+| 相对尺度 | 主体约占画面高度 1/2、1/3；与参照物等高 | 给比例而非「很大」「很小」 |
+| 画面朝向 | 人物朝画面右侧行走、视线看向画外 | 与留白方向一起写 |
+
+### 11.2 材质与表面（material）
+
+| 类别 | 术语 | 描述要点 |
+|---|---|---|
+| 硬质 | 金属 `metal` / 玻璃 `glass` / 石材 / 陶瓷 / 混凝土 | 反射强弱、粗糙度、边缘高光 |
+| 软质 | 织物 `fabric` / 皮革 `leather` / 羽毛 / 毛发 | 纹理走向、褶皱、蓬松度 |
+| 透明/半透明 | 透明伞面、磨砂玻璃、薄纱 | 透光率、折射、挂水珠 |
+| 自然 | 水面 / 雾气 / 泥土 / 木纹 / 植被 | 湿度、颗粒、风化痕迹 |
+| 表面状态 | 湿润 `wet` / 干燥 / 磨损 `worn` / 抛光 `polished` / 哑光 `matte` / 生锈 `rusty` | 一句话写「状态 + 反光 + 污渍」 |
+
+### 11.3 编辑与复刻约束
+
+| 字段 | 写法 | 示例 |
+|---|---|---|
+| `modification_scope` | 只写允许改动的对象，一次一件事 | `["仅替换背景灯牌内容"]` |
+| `preserve_constraints` | 写「必须不变」的可识别特征 | `["人物姿态与服装", "街道材质与反光"]` |
+| `forbidden_changes` | 写「禁止发生」的位移/身份/结构变化 | `["不改变镜头焦段", "不新增画面文字"]` |
+
+GPT Image 把负向约束拆成三类自然语言句子，写进 Constraints 段（不要整段照搬 negative words）：
+
+1. **排除**：`Do not include watermarks, unwanted text, additional people or unrelated objects.`
+2. **保留**：`Keep the original facial features, expression, pose and body proportions unchanged.`
+3. **修改边界**：`Only modify the clothing and background. Do not change the character or camera framing.`
+
+复刻（recreate）时额外写「Do not invent details that are not visible in the reference」，并避免添加参考图中没有的风格词。
+
+## 十二、参考图角色对照
+
+与 `prompt_framework.md` 2.3.3 的角色枚举一一对应；每张图只定一个角色，一行一张写进 `reference_images`：
+
+| 角色枚举 | 中文 | 提取内容 | 禁止迁移 |
+|---|---|---|---|
+| `edit_target` | 编辑原图 | 原画面全部信息 + 修改位置 | — |
+| `identity_reference` | 身份参考 | 面部、发型、肤色、体型 | 服装、姿势、背景 |
+| `pose_reference` | 姿态参考 | 肢体角度、手势、朝向 | 面部身份、服装细节 |
+| `clothing_reference` | 服装参考 | 款式、颜色、材质、配饰 | 人物身份、背景 |
+| `style_reference` | 风格参考 | 画风、配色、光影质感 | 具体人物与构图 |
+| `composition_reference` | 构图参考 | 视角、景别、元素位置 | 主体身份、画风 |
+| `background_reference` | 背景参考 | 地点、环境元素、时间氛围 | 人物与前景道具 |
+| `object_reference` | 道具参考 | 外形、材质、标识细节 | 人物、场景风格 |
+
+写法：`图1：identity_reference；提取：面部与发型；保留：构图；禁止迁移：服装；优先级：主参考`。多图共用角色时用「优先级」区分主次；角色无法判断时先询问用户，或写入 `uncertainty` 的 `unknown:` 项。
