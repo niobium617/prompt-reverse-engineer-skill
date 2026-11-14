@@ -207,3 +207,65 @@
 ### 脱敏
 
 本文不含密钥、账号、绝对用户路径（除仓库内相对路径）。
+## 2026-11-14 修复：Linux CI 安装层断言失败（junction → symlink）
+
+### 摘要
+
+`install.py` 的 codex 安装路径在非 Windows 平台直接调用 `cmd /c mklink`，抛
+`FileNotFoundError` 导致 GitHub Actions ubuntu 作业在「安装层/Python 3.10 降级」失败；
+改为 POSIX 用 `os.symlink`、Windows 保持 junction。
+
+### 背景（基线）
+
+- 本地 Windows：`python tools/verify.py` → 44/44 通过。
+- PR #6 / #7 首次 CI：ubuntu 3.10、3.12 两个作业均 FAIL，43/44，唯一失败项即上述断言；
+  windows-latest 安装冒烟通过。
+
+### 变更清单（旧值 → 新值）
+
+| 位置 | 旧值 | 新值 |
+|---|---|---|
+| `make_junction` | 无条件 `cmd /c mklink /J` | `os.name == "nt"` 用 mklink；POSIX 用 `os.symlink`（已存在同源链接则跳过） |
+| `is_junction` | 仅识别 Windows reparse point | POSIX 返回 `path.is_symlink()` |
+| `junction_target` | 仅 `cmd /c dir` 解析 | POSIX 用 `os.readlink` |
+| 链接删除（2 处） | `os.rmdir` | 新增 `remove_link`：符号链接 `unlink`，junction `rmdir` |
+
+### 生效方式
+
+随分支配送，无需额外操作；非 Windows 用户以 junction 模式安装时自动得到符号链接，
+行为与 Windows 等价。
+
+### 验证（真实输出）
+
+修复后本地 Windows：
+
+```text
+== 验证汇总 ==
+通过 44 / 44
+全部通过 ✔
+```
+
+（阶段 2 分支同补丁：38 / 38 通过。）
+
+GitHub Actions 修复后：
+
+```text
+4360839914 chore/stage2-consistency-ci completed success
+4360843948 chore/stage2-consistency-ci completed success
+4360801938 feat/stage3-reference-confidence-review completed success
+4360796526 feat/stage3-reference-confidence-review completed success
+```
+
+### 偏差
+
+- Windows 工作区 `core.autocrlf=true` 时，重新检出后的 `image_rules.md` 为 CRLF，
+  重新生成的豆包 zip 会比提交版本多 17 字节；CI（LF 检出）与提交一致。未引入
+  `.gitattributes` 强制换行，避免一次性重写全仓库行尾，留待发布阶段评估。
+
+### 回滚
+
+`git revert` 本修复提交；Windows 行为不变，POSIX 恢复为安装报错（不使用）。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径。
