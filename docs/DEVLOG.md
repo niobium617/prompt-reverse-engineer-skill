@@ -410,3 +410,143 @@ GitHub Actions 修复后：
 ### 脱敏
 
 本文不含密钥与绝对用户路径。
+
+## 2026-11-15 Muse Image 1.0 独立适配（v2.2.0）
+
+### 摘要
+
+新增 Meta Muse Image 1.0 目标模型：独立模板与独立规则文件，支持八种任务模式（通用五用途 + Anchor 系列 / 多轮修改 / 文字版式）、十类空间关系、参考图迁移边界与 Muse 专项审查清单；升级至 `2.2.0`，断言 45 → 49。
+
+### 背景（基线）
+
+- 适配前：`VERSION` 2.1.0、11 个模板文件（10 模型 + 评分报告）、`verify.py` 45/45。
+- 设计资料给出八维分析、六任务模式等建议，但明确「这些属于 Skill 设计，并非 Meta 官方 Prompt 格式」；同时要求 Muse 不与 GPT Image 共用 JSON 模板。
+- 编译器按 `assets/templates/*.json` 的 `model` 键自动注册，因此采用**单个扁平 `muse_image.json`**，而非设计稿中的嵌套 `muse_image/*.json`；仍满足「独立模板、互不影响」的约束，且零代码注册。
+
+### 变更清单（旧值 → 新值）
+
+| 位置 | 旧值 | 新值 |
+|---|---|---|
+| `assets/templates/muse_image.json` | 不存在 | 独立模板：8 用途、`kind_requires`、Muse 标签段；不含 `params` 用途 |
+| `references/muse_image_rules.md` | 不存在 | 官方能力 vs 本 Skill 设计边界、八维分析、十类空间关系、八模式、参考图迁移边界、Anchor/多轮、评分与限制、API 边界 |
+| `references/muse_image_sources.md` | 不存在 | 五个官方来源索引；注明 Google Research Muse 2023 仅用于同名区分，禁止交叉引用 |
+| `scripts/prompt_compiler.py` | 5 用途；`KNOWN_FIELDS` 无 Muse 字段 | 8 用途；新增 `spatial_relationships`/`target_changes`/`reference_usage`/`feature_transfer`/`feature_exclusion`/`anchor_set`/`iteration_context`/`text_layout`；Muse 六项审查清单 |
+| `assets/templates/gpt_image.json` | 5 用途 | **未改动**（`muse_template_independent` 断言兜底） |
+| `tools/fixtures/semantic_muse_image.json` | 不存在 | 多参考图融合 + 10 条空间关系 + 迁移边界的字段范例 |
+| `assets/examples/muse_image_example/output.md` | 不存在 | 由 `gen_examples.py` 确定性生成 |
+| `tools/verify.py` | 45 项 | 49 项：Muse 独立模板 / 八任务模式 / 字段契约 / 审查清单 |
+| `README.md` / `SKILL.md` / `model_mappings.md` / `prompt_framework.md` / `image_rules.md` | 十模型、45 项 | 十一模型、49 项；补 Muse 模式、空间关系与迁移边界说明 |
+| `tools/install.py` | 豆包扁平指令不含 Muse 规则 | 纳入 `muse_image_rules.md`，豆包文案补 Muse Image 1.0 |
+| `VERSION` / codex `plugin.json` | 2.1.0 | 2.2.0；description/longDescription 补 Muse，keywords 补 `muse` |
+
+### 生效方式
+
+随 `main` 发布。Muse 为**按需模型**（`--models muse_image`），不计入默认双版本；安装态与豆包包同步携带独立模板与规则。
+
+### 验证（真实输出）
+
+```text
+[PASS] 模板层/Muse Image 独立模板 — Muse 八用途独立模板；无 params；GPT Image 五用途未被改动；两者 Prompt 文本不共用
+[PASS] 模板层/Muse Image 八任务模式 — Muse 八用途互斥；编辑/Anchor/多轮/文字版式结构正确；参考图逐行；三个 Muse task_type 映射正确；冲突退出 4；GPT Image 不支持该用途退出 1
+[PASS] 契约层/Muse Image 字段契约 — 编辑/Anchor/多轮/版式缺字段、空间关系类型、参考图角色、未知 task_type 均退出码 4 并指明原因
+[PASS] 模板层/Muse Image 审查清单 — Muse 六项清单齐全；总分仍为六维加权和；非 Muse/GPT 不串用；缺空间关系与禁止迁移均标待复核；Markdown 置于评分之后
+[PASS] 模板层/十一模型全量渲染 — 11 个模型模板均渲染出非空 Prompt（共 29 条）
+
+== 验证汇总 ==
+通过 49 / 49
+全部通过 ✔
+```
+
+```text
+$ python tools/gen_examples.py --check
+[PASS] text_example/output.md 与生成结果一致
+[PASS] image_example/output.md 与生成结果一致
+[PASS] muse_image_example/output.md 与生成结果一致
+[PASS] video_example/output.md 与生成结果一致
+[PASS] story_example/output.md 与生成结果一致
+```
+
+### 偏差
+
+- 设计稿建议 `assets/templates/image/muse_image/*.json` 多文件组织；编译器只自动注册扁平 `assets/templates/*.json`，故落为单文件 + 独立 `muse_image_rules.md`。模板与 GPT Image 仍完全独立，Muse 后续更新不影响 GPT Image 编译策略。
+- Muse 资料中的 `subject_reference` 未新增第九种角色：人物映射 `identity_reference`，非人物/道具映射 `object_reference`。
+- 三个 Muse 扩展 `task_type` 进入全局枚举，但仅 Muse 模板提供对应 kind；GPT Image 明确指定这些 `--kind` 时退出码 1。
+
+### 回滚
+
+`git revert` 本版本提交；`VERSION`/`plugin.json` 回到 2.1.0，删除 `muse_image*` 模板、规则、fixture 与示例，`prompt_compiler.py` 回退 5 用途与 45 项断言；豆包产物重新生成。无数据迁移。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径。
+
+## 2026-11-15 Seedance 2.5 独立适配（v2.3.0）
+
+### 摘要
+
+新增字节跳动 Seedance 2.5 目标模型：独立视频模板与独立规则文件，支持六种任务模式（文生视频 / 首帧 / 首尾帧 / 全模态参考 / 视频编辑 / 视频延长）、素材角色契约、`params` 参数边界与 Seedance 专项审查清单；升级至 `2.3.0`，断言 49 → 53。
+
+### 背景（基线）
+
+- 适配前：`VERSION` 2.2.0、12 个模板文件（11 模型 + 评分报告）、`verify.py` 49/49。
+- 官方（火山方舟）资料明确四种互斥场景：文生视频、首帧、首尾帧、全模态参考；编辑与延长属于全模态参考子任务。素材角色为 `first_frame` / `last_frame` / `reference_image` / `reference_video` / `reference_audio`。
+- 按既有「模型独立编译」约定，不并入 Sora / Runway / Veo 模板：新建 `assets/templates/seedance.json` 与 `references/seedance_rules.md`，共用视频分镜与 `video_references` 底层契约。
+
+### 变更清单（旧值 → 新值）
+
+| 位置 | 旧值 | 新值 |
+|---|---|---|
+| `assets/templates/seedance.json` | 不存在 | 独立模板：7 用途（storyboard / image_to_video / first_last_frame / reference_to_video / video_edit / video_extend / params）、`kind_requires`、`clean_empty_label_lines` |
+| `references/seedance_rules.md` | 不存在 | 资料边界、视频逆向维度、素材角色、六任务模式与互斥、分镜/首尾帧/编辑延长写法、声音、API 参数边界、评分与限制、官方 API 表、字段速查 |
+| `references/seedance_sources.md` | 不存在 | 火山方舟官方文档索引与「官方能力 vs 本 Skill 设计」边界 |
+| `scripts/prompt_compiler.py` | 5 个视频字段、无视频 task_type | 新增 `first_frame`/`last_frame`/`source_video`/`extension_plan`/`video_references`；6 个视频 `task_type` 映射；素材角色与互斥校验；Seedance 六项审查清单 |
+| `assets/templates/sora2.json` / `runway.json` / `veo3.json` | 既有用途 | **未改动**（`seedance_template_independent` 断言兜底） |
+| `tools/fixtures/semantic_seedance.json` | 不存在 | 三素材全模态参考（图/视频/音频）+ 3 镜头分镜 + 声音设计范例 |
+| `assets/examples/seedance_example/output.md` | 不存在 | 由 `gen_examples.py` 确定性生成 |
+| `tools/verify.py` | 49 项 | 53 项：Seedance 独立模板 / 六任务模式 / 字段契约 / 审查清单 |
+| `README.md` / `SKILL.md` / `model_mappings.md` / `prompt_framework.md` / `video_rules.md` | 十一模型、49 项 | 十二模型、53 项；补 Seedance 六模式、素材角色与参数边界 |
+| `tools/install.py` | 豆包扁平指令不含 Seedance 规则 | 纳入 `seedance_rules.md`，豆包文案补 Seedance 2.5 |
+| `VERSION` / codex `plugin.json` | 2.2.0 | 2.3.0；description/longDescription 补 Seedance，keywords 补 `seedance` |
+| `docs/RELEASE.md` / `tasks/todo.md` / `.github/workflows/verify.yml` | 49 项、十一模型 | 53 项、十二模型；新增阶段 3.6 |
+
+### 生效方式
+
+随 `main` 发布。Seedance 为**按需模型**（`--models seedance`），不计入默认双版本；安装态与豆包包同步携带独立模板与规则。
+
+### 验证（真实输出）
+
+```text
+[PASS] 模板层/Seedance 独立模板 — Seedance 七用途独立模板；无图片用途；与 Sora/Runway/Veo 模板文本不共用
+[PASS] 模板层/Seedance 六任务模式 — Seedance 六模式互斥；分镜/首帧/首尾帧/参考/编辑/延长结构正确；六个 task_type 映射正确；冲突退出 4；无模型支持退出 1
+[PASS] 契约层/Seedance 字段契约 — 素材缺编号/角色/多角色/重复、首帧与参考互斥、编辑缺范围、字段类型、未知任务均退出码 4 并指明原因
+[PASS] 模板层/Seedance 审查清单 — Seedance 六项清单齐全；总分仍为六维加权和；非 Seedance 不串用；缺分镜/声音/禁止迁移/参数越界均标待复核；Markdown 置于评分之后
+[PASS] 模板层/十二模型全量渲染 — 12 个模型模板均渲染出非空 Prompt（共 30 条）
+
+== 验证汇总 ==
+通过 53 / 53
+全部通过 ✔
+```
+
+```text
+$ python tools/gen_examples.py --check
+[PASS] text_example/output.md 与生成结果一致
+[PASS] image_example/output.md 与生成结果一致
+[PASS] muse_image_example/output.md 与生成结果一致
+[PASS] video_example/output.md 与生成结果一致
+[PASS] seedance_example/output.md 与生成结果一致
+[PASS] story_example/output.md 与生成结果一致
+```
+
+### 偏差
+
+- 官方素材角色含 `first_frame` / `last_frame`；本 Skill 用顶层 `first_frame` / `last_frame` 标量字段表达，`video_references` 只收 `reference_image` / `reference_video` / `reference_audio`，避免同一信息两处维护；互斥由编译器强制。
+- 官方四种场景中的「编辑」「延长」在本 Skill 拆为独立 `video_edit` / `video_extend` 用途，仍归全模态参考任务，便于分别输出结构化字段。
+- 参考素材上限（2.5：30 图 / 10 视频 / 10 音频）只写进规则文档，不在编译器做硬上限校验——接口接入面可能不同，交付时提示用户核对。
+
+### 回滚
+
+`git revert` 本版本提交；`VERSION`/`plugin.json` 回到 2.2.0，删除 `seedance*` 模板、规则、fixture 与示例，`prompt_compiler.py` 回退视频模式与 49 项断言；豆包产物重新生成。无数据迁移。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径。

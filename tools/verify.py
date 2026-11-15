@@ -292,13 +292,15 @@ def main():
                 assert f"prompt-reverse-engineer/scripts/{script}" in names, \
                     f"zip 内缺少脚本：{script}"
             for ref in ("prompt_framework.md", "image_rules.md",
-                        "video_rules.md", "model_mappings.md"):
+                        "video_rules.md", "model_mappings.md",
+                        "muse_image_rules.md", "seedance_rules.md"):
                 assert f"prompt-reverse-engineer/references/{ref}" in names, \
                     f"zip 内缺少规则库：{ref}"
             for tpl in ("midjourney.json", "stable_diffusion.json",
                         "gpt4_claude.json", "deepseek.json", "sora2.json",
                         "runway.json", "veo3.json", "flux2.json",
-                        "gpt_image.json", "nano_banana.json", "score_report.json"):
+                        "gpt_image.json", "muse_image.json", "seedance.json",
+                        "nano_banana.json", "score_report.json"):
                 assert f"prompt-reverse-engineer/assets/templates/{tpl}" in names, \
                     f"zip 内缺少模板：{tpl}"
             for ex in ("story_example/input.md", "story_example/output.md"):
@@ -540,7 +542,9 @@ def main():
             for key in meta_required:
                 assert key in t, f"{p.name} 缺少元数据 {key}"
             models[t["model"]] = t
-        assert len(models) == 10, f"模型模板数 {len(models)} != 10"
+        assert len(models) == 12, f"模型模板数 {len(models)} != 12"
+        assert "muse_image" in models, "缺少 Muse Image 模板"
+        assert "seedance" in models, "缺少 Seedance 模板"
 
         # 2) 图像模板：FLUX.2 无 negative、GPT Image / Nano Banana 分段标签、清理空槽
         rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
@@ -602,8 +606,8 @@ def main():
                           "--models", "mj", "--template-dir", dup_dir])
         assert rc == 4, f"别名冲突应退出码 4，实际 {rc}"
         assert "别名冲突" in decode(err), "未提示别名冲突"
-        return True, ("10 个模型模板元数据齐全；FLUX.2 无负向/参数行；"
-                      "GPT Image/Nano Banana/Veo/Runway/Sora 结构正确；"
+        return True, ("12 个模型模板元数据齐全；FLUX.2 无负向/参数行；"
+                      "GPT Image/Muse/Seedance/Nano Banana/Veo/Runway/Sora 结构正确；"
                       "Markdown 排版与别名冲突检测通过")
 
     # ---------------- 9. GPT Image 五任务模式 ----------------
@@ -831,6 +835,479 @@ def main():
         return True, ("六项审查清单齐全；总分仍等于六维加权和；"
                       "非 GPT Image 不输出；Markdown 置于评分之后")
 
+    # ---------------- 9.6 Muse Image 独立模板与专项模式 ----------------
+    def muse_template_independent():
+        muse = json.loads((SKILL / "assets" / "templates" /
+                           "muse_image.json").read_text(encoding="utf-8"))
+        gpt = json.loads((SKILL / "assets" / "templates" /
+                          "gpt_image.json").read_text(encoding="utf-8"))
+        assert muse["model"] == "muse_image"
+        assert muse["display_name"] == "Muse Image 1.0"
+        assert muse["vendor"] == "Meta"
+        assert muse["last_verified"] == "2026-11-15"
+        assert "muse" in muse["alias"] and "muse-image-1.0" in muse["alias"]
+        muse_kinds = set(muse["modalities"]["image"])
+        expected = {"prompt", "recreate", "edit", "reference_guided", "compose",
+                    "anchored_composition", "conversational_refinement",
+                    "text_layout"}
+        assert muse_kinds == expected, f"Muse 用途异常：{sorted(muse_kinds)}"
+        assert "params" not in muse_kinds, "Muse 不应有 params（API 参数不进 Prompt）"
+        gpt_kinds = set(gpt["modalities"]["image"])
+        assert gpt_kinds == {"prompt", "params", "recreate", "edit",
+                             "reference_guided", "compose"}, \
+            f"GPT Image 用途被改动：{sorted(gpt_kinds)}"
+        assert muse["modalities"]["image"] != gpt["modalities"]["image"], \
+            "Muse 与 GPT Image 不应共用同一份 Prompt 模板"
+        assert muse.get("clean_empty_label_lines") is True
+        for kind in ("anchored_composition", "conversational_refinement",
+                     "text_layout"):
+            assert kind not in gpt_kinds, f"GPT Image 不应出现 Muse 专项用途 {kind}"
+        return True, ("Muse 八用途独立模板；无 params；"
+                      "GPT Image 五用途未被改动；两者 Prompt 文本不共用")
+
+    def muse_task_modes():
+        fixture = json.loads(
+            (FIXTURES / "semantic_muse_image.json").read_text(encoding="utf-8"))
+        base = dict(fixture["semantic_analysis"])
+        base.pop("task_type", None)
+        base.update({
+            "anchor_set": [
+                "资产1：character_reference；参考图：图1；保留：人物身份、装甲设计",
+                "资产2：background_reference；参考图：图3；保留：高炉结构、环境光方向",
+            ],
+            "iteration_context": [
+                "第1轮：已生成雨夜机甲机器人；已确认冷蓝主光与低机位",
+                "本轮：只增强眼部蓝光与雨水反射，不改构图",
+            ],
+            "text_content": "APS 2077",
+            "text_layout": "主标题居中 72pt，副标题右对齐 24pt，底部留 10% 安全边距",
+            "target_changes": ["把背景改为废弃工厂", "增强雨水反射"],
+            "target_style": "保持原有黑金属装甲风格",
+            "modification_scope": ["仅替换背景层，不改动人物与镜头"],
+        })
+        mode_dir = TMP / "muse_modes"
+        shutil.rmtree(str(mode_dir), ignore_errors=True)
+        mode_dir.mkdir(parents=True)
+
+        def write(name, semantic):
+            path = mode_dir / f"{name}.json"
+            path.write_text(json.dumps({
+                "schema_version": "1.0", "tool": "agent", "modality": "image",
+                "semantic_analysis": semantic,
+            }, ensure_ascii=False), encoding="utf-8")
+            return path
+
+        def compile_file(path, *extra):
+            return run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                        "--analysis", path, "--models", "muse_image", *extra])
+
+        base_path = write("base", base)
+        texts = {}
+        for kind in ("prompt", "recreate", "edit", "reference_guided", "compose",
+                     "anchored_composition", "conversational_refinement",
+                     "text_layout"):
+            rc, out, err = compile_file(base_path, "--kind", kind)
+            payload = stdout_json(rc, out, err)
+            kinds = [p["kind"] for p in payload["prompts"]]
+            assert kinds == [kind], f"Muse --kind {kind} 渲染结果 {kinds}"
+            texts[kind] = payload["prompts"][0]["text"]
+
+        order = ["Requested changes:", "Modification scope:",
+                 "Preserve unchanged:", "Do not change:"]
+        positions = [texts["edit"].index(label) for label in order]
+        assert positions == sorted(positions), f"Muse 编辑段顺序错误：{positions}"
+        assert "资产1：character_reference" in texts["anchored_composition"]
+        assert "Preserve across the series:" in texts["anchored_composition"]
+        assert "第1轮：" in texts["conversational_refinement"]
+        assert "Requested change for this round:" in texts["conversational_refinement"]
+        assert "Text content: APS 2077" in texts["text_layout"]
+        assert "Layout: 主标题居中" in texts["text_layout"]
+        refs = "\n".join(base["reference_images"])
+        for kind in ("reference_guided", "compose"):
+            assert refs in texts[kind], f"Muse {kind} 参考图未逐行渲染"
+        assert "Forbidden feature transfer:" in texts["reference_guided"]
+        assert "Element sources" in texts["compose"]
+
+        task_cases = {
+            "anchored_composition": "anchored_composition",
+            "conversational_refinement": "conversational_refinement",
+            "text_layout": "text_layout",
+        }
+        for task, kind in task_cases.items():
+            rc, out, err = compile_file(
+                write(f"task_{task}", dict(base, task_type=task)))
+            payload = stdout_json(rc, out, err)
+            kinds = [p["kind"] for p in payload["prompts"]]
+            assert kinds == [kind], f"Muse task_type={task} 应只渲染 {kind}，实际 {kinds}"
+
+        rc, _, err = compile_file(
+            write("conflict", dict(base, task_type="anchored_composition")),
+            "--kind", "edit")
+        assert rc == 4 and "冲突" in decode(err), \
+            f"Muse task_type/--kind 冲突应退出码 4，实际 {rc}"
+        rc, _, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                          "--analysis", base_path, "--models", "gpt_image",
+                          "--kind", "anchored_composition"])
+        assert rc == 1 and "没有模型支持用途" in decode(err), \
+            f"GPT Image 不支持 Muse 用途应退出码 1，实际 {rc}"
+        return True, ("Muse 八用途互斥；编辑/Anchor/多轮/文字版式结构正确；"
+                      "参考图逐行；三个 Muse task_type 映射正确；"
+                      "冲突退出 4；GPT Image 不支持该用途退出 1")
+
+    def muse_contracts():
+        fixture = json.loads(
+            (FIXTURES / "semantic_muse_image.json").read_text(encoding="utf-8"))
+        base = dict(fixture["semantic_analysis"])
+        base.pop("task_type", None)
+        case_dir = TMP / "muse_contracts"
+        shutil.rmtree(str(case_dir), ignore_errors=True)
+        case_dir.mkdir(parents=True)
+
+        def write(name, semantic):
+            path = case_dir / f"{name}.json"
+            path.write_text(json.dumps({
+                "schema_version": "1.0", "tool": "agent", "modality": "image",
+                "semantic_analysis": semantic,
+            }, ensure_ascii=False), encoding="utf-8")
+            return path
+
+        def compile_file(path):
+            return run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                        "--analysis", path, "--models", "muse_image"])
+
+        cases = []
+        edit = dict(base, task_type="image_editing")
+        edit.pop("modification_scope", None)
+        cases.append(("编辑缺范围", edit, "modification_scope"))
+        anchored = dict(base, task_type="anchored_composition")
+        anchored.pop("anchor_set", None)
+        cases.append(("Anchor 缺资产", anchored, "anchor_set"))
+        conversational = dict(base, task_type="conversational_refinement")
+        conversational.pop("iteration_context", None)
+        cases.append(("多轮缺状态", conversational, "iteration_context"))
+        layout = dict(base, task_type="text_layout")
+        layout.pop("text_layout", None)
+        cases.append(("版式缺布局", layout, "text_layout"))
+        cases.append(("空间关系类型错", dict(base, spatial_relationships={
+            "position": "中央偏左"}), "扁平字段"))
+        cases.append(("参考图缺角色", dict(base, reference_images=[
+            "图1：人物参考"]), "角色枚举"))
+        cases.append(("未知 task_type", dict(base, task_type="muse_magic"),
+                      "task_type"))
+        for label, semantic, needle in cases:
+            rc, _, err = compile_file(write(label.replace("/", "_"), semantic))
+            assert rc == 4, f"{label} 应退出码 4，实际 {rc}：{decode(err)[:160]}"
+            assert needle in decode(err), \
+                f"{label} 未报出「{needle}」：{decode(err)[:160]}"
+        return True, ("编辑/Anchor/多轮/版式缺字段、空间关系类型、"
+                      "参考图角色、未知 task_type 均退出码 4 并指明原因")
+
+    def muse_review_checklist():
+        fixture_path = FIXTURES / "semantic_muse_image.json"
+        cmd = [PYTHON, SCRIPTS / "prompt_compiler.py", "all",
+               "--analysis", fixture_path, "--models", "muse_image", "--auto"]
+        rc, out, err = run(cmd + ["--format", "json"])
+        data = stdout_json(rc, out, err)
+        items = data.get("muse_review_checklist")
+        assert isinstance(items, list) and len(items) == 6, \
+            f"Muse 审查清单应为 6 项，实际 {items}"
+        keys = [i["key"] for i in items]
+        assert keys == ["core_info", "spatial_relationships", "reference_roles",
+                        "edit_boundary", "continuity", "text_layout"], \
+            f"Muse 审查项顺序/内容异常：{keys}"
+        assert all(i["status"] in ("pass", "warn", "manual") for i in items)
+        report = data["score_report"]
+        recomputed = round(sum(WEIGHTS[d["key"]] * d["score"]
+                               for d in report["dimensions"]) / 100.0, 1)
+        assert report["total"] == recomputed, "Muse 审查清单影响了总分"
+        assert "review_checklist" not in data, "Muse 不应复用 GPT 审查清单"
+
+        # 非 Muse 模型不输出 Muse 清单
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "all",
+                            "--analysis", FIXTURES / "semantic_image.json",
+                            "--models", "mj", "--auto", "--format", "json"])
+        other = stdout_json(rc, out, err)
+        assert "muse_review_checklist" not in other, \
+            "非 Muse 模型不应有 Muse 审查清单"
+        # GPT 清单与 Muse 清单互不串用
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "all",
+                            "--analysis", FIXTURES / "semantic_gpt_image.json",
+                            "--models", "gpt_image", "--auto", "--format", "json"])
+        gpt = stdout_json(rc, out, err)
+        assert "muse_review_checklist" not in gpt, "GPT 输出不应带 Muse 清单"
+
+        # 缺空间关系/禁止迁移 → 两项待复核
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        semantic = dict(fixture["semantic_analysis"])
+        semantic.pop("spatial_relationships", None)
+        semantic.pop("feature_exclusion", None)
+        semantic["reference_images"] = [
+            item.split("；禁止迁移")[0] for item in semantic["reference_images"]]
+        warn_dir = TMP / "muse_checklist_warn"
+        shutil.rmtree(str(warn_dir), ignore_errors=True)
+        warn_dir.mkdir(parents=True)
+        warn_path = warn_dir / "warn.json"
+        warn_path.write_text(json.dumps({
+            "schema_version": "1.0", "tool": "agent", "modality": "image",
+            "semantic_analysis": semantic,
+        }, ensure_ascii=False), encoding="utf-8")
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "all",
+                            "--analysis", warn_path, "--models", "muse_image",
+                            "--auto", "--format", "json"])
+        warned = stdout_json(rc, out, err)["muse_review_checklist"]
+        statuses = {i["key"]: i["status"] for i in warned}
+        assert statuses["spatial_relationships"] == "warn", statuses
+        assert statuses["reference_roles"] == "warn", statuses
+
+        rc, out, err = run(cmd + ["--format", "md"])
+        text = decode(out)
+        header = "## Muse Image 审查清单（不参与总分）"
+        assert header in text, "Markdown 缺少 Muse 审查清单"
+        assert text.index(header) > text.index("## 评分报告"), \
+            "Muse 清单不在评分报告之后"
+        return True, ("Muse 六项清单齐全；总分仍为六维加权和；"
+                      "非 Muse/GPT 不串用；缺空间关系与禁止迁移均标待复核；"
+                      "Markdown 置于评分之后")
+
+    # ---------------- 9.7 Seedance 独立模板与专项模式 ----------------
+    def seedance_template_independent():
+        tpl_dir = SKILL / "assets" / "templates"
+        seedance = json.loads((tpl_dir / "seedance.json").read_text(encoding="utf-8"))
+        assert seedance["model"] == "seedance"
+        assert seedance["display_name"] == "Seedance 2.5"
+        assert seedance["vendor"] == "ByteDance"
+        assert seedance["last_verified"] == "2026-11-15"
+        assert "seedance" in seedance["alias"] and "doubao-seedance" in seedance["alias"]
+        kinds = set(seedance["modalities"]["video"])
+        expected = {"storyboard", "image_to_video", "first_last_frame",
+                    "reference_to_video", "video_edit", "video_extend", "params"}
+        assert kinds == expected, f"Seedance 用途异常：{sorted(kinds)}"
+        assert not any("image" in k and k != "image_to_video" for k in kinds), \
+            "Seedance 模板混入图片用途"
+        assert seedance.get("clean_empty_label_lines") is True
+        assert seedance["default_params"]["model_id"].startswith("doubao-seedance-")
+        for other in ("sora2", "runway", "veo3"):
+            tpl = json.loads((tpl_dir / f"{other}.json").read_text(encoding="utf-8"))
+            assert tpl["modalities"].get("video") != seedance["modalities"]["video"], \
+                f"Seedance 不应与 {other} 共用 Prompt 模板"
+        return True, ("Seedance 七用途独立模板；无图片用途；"
+                      "与 Sora/Runway/Veo 模板文本不共用")
+
+    def seedance_task_modes():
+        fixture = json.loads(
+            (FIXTURES / "semantic_seedance.json").read_text(encoding="utf-8"))
+        base = dict(fixture["semantic_analysis"])
+        base.pop("task_type", None)
+        base.update({
+            "first_frame": "雨夜街头，女子撑伞站在霓虹灯下",
+            "last_frame": "女子抬头仰望全息广告牌",
+            "source_video": "源视频：雨夜街头女子撑伞前行，5 秒",
+            "extension_plan": "向后延长 3 秒，女子继续走向广告牌",
+            "target_changes": ["把雨改为雪"],
+            "modification_scope": ["仅替换天气与地面材质"],
+            "preserve_constraints": ["保留人物动作与镜头运动"],
+            "forbidden_changes": ["不要改变人物外观"],
+        })
+        mode_dir = TMP / "seedance_modes"
+        shutil.rmtree(str(mode_dir), ignore_errors=True)
+        mode_dir.mkdir(parents=True)
+
+        def write(name, semantic):
+            path = mode_dir / f"{name}.json"
+            path.write_text(json.dumps({
+                "schema_version": "1.0", "tool": "agent", "modality": "video",
+                "semantic_analysis": semantic,
+            }, ensure_ascii=False), encoding="utf-8")
+            return path
+
+        def compile_file(path, *extra):
+            return run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                        "--analysis", path, "--models", "seedance", *extra])
+
+        base_path = write("base", base)
+        texts = {}
+        for kind in ("storyboard", "image_to_video", "first_last_frame",
+                     "reference_to_video", "video_edit", "video_extend"):
+            rc, out, err = compile_file(base_path, "--kind", kind)
+            payload = stdout_json(rc, out, err)
+            rendered = [p["kind"] for p in payload["prompts"]]
+            assert rendered == [kind], f"Seedance --kind {kind} 渲染结果 {rendered}"
+            texts[kind] = payload["prompts"][0]["text"]
+
+        assert len(re.findall(r"镜头\d+：", texts["storyboard"])) == 3
+        assert "首帧：" in texts["image_to_video"]
+        assert "尾帧：" in texts["first_last_frame"]
+        assert "素材1：reference_image" in texts["reference_to_video"]
+        edit_order = ["源视频：", "修改目标：", "修改范围：", "保留不变：", "禁止改动："]
+        positions = [texts["video_edit"].index(label) for label in edit_order]
+        assert positions == sorted(positions), f"Seedance 编辑段顺序错误：{positions}"
+        assert "延长方案：" in texts["video_extend"]
+
+        task_cases = {
+            "text_to_video": ("storyboard", {}),
+            "image_to_video": ("image_to_video", {"first_frame": base["first_frame"]}),
+            "first_last_frame": ("first_last_frame", {
+                "first_frame": base["first_frame"], "last_frame": base["last_frame"]}),
+            "reference_to_video": ("reference_to_video", {
+                "video_references": base["video_references"]}),
+            "video_editing": ("video_edit", {
+                "source_video": base["source_video"],
+                "target_changes": base["target_changes"],
+                "modification_scope": base["modification_scope"],
+                "preserve_constraints": base["preserve_constraints"],
+                "forbidden_changes": base["forbidden_changes"],
+                "video_references": base["video_references"]}),
+            "video_extension": ("video_extend", {
+                "source_video": base["source_video"],
+                "extension_plan": base["extension_plan"]}),
+        }
+        for task, (kind, extra) in task_cases.items():
+            semantic = {"task_type": task, "story": base["story"],
+                        "storyboard": base["storyboard"], "duration": "10",
+                        "aspect_ratio": "16:9", **extra}
+            rc, out, err = compile_file(write(f"task_{task}", semantic))
+            payload = stdout_json(rc, out, err)
+            rendered = [p["kind"] for p in payload["prompts"]]
+            assert rendered == [kind], f"task_type={task} 应只渲染 {kind}，实际 {rendered}"
+
+        conflict_sem = {k: v for k, v in base.items()
+                        if k not in ("first_frame", "last_frame")}
+        conflict_sem["task_type"] = "reference_to_video"
+        rc, _, err = compile_file(
+            write("conflict", conflict_sem), "--kind", "storyboard")
+        assert rc == 4 and "冲突" in decode(err), \
+            f"Seedance task_type/--kind 冲突应退出码 4，实际 {rc}"
+        rc, _, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                          "--analysis", base_path, "--models", "mj",
+                          "--kind", "first_last_frame"])
+        assert rc == 1 and "没有模型支持用途" in decode(err), \
+            f"MJ 不支持 Seedance 用途应退出码 1，实际 {rc}"
+        return True, ("Seedance 六模式互斥；分镜/首帧/首尾帧/参考/编辑/延长结构正确；"
+                      "六个 task_type 映射正确；冲突退出 4；无模型支持退出 1")
+
+    def seedance_contracts():
+        fixture = json.loads(
+            (FIXTURES / "semantic_seedance.json").read_text(encoding="utf-8"))
+        base = dict(fixture["semantic_analysis"])
+        case_dir = TMP / "seedance_contracts"
+        shutil.rmtree(str(case_dir), ignore_errors=True)
+        case_dir.mkdir(parents=True)
+
+        def write(name, semantic):
+            path = case_dir / f"{name}.json"
+            path.write_text(json.dumps({
+                "schema_version": "1.0", "tool": "agent", "modality": "video",
+                "semantic_analysis": semantic,
+            }, ensure_ascii=False), encoding="utf-8")
+            return path
+
+        def compile_file(path):
+            return run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                        "--analysis", path, "--models", "seedance"])
+
+        missing_refs = dict(base)
+        missing_refs.pop("video_references")
+        edit = dict(base, task_type="video_editing")
+        for key in ("target_changes", "preserve_constraints",
+                    "forbidden_changes", "modification_scope"):
+            edit.pop(key, None)
+        cases = [
+            ("参考缺素材", missing_refs, "video_references"),
+            ("素材缺编号", dict(base, video_references=[
+                "reference_image；用途：人物；保留：风衣；禁止迁移：背景"]), "素材N"),
+            ("素材缺角色", dict(base, video_references=[
+                "素材1；用途：人物；保留：风衣；禁止迁移：背景"]), "角色枚举"),
+            ("素材多角色", dict(base, video_references=[
+                "素材1：reference_image 与 reference_video；用途：人物；"
+                "保留：风衣；禁止迁移：背景"]), "多个角色"),
+            ("素材编号重复", dict(base, video_references=[
+                "素材1：reference_image；用途：人物；保留：风衣；禁止迁移：背景",
+                "素材1：reference_video；用途：运镜；保留：节奏；禁止迁移：场景"]),
+             "编号重复"),
+            ("首帧混参考", dict(base, task_type="image_to_video",
+                            first_frame="雨夜街头"), "互斥"),
+            ("参考混首帧", dict(base, first_frame="雨夜街头"),
+             "不应使用 first_frame"),
+            ("编辑缺范围", edit, "modification_scope"),
+            ("字符串字段类型错", dict(base, first_frame=["雨夜街头"]),
+             "必须是字符串"),
+            ("素材字段类型错", dict(base, video_references="素材1：reference_image"),
+             "必须是字符串数组"),
+            ("未知 task_type", dict(base, task_type="video_magic"), "task_type"),
+        ]
+        for label, semantic, needle in cases:
+            rc, _, err = compile_file(write(label.replace("/", "_"), semantic))
+            assert rc == 4, f"{label} 应退出码 4，实际 {rc}：{decode(err)[:160]}"
+            assert needle in decode(err), \
+                f"{label} 未报出「{needle}」：{decode(err)[:160]}"
+        return True, ("素材缺编号/角色/多角色/重复、首帧与参考互斥、"
+                      "编辑缺范围、字段类型、未知任务均退出码 4 并指明原因")
+
+    def seedance_review_checklist():
+        fixture_path = FIXTURES / "semantic_seedance.json"
+        cmd = [PYTHON, SCRIPTS / "prompt_compiler.py", "all",
+               "--analysis", fixture_path, "--models", "seedance", "--auto"]
+        rc, out, err = run(cmd + ["--format", "json"])
+        data = stdout_json(rc, out, err)
+        items = data.get("seedance_review_checklist")
+        assert isinstance(items, list) and len(items) == 6, \
+            f"Seedance 审查清单应为 6 项，实际 {items}"
+        keys = [i["key"] for i in items]
+        assert keys == ["core_info", "task_mode", "temporal_structure",
+                        "reference_roles", "audio_dialogue", "params_boundary"], \
+            f"Seedance 审查项顺序/内容异常：{keys}"
+        assert all(i["status"] in ("pass", "warn", "manual") for i in items)
+        report = data["score_report"]
+        recomputed = round(sum(WEIGHTS[d["key"]] * d["score"]
+                               for d in report["dimensions"]) / 100.0, 1)
+        assert report["total"] == recomputed, "Seedance 审查清单影响了总分"
+        assert "review_checklist" not in data, "Seedance 不应复用 GPT 审查清单"
+        assert "muse_review_checklist" not in data, "Seedance 不应复用 Muse 审查清单"
+
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "all",
+                            "--analysis", FIXTURES / "semantic_video.json",
+                            "--models", "sora", "--auto", "--format", "json"])
+        other = stdout_json(rc, out, err)
+        assert "seedance_review_checklist" not in other, \
+            "非 Seedance 模型不应有 Seedance 审查清单"
+
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        semantic = dict(fixture["semantic_analysis"])
+        semantic.pop("storyboard", None)
+        semantic.pop("audio", None)
+        semantic.pop("dialogue", None)
+        semantic.pop("narration", None)
+        semantic["video_references"] = [
+            item.split("；禁止迁移")[0] for item in semantic["video_references"]]
+        semantic["resolution"] = "720p"
+        warn_dir = TMP / "seedance_checklist_warn"
+        shutil.rmtree(str(warn_dir), ignore_errors=True)
+        warn_dir.mkdir(parents=True)
+        warn_path = warn_dir / "warn.json"
+        warn_path.write_text(json.dumps({
+            "schema_version": "1.0", "tool": "agent", "modality": "video",
+            "semantic_analysis": semantic,
+        }, ensure_ascii=False), encoding="utf-8")
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "all",
+                            "--analysis", warn_path, "--models", "seedance",
+                            "--auto", "--format", "json"])
+        warned = stdout_json(rc, out, err)["seedance_review_checklist"]
+        statuses = {i["key"]: i["status"] for i in warned}
+        assert statuses["temporal_structure"] == "warn", statuses
+        assert statuses["reference_roles"] == "warn", statuses
+        assert statuses["audio_dialogue"] == "warn", statuses
+        assert statuses["params_boundary"] == "warn", statuses
+
+        rc, out, err = run(cmd + ["--format", "md"])
+        text = decode(out)
+        header = "## Seedance 审查清单（不参与总分）"
+        assert header in text, "Markdown 缺少 Seedance 审查清单"
+        assert text.index(header) > text.index("## 评分报告"), \
+            "Seedance 清单不在评分报告之后"
+        return True, ("Seedance 六项清单齐全；总分仍为六维加权和；"
+                      "非 Seedance 不串用；缺分镜/声音/禁止迁移/参数越界均标待复核；"
+                      "Markdown 置于评分之后")
+
     # ---------------- 10. 安全加固（归一化 + 注入标记） ----------------
     def security_normalization():
         variants = {
@@ -883,7 +1360,7 @@ def main():
         rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py",
                             "validate-templates"])
         data = stdout_json(rc, out, err)
-        assert data["valid"] is True and data["model_count"] == 10, \
+        assert data["valid"] is True and data["model_count"] == 12, \
             f"模板校验未通过：{data.get('errors')}"
         assert "score_report.json" in data["skipped"], "非模型模板未跳过"
 
@@ -921,7 +1398,7 @@ def main():
                           "--analysis", FIXTURES / "semantic_text.json",
                           "--template-dir", broken_dir])
         assert rc == 4, f"compile 遇坏模板应退出码 4，实际 {rc}"
-        return True, f"10 模板全量通过；5 类坏模板均报错并阻断 compile"
+        return True, f"12 模型模板全量通过；5 类坏模板均报错并阻断 compile"
 
     # ---------------- 11. URL 下载防护 ----------------
     def net_guard():
@@ -982,14 +1459,16 @@ def main():
                        "prompt-reverse-engineer" / ".codex-plugin" / "plugin.json")
         plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
         models = ("Midjourney", "Stable Diffusion", "FLUX.2", "GPT Image",
-                  "Nano Banana", "GPT-5.5", "DeepSeek", "Sora 2",
-                  "Runway", "Veo 3.1")
+                  "Muse Image", "Seedance", "Nano Banana", "GPT-5.5", "DeepSeek",
+                  "Sora 2", "Runway", "Veo 3.1")
         for name in models:
             assert name in plugin["description"], f"plugin.json description 缺 {name}"
             assert name in plugin["interface"]["longDescription"], \
                 f"plugin.json longDescription 缺 {name}"
         assert "deepseek" in plugin["keywords"], "plugin.json 关键词缺 deepseek"
-        return True, "codex 清单描述含十模型与 DeepSeek 关键词"
+        assert "muse" in plugin["keywords"], "plugin.json 关键词缺 muse"
+        assert "seedance" in plugin["keywords"], "plugin.json 关键词缺 seedance"
+        return True, "codex 清单描述含十二模型与 DeepSeek/Muse/Seedance 关键词"
 
     def doubao_script_inventory():
         scripts = sorted(p.name for p in (SKILL / "scripts").glob("*.py"))
@@ -1068,7 +1547,7 @@ def main():
     def examples_reproducible():
         rc, out, err = run([PYTHON, REPO / "tools" / "gen_examples.py", "--check"])
         assert rc == 0, f"示例已漂移：{decode(out)[:400]}{decode(err)[:200]}"
-        return True, "四模态 output.md 与 gen_examples.py 生成结果逐字节一致"
+        return True, "四模态 + Muse / Seedance 示例 output.md 与 gen_examples.py 生成结果逐字节一致"
 
     def reference_role_docs():
         roles = ("edit_target", "identity_reference", "pose_reference",
@@ -1160,7 +1639,9 @@ def main():
             ("semantic_text.json", "text", ("gpt4_claude", "deepseek")),
             ("semantic_image.json", "image", ("midjourney", "stable_diffusion",
                                               "flux2", "gpt_image", "nano_banana")),
+            ("semantic_muse_image.json", "image", ("muse_image",)),
             ("semantic_video.json", "video", ("sora2", "runway", "veo3")),
+            ("semantic_seedance.json", "video", ("seedance",)),
         )
         rendered_models, total = set(), 0
         for fixture, modality, models in cases:
@@ -1174,8 +1655,8 @@ def main():
             assert all(p["text"].strip() for p in data["prompts"]), "存在空 Prompt"
             rendered_models |= rendered
             total += len(data["prompts"])
-        assert len(rendered_models) == 10, f"渲染模型数 {len(rendered_models)} != 10"
-        return True, f"10 个模型模板均渲染出非空 Prompt（共 {total} 条）"
+        assert len(rendered_models) == 12, f"渲染模型数 {len(rendered_models)} != 12"
+        return True, f"12 个模型模板均渲染出非空 Prompt（共 {total} 条）"
 
     checks = [
         ("单元层/analyze_text", unit_text),
@@ -1207,8 +1688,16 @@ def main():
         ("模板层/多模型契约与排版", new_templates_contract),
         ("模板层/GPT Image 五任务模式", gpt_image_modes),
         ("模板层/GPT Image 审查清单", gpt_image_review_checklist),
+        ("模板层/Muse Image 独立模板", muse_template_independent),
+        ("模板层/Muse Image 八任务模式", muse_task_modes),
+        ("契约层/Muse Image 字段契约", muse_contracts),
+        ("模板层/Muse Image 审查清单", muse_review_checklist),
+        ("模板层/Seedance 独立模板", seedance_template_independent),
+        ("模板层/Seedance 六任务模式", seedance_task_modes),
+        ("契约层/Seedance 字段契约", seedance_contracts),
+        ("模板层/Seedance 审查清单", seedance_review_checklist),
         ("模板层/uncertainty 不入正文", uncertainty_template_ban),
-        ("模板层/十模型全量渲染", all_templates_render),
+        ("模板层/十二模型全量渲染", all_templates_render),
         ("安全层/归一化绕过", security_normalization),
         ("安全层/注入标记", injection_flags),
         ("安全层/模板 schema", template_schema),

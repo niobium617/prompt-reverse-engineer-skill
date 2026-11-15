@@ -10,9 +10,10 @@
   scenes   叙事文本逐场景编译（image + video）
   validate-templates  校验模板元数据/占位符/用途契约（全部错误一次列出）
 
-任务模式：semantic_analysis.task_type（五枚举）经 TASK_KINDS 映射到用途（kind）；
-compile/all 也可用 --kind 显式选择。两者同时给出且不一致→退出码 4；
-只给 task_type 时，模板若有该用途则只渲染该用途，无该用途的模型保持原有全部渲染。
+任务模式：semantic_analysis.task_type（八枚举：前五通用 + 后三 Muse 扩展）经
+TASK_KINDS 映射到用途（kind）；compile/all 也可用 --kind 显式选择。
+两者同时给出且不一致→退出码 4；只给 task_type 时，模板若有该用途则只渲染该用途，
+无该用途的模型保持原有全部渲染。
 不传 task_type / --kind 时行为与旧版一致（渲染模板内全部适用用途）。
 
 规则权威来源：references/prompt_framework.md（字段契约、评分细则、安全规则）。
@@ -153,16 +154,34 @@ KNOWN_FIELDS = {
     "subject_position", "subject_scale", "shot_type", "camera_angle",
     "spatial", "material", "preserve_constraints", "forbidden_changes",
     "modification_scope", "reference_images", "task_type", "uncertainty",
+    # Muse Image 扩展字段（references/muse_image_rules.md）
+    "spatial_relationships", "target_changes", "reference_usage",
+    "feature_transfer", "feature_exclusion", "anchor_set",
+    "iteration_context", "text_layout",
+    # Seedance 视频扩展字段（references/seedance_rules.md）
+    "first_frame", "last_frame", "source_video", "extension_plan",
+    "video_references",
 }
 
 # 任务模式 → 用途（kind）；与 prompt_framework.md 2.3 节、
-# model_mappings.md GPT Image 一节镜像。
+# model_mappings.md GPT Image / Muse Image 一节镜像。
+# 前五种为通用图像任务；后三种为 Muse Image 扩展，其他模型没有对应 kind。
 TASK_KINDS = {
     "text_to_image": "prompt",
     "image_recreation": "recreate",
     "image_editing": "edit",
     "reference_guided": "reference_guided",
     "image_composition": "compose",
+    "anchored_composition": "anchored_composition",
+    "conversational_refinement": "conversational_refinement",
+    "text_layout": "text_layout",
+    # 视频任务：Seedance 2.5 独立模式（references/seedance_rules.md）
+    "text_to_video": "storyboard",
+    "image_to_video": "image_to_video",
+    "first_last_frame": "first_last_frame",
+    "reference_to_video": "reference_to_video",
+    "video_editing": "video_edit",
+    "video_extension": "video_extend",
 }
 # 声明 task_type 后强制检查的必填字段（不声明时不校验，保持旧行为）
 TASK_REQUIRED = {
@@ -171,13 +190,30 @@ TASK_REQUIRED = {
     "image_editing": ["modification_scope", "preserve_constraints", "forbidden_changes"],
     "reference_guided": ["reference_images", "spatial"],
     "image_composition": ["reference_images", "spatial"],
+    "anchored_composition": ["reference_images", "anchor_set", "preserve_constraints"],
+    "conversational_refinement": ["iteration_context", "preserve_constraints"],
+    "text_layout": ["text_content", "text_layout"],
+    # 视频任务
+    "text_to_video": ["story"],
+    "image_to_video": ["first_frame", "story"],
+    "first_last_frame": ["first_frame", "last_frame", "story"],
+    "reference_to_video": ["video_references", "story"],
+    "video_editing": ["source_video", "target_changes", "preserve_constraints",
+                      "forbidden_changes", "modification_scope"],
+    "video_extension": ["source_video", "extension_plan"],
 }
 NEW_STRING_FIELDS = ("subject_position", "subject_scale", "shot_type",
-                     "camera_angle", "spatial", "material")
+                     "camera_angle", "spatial", "material", "text_layout",
+                     "first_frame", "last_frame", "source_video",
+                     "extension_plan")
 NEW_LIST_FIELDS = ("preserve_constraints", "forbidden_changes",
-                   "modification_scope", "reference_images", "uncertainty")
-# 列表字段的连接方式：reference_images 每项一行，其余按语言选择分隔符
-LIST_JOINERS = {"reference_images": "\n"}
+                   "modification_scope", "reference_images", "uncertainty",
+                   "spatial_relationships", "target_changes", "reference_usage",
+                   "feature_transfer", "feature_exclusion", "anchor_set",
+                   "iteration_context", "video_references")
+# 列表字段的连接方式：逐条资产/轮次/素材每项一行，其余按语言选择分隔符
+LIST_JOINERS = {"reference_images": "\n", "anchor_set": "\n",
+                "iteration_context": "\n", "video_references": "\n"}
 REF_ID_RE = re.compile(r"图\s*(\d+)")
 # 参考图角色枚举（prompt_framework.md 2.3.3 / image_rules.md 第十一节）
 REFERENCE_ROLES = (
@@ -187,6 +223,14 @@ REFERENCE_ROLES = (
 )
 REFERENCE_ROLE_RE = re.compile(
     r"(?<![A-Za-z0-9_])(" + "|".join(REFERENCE_ROLES) + r")(?![A-Za-z0-9_])")
+# Seedance 视频素材角色（references/seedance_rules.md 第六节）
+# 官方 role 另有 first_frame / last_frame；本 Skill 用顶层 first_frame /
+# last_frame 字段表达，不放进 video_references，避免同一信息两处维护。
+VIDEO_REFERENCE_ROLES = ("reference_image", "reference_video", "reference_audio")
+VIDEO_REFERENCE_ROLE_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(" + "|".join(VIDEO_REFERENCE_ROLES) +
+    r")(?![A-Za-z0-9_])")
+VIDEO_REF_ID_RE = re.compile(r"素材\s*(\d+)")
 # uncertainty 每项必须以置信度标签开头：observed / inferred / unknown
 UNCERTAINTY_TAG_RE = re.compile(r"^(observed|inferred|unknown)\s*[:：]\s*\S", re.I)
 UNCERTAINTY_ITEM_RE = re.compile(r"^(observed|inferred|unknown)\s*[:：]\s*(.+)$",
@@ -266,6 +310,33 @@ def validate_semantic(semantic, where="semantic_analysis"):
         if duplicated:
             err("reference_images 编号重复："
                 + ", ".join(f"图{n}" for n in duplicated))
+    video_refs = semantic.get("video_references")
+    if video_refs:
+        numbers = []
+        for index, item in enumerate(video_refs, 1):
+            match = VIDEO_REF_ID_RE.search(item)
+            if not match:
+                err(f"video_references[{index}] 缺少「素材N」编号：{item}")
+            numbers.append(int(match.group(1)))
+            roles = VIDEO_REFERENCE_ROLE_RE.findall(item)
+            if not roles:
+                err(f"video_references[{index}] 缺少角色枚举（"
+                    f"{'/'.join(VIDEO_REFERENCE_ROLES)}）：{item}")
+            if len(set(roles)) > 1:
+                err(f"video_references[{index}] 声明了多个角色"
+                    f"（{', '.join(roles)}）；每个素材只定一个角色")
+        duplicated = sorted({n for n in numbers if numbers.count(n) > 1})
+        if duplicated:
+            err("video_references 编号重复："
+                + ", ".join(f"素材{n}" for n in duplicated))
+    # 官方将首帧、首尾帧、全模态参考定义为互斥场景（seedance_rules.md §4）
+    if task in ("image_to_video", "first_last_frame") and video_refs:
+        err(f"task_type={task} 与 video_references 互斥；"
+            "首帧/首尾帧任务请用 first_frame / last_frame 字段")
+    if task == "reference_to_video" and (
+            _has_value(semantic, "first_frame") or _has_value(semantic, "last_frame")):
+        err("task_type=reference_to_video 不应使用 first_frame / last_frame；"
+            "严格首尾帧请改用 first_last_frame")
     for index, item in enumerate(semantic.get("uncertainty") or [], 1):
         if not UNCERTAINTY_TAG_RE.match(str(item).strip()):
             err(f"uncertainty[{index}] 必须以置信度标签开头"
@@ -776,9 +847,267 @@ def build_review_checklist(semantic, prompts):
     return items
 
 
-def review_markdown(items):
-    lines = ["", "## 审查清单（不参与总分）", "",
-             "| 检查项 | 结论 | 说明 |", "|---|---|---|"]
+def build_muse_review_checklist(semantic, prompts):
+    """Muse Image 输出末尾的六项审查清单（不参与总分）。
+
+    与 GPT Image 的 review_checklist 分离：Muse 侧重空间关系、参考图迁移边界、
+    Anchor / 多轮状态继承与文字版式。只做确定性结构检查。
+    """
+    task = semantic.get("task_type")
+    items = []
+
+    def add(key, item, status, detail):
+        items.append({"key": key, "item": item, "status": status, "detail": detail})
+
+    # 1. 核心信息：必填字段 + 使用 subject 的任务是否有主体
+    required = TASK_REQUIRED.get(task, []) if task else []
+    missing = [f for f in required if not _has_value(semantic, f)]
+    subject_tasks = {"text_to_image", "image_recreation", "reference_guided",
+                     "image_composition", "anchored_composition", "text_layout"}
+    if missing:
+        add("core_info", "任务目标与主体是否齐全", "warn",
+            "缺少必填字段：" + "、".join(missing))
+    elif task in subject_tasks and not _has_value(semantic, "subject"):
+        add("core_info", "任务目标与主体是否齐全", "warn", "缺少 subject（画面主体）")
+    else:
+        add("core_info", "任务目标与主体是否齐全", "pass", "任务必填字段与主体齐全")
+
+    # 2. 空间关系：多主体任务是否有逐条关系
+    spatial_tasks = {"image_recreation", "reference_guided",
+                     "image_composition", "anchored_composition"}
+    if _has_value(semantic, "spatial_relationships"):
+        add("spatial_relationships", "空间关系是否逐条明确", "pass",
+            "已提供 spatial_relationships")
+    elif task in spatial_tasks:
+        detail = "仅有整体 spatial，建议逐条列出位置/朝向/遮挡/比例" \
+            if _has_value(semantic, "spatial") else "多主体任务缺少空间关系描述"
+        add("spatial_relationships", "空间关系是否逐条明确", "warn", detail)
+    else:
+        add("spatial_relationships", "空间关系是否逐条明确", "pass",
+            "非多主体任务，可省略")
+
+    # 3. 参考图角色与迁移边界
+    refs = semantic.get("reference_images") or []
+    if not refs:
+        add("reference_roles", "参考图角色与迁移边界是否清楚", "pass", "无参考图")
+    else:
+        roles = [REFERENCE_ROLE_RE.findall(item)[0]
+                 for item in refs if REFERENCE_ROLE_RE.findall(item)]
+        shared = sorted({r for r in roles if roles.count(r) > 1})
+        lacks_exclusion = [
+            f"图{index}" for index, item in enumerate(refs, 1)
+            if not re.search(r"禁止迁移|forbidden", str(item), re.I)
+        ]
+        if shared:
+            add("reference_roles", "参考图角色与迁移边界是否清楚", "warn",
+                "多张图共用角色：" + "、".join(shared) + "；请写明主次或差异")
+        elif lacks_exclusion:
+            add("reference_roles", "参考图角色与迁移边界是否清楚", "warn",
+                "未写明禁止迁移：" + "、".join(lacks_exclusion))
+        elif not _has_value(semantic, "reference_usage") and \
+                not _has_value(semantic, "feature_exclusion"):
+            add("reference_roles", "参考图角色与迁移边界是否清楚", "warn",
+                "缺少 reference_usage / feature_exclusion，属性串扰风险较高")
+        else:
+            add("reference_roles", "参考图角色与迁移边界是否清楚", "pass",
+                f"{len(refs)} 张参考图角色与迁移边界已写明")
+
+    # 4. 编辑边界
+    if task in ("image_editing", "conversational_refinement"):
+        needed = ("target_changes", "preserve_constraints",
+                  "forbidden_changes", "modification_scope")
+        absent = [f for f in needed if not _has_value(semantic, f)]
+        if absent:
+            add("edit_boundary", "修改目标与保留边界是否完整", "warn",
+                "缺少：" + "、".join(absent))
+        else:
+            add("edit_boundary", "修改目标与保留边界是否完整", "pass",
+                "修改、保留、禁止与范围四项齐全")
+    else:
+        add("edit_boundary", "修改目标与保留边界是否完整", "pass", "非编辑任务")
+
+    # 5. 连续一致性：Anchor 资产或多轮状态
+    if task == "anchored_composition":
+        anchors = semantic.get("anchor_set") or []
+        malformed = [str(i) for i, a in enumerate(anchors, 1)
+                     if not re.match(r"^\s*资产\s*\d+", str(a))]
+        if not _has_value(semantic, "anchor_set"):
+            add("continuity", "系列/多轮一致性能否继承", "warn", "缺少 anchor_set")
+        elif malformed:
+            add("continuity", "系列/多轮一致性能否继承", "warn",
+                "anchor_set 建议以「资产N：」开头：" + "、".join(malformed))
+        elif not _has_value(semantic, "preserve_constraints"):
+            add("continuity", "系列/多轮一致性能否继承", "warn",
+                "缺少 preserve_constraints，系列一致性无法约束")
+        else:
+            add("continuity", "系列/多轮一致性能否继承", "pass",
+                f"{len(anchors)} 项锚定资产已声明")
+    elif task == "conversational_refinement":
+        if not _has_value(semantic, "iteration_context"):
+            add("continuity", "系列/多轮一致性能否继承", "warn", "缺少 iteration_context")
+        elif not _has_value(semantic, "preserve_constraints"):
+            add("continuity", "系列/多轮一致性能否继承", "warn",
+                "缺少 preserve_constraints，前轮已确认特征可能丢失")
+        else:
+            add("continuity", "系列/多轮一致性能否继承", "pass",
+                "多轮状态与保留项已声明")
+    else:
+        add("continuity", "系列/多轮一致性能否继承", "pass", "非系列/多轮任务")
+
+    # 6. 文字与版式
+    if _has_value(semantic, "text_content"):
+        if _has_value(semantic, "text_layout"):
+            add("text_layout", "文字内容与版式层级是否明确", "pass",
+                "文字与版式均已提供")
+        else:
+            add("text_layout", "文字内容与版式层级是否明确", "warn",
+                "含画内文字但缺少 text_layout（字体/层级/对齐/阅读顺序）")
+    elif task == "text_layout":
+        add("text_layout", "文字内容与版式层级是否明确", "warn",
+            "text_layout 任务缺少 text_content")
+    else:
+        add("text_layout", "文字内容与版式层级是否明确", "pass", "无画内文字")
+    return items
+
+
+def build_seedance_review_checklist(semantic, prompts):
+    """Seedance 输出末尾的六项审查清单（不参与总分）。
+
+    与 GPT / Muse 清单分离：Seedance 侧重任务场景互斥、时间结构、素材角色、
+    声音设计与 API 参数边界。只做确定性结构检查。
+    """
+    task = semantic.get("task_type")
+    items = []
+
+    def add(key, item, status, detail):
+        items.append({"key": key, "item": item, "status": status, "detail": detail})
+
+    def text(field):
+        return str(semantic.get(field) or "").strip()
+
+    video_refs = semantic.get("video_references") or []
+    generation_modes = {"text_to_video", "image_to_video",
+                        "first_last_frame", "reference_to_video"}
+
+    # 1. 核心信息
+    required = TASK_REQUIRED.get(task, []) if task else []
+    missing = [f for f in required if not _has_value(semantic, f)]
+    if not task:
+        add("core_info", "任务模式与必填信息是否齐全", "warn",
+            "未声明 task_type，无法确定 Seedance 任务场景")
+    elif missing:
+        add("core_info", "任务模式与必填信息是否齐全", "warn",
+            "缺少必填字段：" + "、".join(missing))
+    else:
+        add("core_info", "任务模式与必填信息是否齐全", "pass",
+            "任务模式与必填字段齐全")
+
+    # 2. 场景互斥（官方：首帧 / 首尾帧 / 全模态参考三选一）
+    if task == "image_to_video" and _has_value(semantic, "last_frame"):
+        add("task_mode", "任务场景是否互斥且输入合法", "warn",
+            "首帧模式同时给了 last_frame；严格首尾帧请改用 first_last_frame")
+    elif task == "text_to_video" and (
+            video_refs or _has_value(semantic, "first_frame") or
+            _has_value(semantic, "last_frame")):
+        add("task_mode", "任务场景是否互斥且输入合法", "warn",
+            "文生视频不应附带参考素材；请改用图生视频或全模态参考")
+    elif task == "reference_to_video" and not video_refs:
+        add("task_mode", "任务场景是否互斥且输入合法", "warn",
+            "全模态参考任务缺少 video_references")
+    elif task == "video_editing" and not text("source_video"):
+        add("task_mode", "任务场景是否互斥且输入合法", "warn",
+            "视频编辑任务缺少 source_video")
+    elif task == "video_extension" and not (
+            text("source_video") and text("extension_plan")):
+        add("task_mode", "任务场景是否互斥且输入合法", "warn",
+            "视频延长任务需要 source_video 与 extension_plan")
+    elif not task:
+        add("task_mode", "任务场景是否互斥且输入合法", "warn",
+            "未声明 task_type，互斥关系无法自动校验")
+    else:
+        add("task_mode", "任务场景是否互斥且输入合法", "pass",
+            "任务场景与输入组合合法")
+
+    # 3. 时间结构：2.5 时长 [4, 30] 或 -1；生成类任务应有分镜
+    raw = text("duration")
+    duration_bad = False
+    if re.fullmatch(r"-?\d+", raw):
+        value = int(raw)
+        duration_bad = value != -1 and not 4 <= value <= 30
+    if task in generation_modes and not _has_value(semantic, "storyboard"):
+        add("temporal_structure", "时间结构与镜头节奏是否明确", "warn",
+            "缺少 storyboard；多镜头叙事建议逐镜头写景别、运镜与时长")
+    elif duration_bad:
+        add("temporal_structure", "时间结构与镜头节奏是否明确", "warn",
+            f"duration={raw} 超出 Seedance 2.5 范围（4–30 秒，-1 为智能选择）")
+    else:
+        add("temporal_structure", "时间结构与镜头节奏是否明确", "pass",
+            "时长与分镜结构可用")
+
+    # 4. 素材角色与迁移边界
+    if task == "reference_to_video":
+        if not video_refs:
+            add("reference_roles", "素材角色与迁移边界是否清楚", "warn",
+                "缺少 video_references")
+        else:
+            lacks_usage = [f"素材{i}" for i, item in enumerate(video_refs, 1)
+                           if "用途" not in str(item)]
+            lacks_forbid = [f"素材{i}" for i, item in enumerate(video_refs, 1)
+                            if not re.search(r"禁止迁移|forbidden", str(item), re.I)]
+            if lacks_usage or lacks_forbid:
+                add("reference_roles", "素材角色与迁移边界是否清楚", "warn",
+                    "未写明用途/禁止迁移：" + "、".join(lacks_usage + lacks_forbid))
+            else:
+                add("reference_roles", "素材角色与迁移边界是否清楚", "pass",
+                    f"{len(video_refs)} 个素材角色与迁移边界已写明")
+    elif task in ("image_to_video", "first_last_frame"):
+        if task == "first_last_frame" and not (
+                text("first_frame") and text("last_frame")):
+            add("reference_roles", "素材角色与迁移边界是否清楚", "warn",
+                "首尾帧任务缺少 first_frame 或 last_frame")
+        elif task == "image_to_video" and not text("first_frame"):
+            add("reference_roles", "素材角色与迁移边界是否清楚", "warn",
+                "首帧任务缺少 first_frame")
+        else:
+            add("reference_roles", "素材角色与迁移边界是否清楚", "pass",
+                "首帧/尾帧角色已明确")
+    else:
+        add("reference_roles", "素材角色与迁移边界是否清楚", "pass",
+            "非参考素材任务")
+
+    # 5. 声音与对白：generate_audio 默认 true
+    if task == "video_editing":
+        add("audio_dialogue", "声音与对白是否已设计", "pass",
+            "编辑任务的音频随源视频处理")
+    elif _has_value(semantic, "audio") or _has_value(semantic, "dialogue") or \
+            _has_value(semantic, "narration"):
+        add("audio_dialogue", "声音与对白是否已设计", "pass",
+            "已提供声音/对白/旁白设计")
+    else:
+        add("audio_dialogue", "声音与对白是否已设计", "warn",
+            "generate_audio 默认 true；建议补 audio、dialogue 或 narration")
+
+    # 6. API 参数边界：参数只进 params 块，不混入 Prompt 正文
+    body = "\n".join(p["text"] for p in prompts if p["kind"] != "params")
+    leaks = []
+    if re.search(r"--(?:rs|rt|dur|seed|cf|wm)\b", body):
+        leaks.append("--参数后缀")
+    for key in ("resolution", "watermark", "generate_audio", "draft"):
+        if re.search(rf"(?m)^\s*{key}\s*[:：]", body):
+            leaks.append(key)
+        if _has_value(semantic, key):
+            leaks.append(f"semantic.{key}")
+    if leaks:
+        add("params_boundary", "API 参数是否留在 params 块", "warn",
+            "参数混入正文或语义字段：" + "、".join(sorted(set(leaks))))
+    else:
+        add("params_boundary", "API 参数是否留在 params 块", "pass",
+            "参数未混入 Prompt 正文")
+    return items
+
+
+def review_markdown(items, title="## 审查清单（不参与总分）"):
+    lines = ["", title, "", "| 检查项 | 结论 | 说明 |", "|---|---|---|"]
     for item in items:
         detail = item["detail"].replace("|", "\\|")
         lines.append(f"| {item['item']} | {REVIEW_STATUS[item['status']]} | {detail} |")
@@ -817,6 +1146,10 @@ def cmd_compile(args):
     }
     if any(p["model"] == "gpt_image" for p in prompts):
         result["review_checklist"] = build_review_checklist(semantic, prompts)
+    if any(p["model"] == "muse_image" for p in prompts):
+        result["muse_review_checklist"] = build_muse_review_checklist(semantic, prompts)
+    if any(p["model"] == "seedance" for p in prompts):
+        result["seedance_review_checklist"] = build_seedance_review_checklist(semantic, prompts)
     emit(result, args.output)
 
 
@@ -1162,6 +1495,10 @@ def cmd_all(args):
         result["warnings"] = warnings
     if any(p["model"] == "gpt_image" for p in prompts):
         result["review_checklist"] = build_review_checklist(semantic, prompts)
+    if any(p["model"] == "muse_image" for p in prompts):
+        result["muse_review_checklist"] = build_muse_review_checklist(semantic, prompts)
+    if any(p["model"] == "seedance" for p in prompts):
+        result["seedance_review_checklist"] = build_seedance_review_checklist(semantic, prompts)
     if args.format == "json":
         emit(result, args.output)
     else:
@@ -1217,6 +1554,12 @@ def emit_text(result, output):
         lines += report_markdown(r)
     if result.get("review_checklist"):
         lines += review_markdown(result["review_checklist"])
+    if result.get("muse_review_checklist"):
+        lines += review_markdown(result["muse_review_checklist"],
+                                 "## Muse Image 审查清单（不参与总分）")
+    if result.get("seedance_review_checklist"):
+        lines += review_markdown(result["seedance_review_checklist"],
+                                 "## Seedance 审查清单（不参与总分）")
     if result.get("warnings"):
         lines += ["", "## 审查提示", ""] + [f"- {w}" for w in result["warnings"]]
     text = "\n".join(lines) + "\n"

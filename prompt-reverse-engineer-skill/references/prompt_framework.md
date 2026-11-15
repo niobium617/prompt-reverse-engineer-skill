@@ -58,9 +58,11 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 | text_content | 可选 | 需要画面精确渲染的文字（海报标题、招牌、字幕），如 `"APS 2077"`。GPT Image / Nano Banana / MJ 会显式标注 |
 | reference_note | 可选 | 参考图说明：每张图的角色与用途，如 `"参考图 1：人物造型；参考图 2：霓虹配色"`。写清「哪张图控制什么」，避免模型混用 |
 
-#### 2.3.1 任务模式（task_type）与五用途
+#### 2.3.1 任务模式（task_type）与八用途
 
-`semantic_analysis.task_type` 取以下五枚举之一，`prompt_compiler.py` 据此只渲染对应用途（kind）；也可在 `compile` / `all` 用 `--kind <kind>` 显式指定。两者同时给出且不一致 → 退出码 4。只给 `task_type` 时，模板没有该用途的模型保持原有全部渲染；显式 `--kind` 且没有任何模型支持 → 退出码 1。不传 `task_type` / `--kind` 时行为与旧版一致（渲染模板内全部适用用途）。
+`semantic_analysis.task_type` 取以下八枚举之一，`prompt_compiler.py` 据此只渲染对应用途（kind）；也可在 `compile` / `all` 用 `--kind <kind>` 显式指定。两者同时给出且不一致 → 退出码 4。只给 `task_type` 时，模板没有该用途的模型保持原有全部渲染；显式 `--kind` 且没有任何模型支持 → 退出码 1。不传 `task_type` / `--kind` 时行为与旧版一致（渲染模板内全部适用用途）。
+
+前五种为通用图像任务（GPT Image 等支持）；后三种为 **Muse Image 扩展**，其他模型没有对应 kind，显式 `--kind` 时会进 `skipped`，全部不支持则退出码 1。
 
 | task_type | kind | 含义 | 声明后必填的扩展字段 |
 |---|---|---|---|
@@ -69,6 +71,9 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 | image_editing | edit | 单点编辑已有图 | modification_scope、preserve_constraints、forbidden_changes |
 | reference_guided | reference_guided | 参考图各定角色生成新图 | reference_images、spatial |
 | image_composition | compose | 多参考图融合构图 | reference_images、spatial |
+| anchored_composition | anchored_composition | Anchor Set 维持系列一致性（Muse） | reference_images、anchor_set、preserve_constraints |
+| conversational_refinement | conversational_refinement | 多轮局部修改（Muse） | iteration_context、preserve_constraints |
+| text_layout | text_layout | 海报/信息图表文字版式（Muse） | text_content、text_layout |
 
 必填校验只在声明 `task_type` 时生效（缺失 → 退出码 4，并列出字段名）；不声明时保持旧行为，缺失的可选字段在渲染时清理为空。
 
@@ -82,16 +87,24 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 | subject_scale | string | 主体占比，如 `"人物约占画面高度三分之一"` |
 | shot_type | string | 景别，如 `"中景"`、`"特写"` |
 | camera_angle | string | 机位角度，如 `"平视略仰，镜头与人物胸口齐平"` |
-| spatial | string | 空间关系：前/中/背景各有什么、谁遮挡谁，如 `"前景积水倒映霓虹，中景行人与透明伞，背景为虚化的广告灯牌"` |
+| spatial | string | 空间关系概览：前/中/背景各有什么、谁遮挡谁，如 `"前景积水倒映霓虹，中景行人与透明伞，背景为虚化的广告灯牌"` |
+| spatial_relationships | string[] | 逐条空间关系（Muse 重点）：每项以 `position/direction/distance/interaction/occlusion/containment/alignment/scale/depth/attachment` 之一开头，如 `"occlusion：右肩装甲遮住身后的一段管道"` |
 | material | string | 材质质感：`"透明伞面挂着水珠，湿滑柏油路面，金属灯箱"` |
+| text_layout | string | 画内文字版式：字体、字号层级、对齐、文本区、图文关系、阅读顺序，如 `"主标题居中 72pt，副标题右对齐 24pt，底部留 10% 安全边距"` |
+| target_changes | string[] | 编辑/多轮修改的目标，如 `["把背景改为废弃工厂", "增强雨水反射"]` |
+| reference_usage | string[] | 参考图整体使用策略，如 `["图1 只取面部与发型，不取背景", "图2 只取建筑结构与环境光"]` |
+| feature_transfer | string[] | 允许从参考图迁移的特征，如 `["图1：面部、发型、体型"]` |
+| feature_exclusion | string[] | 禁止从参考图迁移的特征，用于压制属性串扰，如 `["图1：不得带入原背景与暖光"]` |
+| anchor_set | string[] | Anchor 固定资产表（Muse 系列一致性），每项 `"资产N：<角色>；参考图：图X；保留：…"`，如 `["资产1：character_reference；参考图：图1；保留：人物身份、服装设计"]` |
+| iteration_context | string[] | 多轮编辑状态（Muse），每项一轮，如 `["第1轮：已确认冷蓝主光与低机位", "本轮：只增强眼部蓝光"]` |
 | preserve_constraints | string[] | 必须保留的要素，如 `["人物姿态与服装", "街道材质与反光"]` |
 | forbidden_changes | string[] | 禁止发生的变化，如 `["不改变镜头焦段", "不新增画面文字"]` |
 | modification_scope | string[] | 编辑范围（一次只改一件事），如 `["仅替换背景灯牌内容"]` |
 | reference_images | string[] | 参考图角色表，每项 `"图N：<角色枚举>；提取：…；保留：…；禁止迁移：…；优先级：…"`，如 `["图1：identity_reference；提取：面部与发型；保留：构图；禁止迁移：服装；优先级：主参考"]`（细则见 2.3.3） |
-| task_type | string | 五枚举任务模式，见 2.3.1 |
+| task_type | string | 八枚举任务模式，见 2.3.1 |
 | uncertainty | string[] | 低置信度项，每项以 `observed:` / `inferred:` / `unknown:` 开头，如 `["unknown: 广告牌具体文字", "inferred: 拍摄时段可能为深夜"]`；**不进 Prompt 正文**，仅在说明中提示需人工确认（细则见 2.3.4） |
 
-参考图编号规则：每项必须以「图N：」开头，编号在同一 `reference_images` 内唯一；缺编号或编号重复 → 退出码 4。渲染时一行一张，确保模型按图对应角色。数组字段渲染分隔：`reference_images` 逐行；其余按内容语言选择「、」或 `", "`。
+参考图编号规则：每项必须以「图N：」开头，编号在同一 `reference_images` 内唯一；缺编号或编号重复 → 退出码 4。渲染时一行一张，确保模型按图对应角色。数组字段渲染分隔：`reference_images`、`anchor_set`、`iteration_context` 逐行；其余按内容语言选择「、」或 `", "`。
 
 #### 2.3.3 参考图角色与编号规则
 
@@ -118,6 +131,7 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 - 多张图可用同一角色（如两张 `style_reference`），但必须在「优先级」里区分主次，否则审查清单会提示复核。
 - 角色无法确定、且不同解释会明显改变生成结果时，Agent **先询问用户**，不得臆测；用户未答复时把该图写入 `uncertainty`，不写进 `reference_images`。
 - 不新增独立角色文件：信息全部落在 `semantic_analysis.reference_images` 内，随分析 JSON 传递。
+- Muse Image 资料里的 `subject_reference` 不新增为第九个枚举：人物主体映射 `identity_reference`，非人物主体/道具映射 `object_reference`。Muse 的「用途/迁移/禁止迁移」写在同一条 `图N：` 项里，不另建 JSON 对象。
 
 #### 2.3.4 置信度与 uncertainty
 
@@ -149,8 +163,41 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 | audio | 可选 | 声音设计：环境音/音效/音乐情绪，如 `"雨声、远处车流、低频轰鸣"`；Sora 2 / Veo 3.1 支持原生音频 |
 | narration | 可选 | 旁白内容 |
 | reference_note | 可选 | 参考图/关键帧说明，用于固定人物与场景 |
-| duration | 建议 | 成片时长（秒）。按模型取值：Sora 2 `4/8/12/16/20`；Runway `2-10`；Veo 3.1 `4/6/8`；模板默认值见 model_mappings.md |
-| aspect_ratio | 建议 | 画幅比例，如 `"16:9"`；Sora 2 支持 16:9 / 9:16 双画幅 |
+| duration | 建议 | 成片时长（秒）。按模型取值：Sora 2 `4/8/12/16/20`；Runway `2-10`；Veo 3.1 `4/6/8`；Seedance 2.5 `-1`（自动）或 `4-30`；模板默认值见 model_mappings.md |
+| aspect_ratio | 建议 | 画幅比例，如 `"16:9"`；Sora 2 支持 16:9 / 9:16 双画幅；Seedance 2.5 支持 16:9 / 4:3 / 1:1 / 3:4 / 9:16 / 21:9 / adaptive |
+
+#### 2.4.1 视频任务模式（task_type，Seedance 2.5）
+
+仅用户明确要 Seedance 版时使用；其他视频模型沿用 `storyboard` 通用分镜。`task_type` 与 `--kind` 必须一致，冲突退出码 4。
+
+| task_type | kind | 官方场景 | 必填字段 |
+|---|---|---|---|
+| `text_to_video` | `storyboard` | 文生视频 | `story` |
+| `image_to_video` | `image_to_video` | 首帧图生视频 | `first_frame`、`story` |
+| `first_last_frame` | `first_last_frame` | 首尾帧 | `first_frame`、`last_frame`、`story` |
+| `reference_to_video` | `reference_to_video` | 全模态参考（含编辑/延长） | `video_references`、`story` |
+| `video_editing` | `video_edit` | 全模态参考 · 编辑 | `source_video`、`target_changes`、`modification_scope`、`preserve_constraints`、`forbidden_changes` |
+| `video_extension` | `video_extend` | 全模态参考 · 延长 | `source_video`、`extension_plan` |
+
+**互斥规则**（编译器强制，命中退出码 4）：首帧 / 首尾帧 / 全模态参考三者只能选一；`image_to_video` 或 `first_last_frame` 不得同时出现 `video_references`；`reference_to_video` 不得同时出现 `first_frame` / `last_frame`。不声明 `task_type` 时可用 `--kind` 直接渲染，不校验模式互斥。
+
+#### 2.4.2 Seedance 视频扩展字段（扁平契约）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| first_frame | string | 首帧画面的静态描述（人物/场景/构图/光线），供 `image_to_video` / `first_last_frame` |
+| last_frame | string | 尾帧画面描述；与 `first_frame` 之间用 `story` 写过渡路径 |
+| video_references | string[] | 全模态参考素材，每项一行 `素材N：reference_image\|reference_video\|reference_audio；用途：…；保留：…；禁止迁移：…` |
+| source_video | string | 待编辑/延长的源视频说明（内容、时长、镜头运动） |
+| extension_plan | string | 延长方案：向哪个方向延长多久、新增什么内容、如何与结尾衔接 |
+| target_changes | string[] | 编辑要做的事，逐条 |
+| modification_scope | string[] | 修改范围边界（只改哪些区域/属性） |
+| preserve_constraints | string[] | 编辑/延长中保持不变的内容 |
+| forbidden_changes | string[] | 明确禁止出现的改动 |
+| reference_usage | string[] | 每个素材的使用策略（取什么、不取什么） |
+| feature_exclusion | string[] | 参考素材中禁止迁移的特征（背景、人物、色调、文字等） |
+
+校验规则：`video_references` 每项必须带 `素材N` 编号（从 1 连续）与**唯一**角色枚举；缺编号、缺角色、声明多个角色、编号重复均退出码 4。`first_frame` / `last_frame` / `source_video` / `extension_plan` 为字符串，`target_changes` / `modification_scope` / `preserve_constraints` / `forbidden_changes` / `reference_usage` / `feature_exclusion` / `video_references` 为字符串数组（扁平契约，禁止嵌套对象）。API 参数（resolution/ratio/duration/generate_audio/watermark/draft）只写进 `params` 块，**不得**进 Prompt 正文。
 
 ### 2.5 叙事文本场景化字段（modality=story）
 
@@ -206,6 +253,36 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 
 「待复核」不是错误，不阻断生成：Agent 应据此回看语义字段，能自动修正的直接改，需用户确认的在说明中列出。
 
+### 3.2 Muse Image 审查清单（不参与总分）
+
+目标模型含 Muse Image 时，`compile` / `all` 另附独立清单（JSON 字段 `muse_review_checklist`，Markdown 为「## Muse Image 审查清单（不参与总分）」）。与 3.1 分开维护，避免 Muse 规则变化影响 GPT Image：
+
+| 检查项 | 自动判定方式 | 结论含义 |
+|---|---|---|
+| 任务目标与主体是否齐全 | task_type 必填字段 + 使用 subject 的任务是否有主体 | 通过 / 待复核（列出缺失字段） |
+| 空间关系是否逐条明确 | 是否提供 `spatial_relationships`；多主体任务仅有 `spatial` 时提示 | 通过 / 待复核 |
+| 参考图角色与迁移边界是否清楚 | 角色重复、条目缺「禁止迁移」、缺 `reference_usage`/`feature_exclusion` | 通过 / 待复核 |
+| 修改目标与保留边界是否完整 | 编辑/多轮任务的 target/preserve/forbidden/scope 四项 | 通过 / 待复核 |
+| 系列/多轮一致性能否继承 | Anchor 资产格式与 `preserve_constraints`；`iteration_context` 是否给全 | 通过 / 待复核 |
+| 文字内容与版式层级是否明确 | 有 `text_content` 时是否给 `text_layout` | 通过 / 待复核 |
+
+清单只提示，不改变六维总分与退出码。Muse 的评分口径、字段速查与已知限制见 `muse_image_rules.md`。
+
+### 3.3 Seedance 审查清单（不参与总分）
+
+目标模型含 Seedance 时，`compile` / `all` 另附独立清单（JSON 字段 `seedance_review_checklist`，Markdown 为「## Seedance 审查清单（不参与总分）」）。与 3.1 / 3.2 分开维护：
+
+| 检查项 key | 自动判定方式 | 结论含义 |
+|---|---|---|
+| core_info | 声明了 task_type 且对应必填字段齐全 | 通过 / 待复核（列出缺失字段） |
+| task_mode | 首帧 / 首尾帧 / 全模态参考互斥；参考任务必须有 `video_references`；编辑/延长必须有 `source_video` | 通过 / 待复核 |
+| temporal_structure | 生成类任务是否有分镜；`duration` 为数值时是否为 `-1` 或 4–30 | 通过 / 待复核 |
+| reference_roles | `video_references` 每项是否含「用途」与「禁止迁移」；首帧/首尾帧是否有 `first_frame` / `last_frame` | 通过 / 待复核 |
+| audio_dialogue | 编辑任务豁免；其余任务是否提供 `audio` / `dialogue` / `narration` 之一（`generate_audio` 默认开启） | 通过 / 待复核 |
+| params_boundary | 正文是否混入 `--rs/--rt/--dur/--seed/--cf/--wm` 或 resolution/watermark/generate_audio/draft 标签行 | 通过 / 待复核（参数应只进 params 块） |
+
+清单只提示，不改变六维总分与退出码。Seedance 的任务模式、素材角色、参数边界与已知限制见 `seedance_rules.md`。
+
 > 口径提醒：Prompt 评分衡量的是**提示词本身的结构质量**，不是生成图像与原图的相似度；不要把评分当作复刻准确率的证明。
 
 ## 四、安全规则（输出前必检）
@@ -236,4 +313,5 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 - **新增分析维度**：在本文档 2.x 添加字段定义 → 在对应模型模板 JSON 的占位串中引用新字段 → 在 SKILL.md 分析要点补一行。无需改脚本。
 - **新增评分维度**：修改 `prompt_compiler.py` 中 `DIMENSIONS`（含权重，和须为 100）→ 在本文档第三节补锚点 → 在第五节补建议条目（保持两处镜像）。
 - **新增目标模型**：在 `assets/templates/` 新增一个 `*.json` 模板文件，必需元数据 `model` / `display_name` / `vendor` / `version` / `last_verified`，以及 `alias`、`default_params`、`modalities`；编译器自动注册并校验别名冲突。在 `model_mappings.md` 补映射表行并更新 `last_verified`。零代码改动。模板内若需引用非语义字段（模型名、调用参数等），写进 `default_params` 由编译器注入（范例：`deepseek.json` 的 `model_id` / `thinking_effort`），**不要**加进本文档第二节字段表。
+- **模型独立编译**：共享 `semantic_analysis` 扁平契约，但每个模型独立维护模板与规则文件。Muse Image 的范例是 `assets/templates/muse_image.json` + `references/muse_image_rules.md`，Seedance 的范例是 `assets/templates/seedance.json` + `references/seedance_rules.md`；不得把其自然语言结构复制进 `gpt_image.json` / `sora2.json`，模型更新只改自己的文件。新增任务模式时，先加入本文档 2.3.1 / 2.4.1，再同步 `prompt_compiler.py` 的 `TASK_KINDS` / `TASK_REQUIRED`，最后才在模板里加 kind。
 - **条件渲染**：只有提供某字段才应输出的用途（如 `style_transfer` / `edit` / `negative`），在模板中写 `kind_requires`，不要靠空串清理。
