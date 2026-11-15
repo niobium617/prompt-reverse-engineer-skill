@@ -1,0 +1,41 @@
+{
+  "model": "muse_image",
+  "display_name": "Muse Image 1.0",
+  "vendor": "Meta",
+  "version": "1.0",
+  "last_verified": "2026-11-15",
+  "notes": "Meta Superintelligence Labs 图像生成/编辑模型。自然语言完整句为主，先目标后结构关系；支持多参考图角色、Anchor Composition 与多轮连续编辑；无独立 negative 参数，禁止项用自然语言表达；API 参数（size/n/reasoning_strength/搜索开关等）不写入 Prompt 正文。",
+  "alias": ["muse", "muse-image", "muse-image-1.0", "meta-muse"],
+  "default_params": {"aspect_ratio": "16:9"},
+  "optional_fields": [
+    "subject_position", "subject_scale", "spatial", "spatial_relationships",
+    "composition", "shot_type", "camera_angle", "style", "lighting", "color",
+    "material", "text_content", "text_layout", "negative_words",
+    "reference_images", "reference_usage", "feature_transfer",
+    "feature_exclusion", "preserve_constraints", "forbidden_changes",
+    "modification_scope", "target_changes", "target_style", "anchor_set",
+    "iteration_context", "aspect_ratio"
+  ],
+  "clean_empty_label_lines": true,
+  "kind_requires": {
+    "recreate": ["subject_position"],
+    "edit": ["modification_scope"],
+    "reference_guided": ["reference_images"],
+    "compose": ["reference_images"],
+    "anchored_composition": ["reference_images", "anchor_set", "preserve_constraints"],
+    "conversational_refinement": ["iteration_context"],
+    "text_layout": ["text_content", "text_layout"]
+  },
+  "modalities": {
+    "image": {
+      "prompt": "Create a new image from the following brief.\n\nTask: generate one coherent image that satisfies every requirement below.\nMain subject: {subject}\nPosition and scale: {subject_position}. {subject_scale}\nSpatial relationships: {spatial}. {spatial_relationships}\nScene: {scene}\nComposition and camera: {composition}. {shot_type}. {camera_angle}\nVisual style: {style}. Lighting: {lighting}. Color: {color}. Material: {material}.\nText in image: {text_content}\nAvoid: {negative_words}\nAspect ratio: {aspect_ratio}\nConstraints: keep proportions, perspective, lighting direction and color temperature consistent across all elements; preserve a clear visual hierarchy; do not add elements that are not described above.",
+      "recreate": "Recreate the provided reference image as faithfully as possible.\n\nTask: high-fidelity recreation of the reference image, not a loose interpretation.\nMain subject: {subject}\nPosition and scale: {subject_position}. {subject_scale}\nSpatial relationships: {spatial}. {spatial_relationships}\nScene: {scene}\nComposition and camera: {composition}. {shot_type}. {camera_angle}\nVisual style: {style}. Lighting: {lighting}. Color: {color}. Material: {material}.\nPreserve exactly: {preserve_constraints}\nAvoid changing: {forbidden_changes}\nConstraints: do not invent details that are not visible in the reference; do not restyle the image; keep the original proportions, perspective, existing text and spatial relationships. Exact pixel-level identity is not guaranteed, but the visual structure must remain recognizably the same.",
+      "edit": "Edit the provided image.\n\nRequested changes: {target_changes}\nChange: {target_style}\nModification scope: {modification_scope}\nPreserve unchanged: {preserve_constraints}\nDo not change: {forbidden_changes}\nConstraints: apply only the requested change; keep the identity, facial features, expression, body pose, body proportions, camera framing, lighting, color and existing text unchanged unless explicitly listed above.",
+      "reference_guided": "Create a new image using the provided reference images.\n\nReference roles — each image is used only as described:\n{reference_images}\n\nReference usage: {reference_usage}\nAllowed feature transfer: {feature_transfer}\nForbidden feature transfer: {feature_exclusion}\n\nMain subject: {subject}\nPosition and scale: {subject_position}. {subject_scale}\nSpatial relationships: {spatial}. {spatial_relationships}\nComposition and camera: {composition}. {shot_type}. {camera_angle}\nVisual style: {style}. Lighting: {lighting}. Color: {color}. Material: {material}.\nAspect ratio: {aspect_ratio}\nConstraints: use each reference only for its assigned role; do not transfer attributes marked as forbidden; keep the final image internally consistent in perspective, light direction and color temperature.",
+      "compose": "Compose a new image from the provided reference images.\n\nElement sources — each reference contributes only what is described:\n{reference_images}\n\nReference usage: {reference_usage}\nAllowed feature transfer: {feature_transfer}\nForbidden feature transfer: {feature_exclusion}\n\nPrimary subject: {subject}\nPlacement and scale: {subject_position}. {subject_scale}\nSpatial relationships: {spatial}. {spatial_relationships}\nComposition: {composition}\nVisual style: {style}. Lighting: {lighting}. Color: {color}. Material: {material}.\nAspect ratio: {aspect_ratio}\nConstraints: integrate all referenced elements into one coherent scene; match perspective, light direction, color temperature and material across elements; do not simply collage or paste the references; preserve the identity and proportions of the primary subject.",
+      "anchored_composition": "Create a new image that stays consistent with an established anchor set.\n\nAnchor set — reuse these references exactly as described:\n{anchor_set}\n\nMain subject: {subject}\nPosition and scale: {subject_position}. {subject_scale}\nSpatial relationships: {spatial}. {spatial_relationships}\nScene: {scene}\nComposition and camera: {composition}. {shot_type}. {camera_angle}\nVisual style: {style}. Lighting: {lighting}. Color: {color}. Material: {material}.\nPreserve across the series: {preserve_constraints}\nDo not change: {forbidden_changes}\nAspect ratio: {aspect_ratio}\nConstraints: reuse the same anchor references for character identity, clothing design, environment structure and art style; keep lighting direction and color temperature consistent with the anchor set; only unlisted details are free to change.",
+      "conversational_refinement": "Refine the current image through one controlled iteration.\n\nCurrent iteration state — continue from this result without resetting earlier decisions:\n{iteration_context}\n\nRequested change for this round: {target_changes}\nChange: {target_style}\nModification scope: {modification_scope}\nPreserve from previous rounds: {preserve_constraints}\nDo not change: {forbidden_changes}\nConstraints: change only what is listed for this round; inherit every visual constraint already confirmed in earlier rounds; do not rewrite or regenerate unrelated content; if the change affects overall composition, say so explicitly in the modification scope.",
+      "text_layout": "Create an image with a precise text and layout structure.\n\nText content: {text_content}\nLayout: {text_layout}\nMain subject: {subject}\nScene: {scene}\nVisual style: {style}. Lighting: {lighting}. Color: {color}. Material: {material}.\nComposition: {composition}\nAspect ratio: {aspect_ratio}\nConstraints: render every character of the specified text exactly as written, with correct spelling, numbers and punctuation; preserve the stated hierarchy, alignment, text areas and reading order; do not add extra text, logos or watermarks."
+    }
+  }
+}

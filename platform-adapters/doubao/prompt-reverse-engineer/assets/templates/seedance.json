@@ -1,0 +1,45 @@
+{
+  "model": "seedance",
+  "display_name": "Seedance 2.5",
+  "vendor": "ByteDance",
+  "version": "2.5",
+  "last_verified": "2026-11-15",
+  "notes": "豆包 Seedance 2.5 视频生成：文生视频、首帧图生视频、首尾帧、全模态参考（参考/编辑/延长）。提示词中文建议不超过 500 字；resolution/ratio/duration/generate_audio/watermark/draft 等 API 参数只放 params 块，不写入 Prompt 正文。",
+  "alias": ["seedance", "seedance-2.5", "seedance25", "doubao-seedance", "doubao-seedance-2.5"],
+  "default_params": {
+    "model_id": "doubao-seedance-2-5-260628",
+    "resolution": "720p",
+    "duration": "5",
+    "aspect_ratio": "adaptive",
+    "generate_audio": "true",
+    "watermark": "false",
+    "draft": "false"
+  },
+  "optional_fields": [
+    "story", "storyboard", "character", "camera", "atmosphere", "lighting",
+    "color", "style", "audio", "narration", "dialogue", "reference_note",
+    "negative_words", "first_frame", "last_frame", "source_video",
+    "extension_plan", "reference_usage", "feature_exclusion"
+  ],
+  "clean_empty_label_lines": true,
+  "kind_requires": {
+    "storyboard": ["story"],
+    "image_to_video": ["first_frame", "story"],
+    "first_last_frame": ["first_frame", "last_frame", "story"],
+    "reference_to_video": ["video_references", "story"],
+    "video_edit": ["source_video", "target_changes", "preserve_constraints",
+                   "forbidden_changes", "modification_scope"],
+    "video_extend": ["source_video", "extension_plan"]
+  },
+  "modalities": {
+    "video": {
+      "storyboard": "生成一段 {duration} 秒、画幅 {aspect_ratio} 的{style}视频。\n\n{story}\n\n{storyboard}\n\n人物：{character}\n镜头语言：{camera}\n环境氛围：{atmosphere}\n光影：{lighting}\n色彩：{color}\n声音：{audio}\n旁白：{narration}\n参考素材：{reference_note}\n避免：{negative_words}",
+      "image_to_video": "以图1为首帧生成一段 {duration} 秒的视频，画幅跟随首帧。\n\n首帧：{first_frame}\n\n动作与情节：{story}\n\n{storyboard}\n\n风格：{style}\n镜头语言：{camera}\n光影：{lighting}\n色彩：{color}\n环境氛围：{atmosphere}\n声音：{audio}\n对白：{dialogue}\n避免：{negative_words}",
+      "first_last_frame": "以图1为首帧、图2为尾帧生成一段 {duration} 秒的连贯视频，画幅跟随首帧。\n\n首帧：{first_frame}\n尾帧：{last_frame}\n\n首帧到尾帧的过渡：{story}\n\n{storyboard}\n\n风格：{style}\n镜头语言：{camera}\n光影：{lighting}\n色彩：{color}\n环境氛围：{atmosphere}\n声音：{audio}\n避免：{negative_words}",
+      "reference_to_video": "基于参考素材生成一段 {duration} 秒、画幅 {aspect_ratio} 的{style}视频。\n\n{story}\n\n{storyboard}\n\n参考素材：\n{video_references}\n\n使用策略：{reference_usage}\n禁止迁移：{feature_exclusion}\n\n镜头语言：{camera}\n光影：{lighting}\n色彩：{color}\n环境氛围：{atmosphere}\n声音：{audio}\n旁白：{narration}\n避免：{negative_words}",
+      "video_edit": "编辑以下视频，只执行指定修改。\n\n源视频：{source_video}\n\n修改目标：{target_changes}\n修改范围：{modification_scope}\n保留不变：{preserve_constraints}\n禁止改动：{forbidden_changes}\n补充画面要求：{story}\n声音处理：{audio}\n避免：{negative_words}",
+      "video_extend": "延长以下视频。\n\n源视频：{source_video}\n延长方案：{extension_plan}\n\n新增内容：{story}\n\n镜头语言：{camera}\n声音：{audio}\n避免：{negative_words}",
+      "params": "model: {model_id}\nresolution: {resolution}\nratio: {aspect_ratio}\nduration: {duration}\ngenerate_audio: {generate_audio}\nwatermark: {watermark}\ndraft: {draft}"
+    }
+  }
+}

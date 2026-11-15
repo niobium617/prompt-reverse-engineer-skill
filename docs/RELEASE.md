@@ -7,11 +7,13 @@
 
 - [ ] `VERSION` 递增（语义化版本；当前值见 `VERSION`）
 - [ ] `plugin.json` 的 `version` 同步
-- [ ] `python tools/verify.py` 全绿（当前 45 项，无网络、无 API）
-- [ ] `python tools/gen_examples.py --check` 四模态示例逐字节一致
+- [ ] `python tools/verify.py` 全绿（当前 53 项，无网络、无 API）
+- [ ] `python tools/gen_examples.py --check` 四模态 + Muse / Seedance 示例逐字节一致
 - [ ] `python tools/install.py --platform doubao` 重新生成豆包三产物，`git diff` 仅出现预期变更
 - [ ] README 的断言数与 `verify.py` 实际条数一致（`一致性/README 断言数` 断言）
-- [ ] README 的模型清单、仓库描述均为十模型
+- [ ] README 的模型清单、仓库描述均为十二模型（含 Muse Image、Seedance 独立模板）
+- [ ] Muse 模板与 GPT Image 模板保持相互独立（`muse_image.json` 不并入 `gpt_image.json`）
+- [ ] Seedance 模板与 Sora / Runway / Veo 模板保持相互独立（`seedance.json` 不并入其他视频模板）
 - [ ] `docs/DEVLOG.md` 补发布条目（摘要/变更/验证/回滚/脱敏）
 - [ ] 走分支 + PR，CI 全绿后 squash 合入 `main`
 
@@ -30,7 +32,7 @@ gh release create vX.Y.Z --target main \
 
 - [ ] tag 指向 `main` 的发布提交
 - [ ] Release notes 含：新增能力、破坏性变更（无则写“无”）、验证方式、升级步骤
-- [ ] 更新 GitHub 仓库描述（十模型、五平台）
+- [ ] 更新 GitHub 仓库描述（十二模型、五平台）
 - [ ] 发布后核对：`gh release view vX.Y.Z`、`gh api repos/<owner>/<repo> --jq .description`
 
 ## 3. 发布后
@@ -43,4 +45,6 @@ gh release create vX.Y.Z --target main \
 
 | 版本 | 日期 | 要点 |
 |---|---|---|
+| v2.3.0 | 2026-11-15 | 新增 Seedance 2.5：独立视频模板与规则（六任务模式/首帧首尾帧全模态参考互斥/素材角色/参数边界）、Seedance 六项审查清单、官方资料索引；四模态 + Seedance 示例；53 项断言 |
+| v2.2.0 | 2026-11-15 | 新增 Muse Image 1.0：独立模板与规则（八用途/十类空间关系/参考迁移边界/Anchor/多轮/文字版式）、Muse 六项审查清单、官方资料索引；四模态 + Muse 示例；49 项断言 |
 | v2.1.0 | 2026-11-14 | 阶段 0–3：资源治理、GPT Image 五任务、一致性与 CI（45 项断言）、参考图角色/置信度/审查清单；修复非 Windows 安装与豆包产物行尾归一化 |

@@ -45,6 +45,8 @@ DOUBAO_SOURCES = [
     SKILL_SRC / "SKILL.md",
     SKILL_SRC / "references" / "prompt_framework.md",
     SKILL_SRC / "references" / "image_rules.md",
+    SKILL_SRC / "references" / "muse_image_rules.md",
+    SKILL_SRC / "references" / "seedance_rules.md",
     SKILL_SRC / "references" / "video_rules.md",
     SKILL_SRC / "references" / "model_mappings.md",
 ]
@@ -289,9 +291,9 @@ def build_doubao_body():
         "",
         "你是多模态 Prompt 逆向工程专家。用户提供文本、图片、视频或剧本后，你深度拆解其"
         "创作逻辑（主体、风格、结构、参数），反向生成可复用的专业 Prompt，适配输出"
-        "Midjourney V8.2 / Stable Diffusion 3.5 / FLUX.2 / GPT Image 2.5 / Nano Banana Pro / "
-        "GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1 "
-        "等模型格式，并给出百分制质量评分。",
+        "Midjourney V8.2 / Stable Diffusion 3.5 / FLUX.2 / GPT Image 2.5 / Muse Image 1.0 / "
+        "Seedance 2.5 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / "
+        "Runway Gen-4.5 / Veo 3.1 等模型格式，并给出百分制质量评分。",
         "",
         "## 附带的脚本",
         script_note,

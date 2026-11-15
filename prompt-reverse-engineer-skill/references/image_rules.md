@@ -131,9 +131,10 @@ Agent 填充 `negative_words` 字段时按三类分组书写（如 `"模糊, 低
 | Stable Diffusion 3.5 | 独立 negative | 标签 + 权重语法；正负分离 | IP-Adapter / ControlNet | 弱 |
 | FLUX.2 [pro] | **不支持** | 自然语言长句，描述关系与空间 | 多参考图，标注角色 | 较好 |
 | GPT Image 2.5 | 写进 Constraints | 结构化规格书；编辑一次只改一项 | 随请求附图 | 强，逐字复现 |
+| Muse Image 1.0 | 无独立 negative 参数，用 `Avoid:` 自然语言 | 自然语言完整句；先目标后主体/空间关系；参考图写明角色与禁止迁移 | 多图，角色 + 用途 + 迁移边界 | 强；海报任务仍需核对 |
 | Nano Banana Pro | 改写为正向约束 | 主体+动作 → 地点 → 构图 → 风格 | API 最多 14 张 | 最强，海报级 |
 
-选型建议：追求构图/风格一致 → MJ V8.2 或 FLUX.2；需要准确文字与编辑 → GPT Image 2.5 / Nano Banana Pro；本地可控与负面词 → SD 3.5。
+选型建议：追求构图/风格一致 → MJ V8.2 或 FLUX.2；需要准确文字与编辑 → GPT Image 2.5 / Nano Banana Pro；复杂多主体空间关系、多图融合、系列一致性 → Muse Image 1.0（规则见 `muse_image_rules.md`）；本地可控与负面词 → SD 3.5。
 
 ## 十一、空间、材质与编辑约束术语
 
@@ -149,6 +150,21 @@ Agent 填充 `negative_words` 字段时按三类分组书写（如 `"模糊, 低
 | 透视 | 一点/两点/三点透视、俯视灭点、广角畸变 | 融合多图时先统一灭点与地平线 |
 | 相对尺度 | 主体约占画面高度 1/2、1/3；与参照物等高 | 给比例而非「很大」「很小」 |
 | 画面朝向 | 人物朝画面右侧行走、视线看向画外 | 与留白方向一起写 |
+
+Muse Image 要求把关系单独结构化到 `spatial_relationships`，每项以类型开头（细则见 `muse_image_rules.md` 第三节）：
+
+| 类型 | 写法示例 |
+|---|---|
+| `position` | `position：机器人位于画面中央偏左` |
+| `direction` | `direction：人物面向右侧的汽车` |
+| `distance` | `distance：前景人物与背景建筑相距约一个街区` |
+| `interaction` | `interaction：右手握住剑柄` |
+| `occlusion` | `occlusion：桌角遮住人物左腿` |
+| `containment` | `containment：钥匙在玻璃瓶内` |
+| `alignment` | `alignment：三块招牌沿水平线对齐` |
+| `scale` | `scale：人物高度约为门框的三分之二` |
+| `depth` | `depth：人物清晰，远处建筑轻微虚化` |
+| `attachment` | `attachment：徽章固定在左胸位置` |
 
 ### 11.2 材质与表面（material）
 
@@ -190,5 +206,7 @@ GPT Image 把负向约束拆成三类自然语言句子，写进 Constraints 段
 | `composition_reference` | 构图参考 | 视角、景别、元素位置 | 主体身份、画风 |
 | `background_reference` | 背景参考 | 地点、环境元素、时间氛围 | 人物与前景道具 |
 | `object_reference` | 道具参考 | 外形、材质、标识细节 | 人物、场景风格 |
+
+Muse Image 资料里的 `subject_reference` 不新增枚举：人物主体用 `identity_reference`，非人物主体/道具用 `object_reference`；同一张图的「用途 / 保留 / 禁止迁移」写在同一条 `图N：` 里。
 
 写法：`图1：identity_reference；提取：面部与发型；保留：构图；禁止迁移：服装；优先级：主参考`。多图共用角色时用「优先级」区分主次；角色无法判断时先询问用户，或写入 `uncertainty` 的 `unknown:` 项。

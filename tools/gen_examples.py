@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""从 tools/fixtures 重新生成四模态示例 output.md（确定性、离线、无 API）。
+"""从 tools/fixtures 重新生成示例 output.md（四模态 + Muse / Seedance 专项，确定性、离线、无 API）。
 
 示例是技能的对外展示，手写副本必然与模板/编译器漂移；本脚本用金标语义
 analysis JSON 直接跑编译器，输出即示例，`verify.py` 断言两者逐字节一致。
@@ -37,10 +37,22 @@ JOBS = [
         "command": ["all"],
     },
     {
+        "dir": "muse_image_example",
+        "fixture": "semantic_muse_image.json",
+        "title": "Muse Image 专项（多参考图融合 + 空间关系）",
+        "command": ["all", "--models", "muse_image"],
+    },
+    {
         "dir": "video_example",
         "fixture": "semantic_video.json",
         "title": "视频模态（默认视频模型分镜）",
         "command": ["all"],
+    },
+    {
+        "dir": "seedance_example",
+        "fixture": "semantic_seedance.json",
+        "title": "Seedance 专项（全模态参考 + 素材角色 + 审查清单）",
+        "command": ["all", "--models", "seedance"],
     },
     {
         "dir": "story_example",
@@ -76,7 +88,7 @@ def render(job):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="重新生成四模态示例 output.md")
+    parser = argparse.ArgumentParser(description="重新生成示例 output.md（四模态 + Muse / Seedance）")
     parser.add_argument("--check", action="store_true",
                         help="只校验仓库示例与生成结果是否逐字节一致")
     args = parser.parse_args()
@@ -94,6 +106,7 @@ def main():
                 print(f"[DIFF] {job['dir']}/output.md 已漂移，"
                       "请运行 python tools/gen_examples.py")
         else:
+            target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(expected, encoding="utf-8", newline="\n")
             print(f"[OK] 已生成 {target.relative_to(REPO)}")
     if failed:
