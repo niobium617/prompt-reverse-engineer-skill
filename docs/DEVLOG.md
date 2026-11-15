@@ -550,3 +550,212 @@ $ python tools/gen_examples.py --check
 ### 脱敏
 
 本文不含密钥与绝对用户路径。
+
+## 2026-11-15 实拍图片/视频逐镜反推（v2.4.0）
+
+### 摘要
+
+新增「实拍镜头反推」分支：真实图片/实拍视频不再只还原整片风格，而是逐镜输出可直接粘贴的镜头 Prompt。脚本补齐确定性镜头信号（图片 EXIF/景深/黑边，视频首/中/末关键帧/运镜轴/逐镜色彩），新增 `references/shot_reverse_rules.md` 规则库与 `prompt_compiler.py shots` 子命令，按 Sora 2 / Runway / Veo 3.1 / Seedance 四个视频模板逐镜独立渲染；升级至 `2.4.0`，断言 53 → 57。
+
+### 背景（基线）
+
+- 适配前：`VERSION` 2.3.0、`verify.py` 53/53；视频模式只产出整片分镜脚本，图片模式只产出单帧 Prompt。
+- 用户诉求：分析现实图片或视频，反推相关镜头提示词；粒度定为逐镜镜头卡 + 分镜总表；实现方式定为增强脚本 + 新增规则。
+- 参考项目：`freestylefly/awesome-gpt-image-2`、`nidhinjs/prompt-master`、`wuyoscar/GPT-Image2-Skill`、`black-forest-labs/skills`、`Vieeeeeee/skills-gallery`、`MapleShaw/seedance2.0-prompt-skill`、`heloraai/Seedance2.0-Prompt-Optimizer-skill`、`happyhorse-prompt-studio`（Apache-2.0）、`ismoshushi/awesome-opus-video-skills`。仅借鉴「先固定可观测项、再写风格」「参数只进参数块」「逐镜独立可粘贴」等结构与工作流，未复制代码或整段文案。
+
+### 变更清单（旧值 → 新值）
+
+| 位置 | 旧值 | 新值 |
+|---|---|---|
+| `scripts/analyze_image.py` | 无镜头信号 | `shot_hints`：EXIF 焦段/35mm 等效/光圈/快门/ISO、景深推断、黑边、人脸；每项带 `confidence` |
+| `scripts/analyze_video.py` | 每镜中点关键帧 | 每镜首/中/末关键帧、`motion_axes`（Z/X/Y/R）、`camera_move_hint`、逐镜主色、黑边、景别/机位提示 |
+| `scripts/prompt_compiler.py` | 子命令 `compile|score|filter|all|scenes|validate-templates` | 新增 `shots`；`report_markdown` 支持自定义标题；每镜评分加自动近似依据 |
+| `references/shot_reverse_rules.md` | 不存在 | 三条硬原则、两层工作流、镜头卡 12 维、证据与置信度、跨镜一致性、图片单帧反推、逐模型写法、自检清单、常见错误、来源边界 |
+| `references/video_rules.md` | 分镜只讲整片 | 六节点明整片总览，逐镜工作指向 `shots` |
+| `references/image_rules.md` | 无实拍参数说明 | 补 EXIF 优先、无 EXIF 用「约/疑似」、不编造数字 |
+| `SKILL.md` | 三种输入模态 | 补「实拍镜头分支」、`shots` 用法、镜头审查清单与输出组织、退出码 1/4 特例 |
+| `assets/templates/{sora2,runway,veo3,seedance}.json` | 无逐镜段 | 补 `shot_style` 渲染段（各模型独立） |
+| `tools/fixtures/semantic_shot_reverse.json` | 不存在 | 10 秒 3 镜范本（远景推 / 中景过肩跟 / 特写仰拍固定） |
+| `assets/examples/shot_reverse_example/output.md` | 不存在 | 由 `gen_examples.py` 确定性生成 |
+| `tools/verify.py` | 53 项 | 57 项：图片镜头信号 / 视频镜头信号 / 逐镜渲染+评分 / 镜头卡契约与安全 |
+| `README.md` / `tasks/todo.md` | 53 项、无镜头反推 | 57 项；补输入模态、`shots` 用法、目录树、验证表与扩展说明 |
+| `VERSION` / codex `plugin.json` | 2.3.0 | 2.4.0；description/longDescription 补实拍逐镜反推，defaultPrompt 补一条 |
+
+### 生效方式
+
+随 `main` 发布。镜头反推为**按需分支**：仅在用户提供实拍素材并表达「反推镜头 / 复刻运镜 / 拆成分镜」时触发，不改变原有文本/图片/视频/剧本的默认输出。四个视频模板已含 `shot_style`，安装态与豆包包需重新生成后同步。
+
+### 验证（真实输出）
+
+```text
+[PASS] 单元层/analyze_image 镜头信号 — EXIF 块 + 6 类 shot_hints（无 EXIF 时不猜焦段/景别）齐全
+[PASS] 单元层/analyze_video 镜头信号 — 3 镜均含首/中/末关键帧、运镜轴、逐镜色彩、黑边与人脸提示
+[PASS] 镜头反推/逐镜渲染+评分 — 3 镜 × 4 模型独立 Prompt；分镜表/评分/审查清单齐全；--dims 人工评分与 Markdown 排版通过
+[PASS] 契约层/镜头卡字段与安全 — 编号/字段/枚举/运镜/时长/锚点/证据/焦段 10 类错误退出 4；图片多镜退出 4；无 shot_style 退出 1；黑名单退出 5 且 sanitize 放行
+[PASS] 一致性/README 断言数 — README 断言数 57 与实际一致
+
+== 验证汇总 ==
+通过 57 / 57
+全部通过 ✔
+```
+
+```text
+$ python tools/gen_examples.py --check
+[PASS] text_example/output.md 与生成结果一致
+[PASS] image_example/output.md 与生成结果一致
+[PASS] muse_image_example/output.md 与生成结果一致
+[PASS] video_example/output.md 与生成结果一致
+[PASS] seedance_example/output.md 与生成结果一致
+[PASS] story_example/output.md 与生成结果一致
+[PASS] shot_reverse_example/output.md 与生成结果一致
+```
+
+### 偏差
+
+- 镜头卡字段 12 维为设计命名，与任何参考项目的字段名不一一对应；`evidence` 统一用 `observed:` / `inferred:` / `unknown:` 前缀。
+- 运镜按设备无关的四个轴（Z 推拉 / X 水平摇移 / Y 升降 / R 旋转）编码，复合运镜用 `+` 连接且最多两轴；`固定` 不与其它轴组合。
+- 图片反推严格单镜（`shots` 恰好 1 项），视频可多镜；`total_duration` 与逐镜时长之和允许 0.5 秒误差。
+- `lens` / `focus` 无法从画面确认时必须省略，不写「unknown」；自动评分标注「自动近似：依据镜头卡字段完整度」，不冒充人工评审。
+
+### 回滚
+
+`git revert` 本版本提交；`VERSION`/`plugin.json` 回到 2.3.0，删除 `shot_reverse_rules.md`、`semantic_shot_reverse.json` 与 `shot_reverse_example/`，`prompt_compiler.py` 移除 `shots` 子命令与镜头校验，模板移除 `shot_style` 段，`verify.py` 回退 53 项；豆包产物重新生成。无数据迁移。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径。
+
+## 2026-11-16 实拍镜头反推覆盖六个图片模型（v2.4.1）
+
+### 摘要
+
+v2.4.0 只让四个视频模型支持逐镜渲染，单张实拍图反推仍要人工换算成图片模型。v2.4.1 给 Midjourney / SD 3.5 / FLUX.2 / GPT Image / Muse Image / Nano Banana 六个图片模板各加单帧 `shot_style`，`shots` 未指定模型时按 `modality` 取默认集合，图片反推一次输出六份独立 Prompt；断言 57 → 58，版本升至 2.4.1。
+
+### 背景（基线）
+
+- 适配前：`VERSION` 2.4.0、`verify.py` 57/57；`shot_style` 仅存在于 `sora2/runway/veo3/seedance` 四个视频模板，图片模板无逐镜段。
+- 用户诉求：真实图片反推也应直接产出各图片模型可粘贴的 Prompt，而非只给视频 Prompt 再手改。
+- 参考项目：图片六款模板结构沿用既有 `image_rules.md` 与 v2.4.0 已记录的参考项目边界（仅借鉴「规格书分字段」「先固定可观测项再写风格」），未复制第三方代码或文案。
+
+### 变更清单（旧值 → 新值）
+
+| 位置 | 旧值 | 新值 |
+|---|---|---|
+| `scripts/prompt_compiler.py` | `shots` 默认固定四视频模型；图片模板禁止 `shot_style` | `VIDEO_SHOT_MODELS` / `IMAGE_SHOT_MODELS`；按 `modality` 选默认；图片模板允许 `shot_style` |
+| `assets/templates/midjourney.json` | 无逐镜段 | `shot_style`：`/imagine prompt:` + 景别/机位/运镜/锚点/焦段 + `--ar/--v` |
+| `assets/templates/stable_diffusion.json` | 无 | `shot_style`：`Positive:` 标签串 + `Negative:` + 采样参数 |
+| `assets/templates/flux2.json` | 无 | `shot_style`：中文自然语言，保持无负向 |
+| `assets/templates/gpt_image.json` | 无 | `shot_style`：分字段规格书 + 单帧约束 |
+| `assets/templates/muse_image.json` | 无 | `shot_style`：完整中文句 + Lens/Focus/Avoid/画幅 |
+| `assets/templates/nano_banana.json` | 无 | `shot_style`：分字段规格书 + Lens/Focus/Resolution |
+| `tools/fixtures/semantic_shot_reverse_image.json` | 不存在 | 单张实拍图金标（特写/平拍/固定/3s、EXIF 85mm、f/1.8） |
+| `tools/verify.py` | 57 项；无 shot_style 用例用 `--models mj` | 58 项：新增图片六模型渲染；用例改用文本模型 `deepseek` |
+| `references/prompt_framework.md` 2.6 | 只列视频模型 | 补图片模型、模态默认集合、退出码 1 说明 |
+| `references/shot_reverse_rules.md` 第七节 | 四款视频写法 | 补六款图片写法与单帧共用约束 |
+| `references/image_rules.md` | 只讲 EXIF 参数 | 补一句：图片 `shots` 默认六款图片模型独立输出 |
+| `references/model_mappings.md` 第 1 节 | 无镜头反推行 | 补「实拍镜头反推」默认模型行 |
+| `SKILL.md` | 默认模型只写四视频 | 默认模型表、`shots` 用法改为按模态 |
+| `README.md` / `tasks/todo.md` / `docs/RELEASE.md` / CI | 57 项、视频四模型 | 58 项；1.2/3.4/3.6/验证表与发布检查同步补图片六模型 |
+| `VERSION` / codex `plugin.json` | 2.4.0 | 2.4.1；description 补图片六模型逐镜 |
+
+### 生效方式
+
+随 `main` 发布。安装态与豆包包需重新生成后同步。图片反推仍走同一 `shots` 子命令：`--analysis` 传图片镜头卡 JSON，不指定 `--models` 时输出六份独立 Prompt；显式指定任意图片模型子集也有效。
+
+### 验证（真实输出）
+
+```text
+[PASS] 镜头反推/图片六模型渲染 — 单张实拍图 → 六图片模型独立 Prompt；默认图片模型、EXIF 焦段、正负向/规格书结构与审查清单通过
+[PASS] 一致性/README 断言数 — README 断言数 58 与实际一致
+
+== 验证汇总 ==
+通过 58 / 58
+全部通过 ✔
+```
+
+`python tools/gen_examples.py --check` 7 项全 PASS（模板新增 `shot_style` 不影响既有金标）。
+
+### 偏差
+
+- 图片模板不含时长/声音/衔接占位符，单帧 Prompt 不输出视频句式；`total_duration` 省略时编译器按 `duration_s` 补齐（默认 3 秒）。
+- Muse 与 GPT Image 的图片 `shot_style` 各自独立，不共用文本；FLUX.2 继续禁用负向。
+- 六个图片模板的 Prompt 语序按各模型既有 `image_rules.md` 偏好设计，不追求六款逐字对齐。
+
+### 回滚
+
+`git revert` 本版本提交；`VERSION`/`plugin.json` 回到 2.4.0，六个图片模板移除 `shot_style`，`prompt_compiler.py` 恢复固定四视频默认与图片模板禁用 `shot_style`，删除 `semantic_shot_reverse_image.json`，`verify.py` 回退 57 项并恢复 `--models mj` 用例；豆包产物重新生成。无数据迁移。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径。
+
+## 2026-11-16 模板对齐九个参考项目的审计（v2.4.1 补充）
+
+### 摘要
+
+对照九个第三方提示词项目（图片五、视频四）逐模板审计 12 个模板与相关规则。按「只借原则、不抄文本」补三处缺口：FLUX.2 在无负向能力时的文字/水印约束替代句、Nano Banana 的约束行、Seedance 参数边界中「正文可写自然语言时长/画幅意图」的说明。其余原则已在此前版本落地，未覆盖项列为已知缺口。
+
+### 背景（基线）
+
+- 审计时点：v2.4.1，`python tools/verify.py` 58/58；12 个模板、7 份金标示例。
+- 参考项目（仅作设计参考）：
+  - 图片：freestylefly/awesome-gpt-image-2、nidhinjs/prompt-master、wuyoscar/GPT-Image2-Skill、black-forest-labs/skills、Vieeeeeee/skills-gallery。
+  - 视频：MapleShaw/seedance2.0-prompt-skill、heloraai/Seedance2.0-Prompt-Optimizer-skill、happyhorse-prompt-studio、ismoshushi/awesome-opus-video-skills。
+- 提炼的原则：结构化规格书 + 逐项约束；先可观察事实、后风格判断；编辑/重绘任务拆分；模型专属语法与参数边界；示例驱动；逐镜可粘贴；API 参数只进 `params`；证据标注。
+
+### 变更清单
+
+| 文件 | 旧值 | 新值 |
+| --- | --- | --- |
+| `assets/templates/flux2.json` | `positive` / `style_transfer` 无文字水印约束；约束句前直接跟 `{reference_note}` | 三种写法都含「不在画面中额外添加文字、水印或 logo。」；约束句移到 `{reference_note}` 之前，参考图为空时不留孤立标点 |
+| `assets/templates/nano_banana.json` | `image.prompt` 无约束行；`image.edit` 只写保留项 | `image.prompt` 末尾增加 `Constraints: render any text exactly as written; do not add extra text, logos, or watermarks.`；`image.edit` 补同一约束；`shot_style.shot_suffix` 增加同一行 |
+| `references/seedance_rules.md` §0、§9 | 「参数只进 params，不写指令或后缀」易被读成正文不得提时长/画幅 | 明确：键值与 `--rs/--rt/--dur` 后缀不进正文；正文可用自然语言交代时长与画幅意图；不得伪装成 API 参数 |
+| `references/video_rules.md` §8 | 同上，表述含混 | 同步为「键值写进 params；正文可写自然语言意图」 |
+| `tools/verify.py` | 模板契约未校验这两类约束 | `templates_contract` 增加 FLUX「不额外添加文字」与 Nano `Constraints` 行两条断言（总数仍 58） |
+
+### 覆盖矩阵（原则 → 落点）
+
+| 原则 | 已落地 | 缺口 |
+| --- | --- | --- |
+| 结构化规格书 + 逐项约束 | `gpt_image`、`muse_image`、`nano_banana` 分字段；Seedance 六段式；FLUX/Nano 约束句 | MJ/SD/FLUX 仍为自然语言长句，不强加字段标签（有意为之） |
+| 先可观察、后风格 | 镜头卡 `subject_action` 在前；`image_rules.md` 七段结构；分镜按「主体→动作→场景」 | 部分视频模板的 `style` 占位符仍靠前，未逐模板重排 |
+| 编辑/重绘拆分 | `gpt_image` recreate/edit；`muse_image` recreate/edit；`nano_banana` edit；Seedance `video_edit`/`video_extend` | MJ/SD/FLUX 仅有 `style_transfer`，无独立编辑模式 |
+| 模型专属语法与参数边界 | MJ `--ar`、SD 正负向+采样参数、FLUX 无负向、Seedance `params` 块与后缀禁令 | —— |
+| 示例驱动 | 7 份金标（文本/图片/Muse/视频/Seedance/剧本/镜头反推） | 未为 12 个模型逐一建示例 |
+| 逐镜可粘贴 | `shots` 子命令覆盖视频四 + 图片六，每模型一段 | —— |
+| API 参数不进正文 | 全部模板 `params` 独立；Seedance 规则补充 | —— |
+| 证据标注 | 镜头卡 `observed:` / `inferred:` / `unknown:`，`unknown` 不入正文 | —— |
+
+### 生效方式
+
+随 `main` 发布，无需重装；豆包产物已重新生成（`python tools/install.py --platform doubao`）。
+
+### 验证（真实输出）
+
+```text
+[PASS] 一致性/README 断言数 — README 断言数 58 与实际一致
+
+== 验证汇总 ==
+通过 58 / 58
+全部通过 ✔
+```
+
+`python tools/gen_examples.py --check` 7 项全 PASS（金标未变）。FLUX.2 渲染修复后片段：
+
+```text
+... masterpiece. 文字「APS 2077」. 不在画面中额外添加文字、水印或 logo。参考图 1：人物姿态；参考图 2：霓虹配色
+```
+
+### 偏差
+
+- 三个参考项目里的整段 Prompt 范本未复制；只采用结构原则，措辞按本仓库中文契约重写。
+- 未为 12 个模型逐一补金标：四视频 + 六图片已有 `shots` 断言覆盖，新增逐模型示例会显著抬高维护成本，暂不做。
+- `deepseek` / `gpt4_claude` 为纯文本模型，九个参考项目不含同类，未纳入对照。
+
+### 回滚
+
+`git revert` 本次提交；三条模板改动回到 v2.4.1 状态，`verify.py` 移除两条约束断言，两份规则文件的措辞恢复原文；重跑 `python tools/install.py --platform doubao`。无数据迁移。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径。

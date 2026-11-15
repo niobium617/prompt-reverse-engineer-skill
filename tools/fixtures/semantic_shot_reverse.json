@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0",
+  "tool": "agent",
+  "modality": "video",
+  "semantic_analysis": {
+    "summary": [
+      "10 秒雨夜街头实拍片段，脚本检出 3 个镜头",
+      "远景交代环境 → 中景跟拍人物 → 特写收尾",
+      "整体为霓虹冷调写实风格"
+    ],
+    "suggestions": [
+      "镜头 2 的环境音可再压低一档突出脚步"
+    ],
+    "style": "霓虹写实电影感，轻微颗粒，冷调高对比",
+    "aspect_ratio": "16:9",
+    "total_duration": 10,
+    "color_script": "深蓝夜色打底，霓虹橙与青色点缀，肤色偏冷",
+    "sound_plan": "雨声与远处车流铺底，脚步与伞面滴水声落在前景",
+    "continuity_notes": "黑色风衣与透明伞贯穿三镜；霓虹不换位，只换角度",
+    "negative_words": "无字幕、无水印、无变形、无多余肢体",
+    "source_note": "用户提供的 10 秒实拍视频，24fps",
+    "uncertainty": [
+      "observed: 地面反光强烈，明显刚下过雨",
+      "inferred: 拍摄时间在夜间商业街，非主干道",
+      "unknown: 背景人物的具体数量被虚化遮挡"
+    ],
+    "shots": [
+      {
+        "shot_no": 1,
+        "shot_size": "远景",
+        "camera_angle": "平拍",
+        "camera_move": "推",
+        "duration_s": 3,
+        "subject_action": "女子撑透明伞从街道深处走来，霓虹招牌逐块亮起",
+        "environment": "雨夜商业街，湿滑反光路面，两侧密集灯牌",
+        "lighting": "霓虹顶光加地面反射光，人物边缘有青色轮廓光",
+        "color": "深蓝夜色，橙红霓虹为主光",
+        "anchors": ["透明伞面水珠", "湿地面倒映的橙色招牌", "黑色风衣下摆"],
+        "sound": "雨声、远处车流、霓虹电流嗡鸣",
+        "continuity": "开场建立人物与街道关系，为镜头 2 的跟拍留出方向",
+        "lens": "约 35mm 广角视角",
+        "focus": "深景深，人物与招牌同时清晰",
+        "transition": "硬切",
+        "evidence": [
+          "observed: 画面边缘有广角透视拉伸",
+          "inferred: 由景深判断为小光圈"
+        ]
+      },
+      {
+        "shot_no": 2,
+        "shot_size": "中景",
+        "camera_angle": "过肩",
+        "camera_move": "跟",
+        "duration_s": 4,
+        "subject_action": "镜头跟随女子侧后方前行，风衣下摆随步伐摆动",
+        "environment": "人流与灯牌之间的窄道，地面水洼反光",
+        "lighting": "侧逆光，霓虹在人物肩部形成轮廓",
+        "color": "冷蓝主调，橙色招牌点状高光",
+        "anchors": ["肩部垂落的发丝", "摆动的风衣下摆", "伞骨金属反光"],
+        "sound": "脚步声、伞面滴水、人群低语",
+        "continuity": "保持与镜头 1 相同的行走方向，人物始终在画面右三分之一",
+        "focus": "浅景深，背景灯牌虚化成光斑",
+        "transition": "叠化",
+        "evidence": [
+          "observed: 背景虚化明显，主体边缘清晰",
+          "inferred: 跟拍由人物相对画面位置稳定判断"
+        ]
+      },
+      {
+        "shot_no": 3,
+        "shot_size": "特写",
+        "camera_angle": "仰拍",
+        "camera_move": "固定",
+        "duration_s": 3,
+        "subject_action": "女子停下抬头，瞳孔里映出全息广告牌的光",
+        "environment": "街道上方悬空的全息广告牌，雨丝可见",
+        "lighting": "广告牌作为主光源从上方打亮面部",
+        "color": "面部冷白高光，背景深蓝",
+        "anchors": ["瞳孔中的光斑", "睫毛上的水珠", "被照亮的颧骨轮廓"],
+        "sound": "低频轰鸣渐起，雨声退到背景",
+        "continuity": "收束在人物面部，与前两镜的风衣、伞形成呼应",
+        "lens": "约 85mm 中长焦视角",
+        "focus": "浅景深，焦点在眼睛",
+        "transition": "渐暗收尾",
+        "evidence": [
+          "observed: 面部占画面比例大且背景压缩",
+          "inferred: 由背景压缩程度判断为中长焦"
+        ]
+      }
+    ]
+  }
+}

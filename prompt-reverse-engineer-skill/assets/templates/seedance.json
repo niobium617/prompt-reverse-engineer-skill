@@ -22,6 +22,11 @@
     "extension_plan", "reference_usage", "feature_exclusion"
   ],
   "clean_empty_label_lines": true,
+  "shot_style": {
+    "shot_prefix": "生成 {duration_s} 秒视频，画幅 {aspect_ratio}，风格：{style}。",
+    "shot": "镜头 {shot_no}：{shot_size}，{camera_angle}，运镜 {camera_move}。\n主体与动作：{subject_action}\n视觉锚点：{anchors}\n环境氛围：{environment}\n光影：{lighting}\n色彩：{color}\n声音：{sound}\n衔接：{continuity}",
+    "shot_suffix": "镜头：{lens}\n焦点：{focus}\n首帧：{first_frame}\n转场：{transition}\n避免：{negative_words}"
+  },
   "kind_requires": {
     "storyboard": ["story"],
     "image_to_video": ["first_frame", "story"],

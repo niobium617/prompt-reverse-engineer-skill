@@ -9,6 +9,10 @@
   "default_params": {"width": "1024", "height": "576", "steps": "28", "cfg": "4.5", "sampler": "DPM++ 2M", "scheduler": "Karras", "aspect_ratio": "16:9"},
   "optional_fields": ["style", "photo_params", "quality_words", "negative_words", "target_style", "text_content"],
   "kind_requires": {"negative": ["negative_words"], "style_transfer": ["target_style"]},
+  "shot_style": {
+    "shot": "Positive: {subject_action}, {shot_size}, {camera_angle}, 运镜：{camera_move}, {environment}, {lighting}, {color}, {style}, 视觉锚点：{anchors}, {lens}, {focus}",
+    "shot_suffix": "Negative: {negative_words}\nSteps: {steps}, CFG scale: {cfg}, Sampler: {sampler}, Scheduler: {scheduler}, Seed: -1, Size: {width}x{height}"
+  },
   "modalities": {
     "image": {
       "positive": "Positive: {subject}, {scene}, {style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words}, 文字「{text_content}」",

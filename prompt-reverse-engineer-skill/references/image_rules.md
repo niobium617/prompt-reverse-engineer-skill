@@ -47,6 +47,8 @@ subject → scene → style → lighting → color → composition → photo_par
 | ISO | 50 ~ 25600 | 低 ISO 细腻、高 ISO 颗粒感 |
 | 景深 | 浅 / 深 | `shallow depth of field, bokeh` / `deep focus` |
 
+**实拍照片反推时**：有 EXIF 就直接引用真实焦距/光圈/快门/ISO（`analyze_image.py` 的 `exif` 与 `shot_hints.lens`）；无 EXIF 只能由景深与透视写「约 85mm / 疑似中长焦」，不得编造具体数值。镜头卡写法与证据分级见 `shot_reverse_rules.md`；`prompt_compiler.py shots` 对图片默认输出六款图片模型（MJ / SD / FLUX.2 / GPT Image / Muse / Nano Banana）的独立 Prompt。
+
 ## 三、构图法则
 
 | 构图 | 描述词（中/英） |

@@ -11,7 +11,7 @@
 | 官方事实 | 模型系列与场景、输入素材角色与数量、resolution/ratio/duration 等参数、时长与格式限制、互斥场景、提示词语言与字数建议、真人人脸限制 | 火山方舟《视频生成 API》官方文档 |
 | 本 Skill 设计 | 视频逆向维度、六种任务模式、字段契约、六段式编译、P0–P3、六维评分、Seedance 审查清单 | 针对本仓库现有契约的设计建议，非字节官方 Prompt 规范 |
 
-Seedance 没有官方规定的“标准 Prompt 格式”。本 Skill 输出**可直接粘贴的自然语言分镜指令**，不把内部 JSON 直接发给模型；`resolution`、`ratio`、`duration` 等 API 参数只放 `params` 块，不写进 Prompt 正文。
+Seedance 没有官方规定的“标准 Prompt 格式”。本 Skill 输出**可直接粘贴的自然语言分镜指令**，不把内部 JSON 直接发给模型；`resolution`、`ratio`、`duration` 等 API 参数只以键值形式放 `params` 块，不写参数键值或后缀进正文；正文可以用自然语言交代时长与画幅意图。
 
 ## 1. 与其他视频模型的分工
 
@@ -157,7 +157,7 @@ Seedance 没有官方规定的“标准 Prompt 格式”。本 Skill 输出**可
 
 ## 9. API 参数边界
 
-以下参数只进 `params` 块，禁止写入 Prompt 正文：
+以下参数只以 `params` 键值块输出，禁止写成 `key=value` 指令或 `--rs/--rt/--dur` 后缀；正文可用自然语言交代「多长、什么画幅」作为创作意图（如「一段 10 秒、画幅 16:9 的片子」），但不得伪装成 API 参数：
 
 `model`、`resolution`、`ratio`、`duration`、`frames`、`generate_audio`、`watermark`、`output_format`、`seed`、`camera_fixed`、`return_last_frame`、`draft`、`service_tier`、`callback_url`、`execution_expires_after`。
 

@@ -8,6 +8,11 @@
   "alias": ["runway", "runway-gen4", "runway-gen-4", "gen-4.5", "gen4.5"],
   "default_params": {"duration": "10", "aspect_ratio": "16:9", "resolution": "1280x720"},
   "optional_fields": ["character", "camera", "atmosphere", "lighting", "color", "audio", "narration", "reference_note", "style"],
+  "shot_style": {
+    "shot_prefix": "{shot_size}，{camera_angle}，运镜 {camera_move}；画幅 {aspect_ratio}，时长 {duration_s} 秒。",
+    "shot": "{subject_action}\n视觉锚点：{anchors}\n环境：{environment}\n灯光：{lighting}\n色彩：{color}\n视觉风格：{style}\n声音：{sound}\n衔接：{continuity}",
+    "shot_suffix": "焦段：{lens}\n焦点：{focus}\n首帧提示：{first_frame}\n转场：{transition}\n避免：{negative_words}"
+  },
   "modalities": {
     "video": {
       "storyboard": "镜头风格：{camera}\n人物：{character}\n\n{story}\n\n{storyboard}\n\n环境：{atmosphere}\n灯光：{lighting}\n色彩：{color}\n视觉风格：{style}\n声音：{audio}",
