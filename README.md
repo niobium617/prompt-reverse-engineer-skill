@@ -2,7 +2,7 @@
 
 > **把任何优秀作品 → 逆向拆解 → 还原为可复用的专业 Prompt**
 >
-> 支持 **Claude Code / Cursor / Codex / DeepSeek Harness / 豆包** 五大平台 · **文本 / 图片 / 视频 / 剧本小说** 多模态输入 · **Midjourney V8.2 / Stable Diffusion 3.5 / FLUX.2 / GPT Image 2.5 / Muse Image 1.0 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Seedance 2.5 / Sora 2 / Runway Gen-4.5 / Veo 3.1** 多模型格式输出 · 附**百分制六维加权质量评分**（剧本可逐场景生成图片/视频提示词）
+> 支持 **Claude Code / Cursor / Codex / DeepSeek Harness / 豆包** 五大平台 · **文本 / 图片 / 视频 / 剧本小说** 多模态输入 · **Midjourney V8.2 / Stable Diffusion 3.5 / FLUX.2 / GPT Image 2.5 / Muse Image 1.0 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Seedance 2.5 / Sora 2 / Runway Gen-4.5 / Veo 3.1** 多模型格式输出 · 附**百分制六维加权质量评分**（剧本可逐场景生成图片/视频提示词，实拍素材可逐镜反推镜头 Prompt）
 
 看到一篇爆款文案、一张惊艳的 AI 图片、一段电影感短视频，想知道「它是怎么被生成的」？把作品丢给本技能，它会自动拆解其主体、风格、结构与参数，反向还原出可复刻、可修改的专业 Prompt，并适配输出为各主流生成模型的格式。
 
@@ -26,13 +26,14 @@
 
 ## 一、核心能力
 
-### 1.1 三种输入模态
+### 1.1 输入模态与输出目标
 
 | 输入 | 分析目标 | 输出内容 |
 |---|---|---|
 | **文本**（文章/文案/小说/脚本） | 角色定位、写作风格、结构逻辑、约束规则 | 复刻 Prompt + 优化模板 |
 | **图像**（摄影/绘画/海报/产品图） | 主体、场景、构图、光影、色彩、摄影参数 | 正向 Prompt + Negative Prompt + 风格迁移 Prompt |
 | **视频**（短视频/广告/电影片段） | 镜头序列、运镜方式、人物动作、环境氛围、叙事结构 | 视频生成 Prompt + 分镜脚本 |
+| **实拍图片/视频**（镜头反推） | 景别、机位、运镜轴、时长、光影、色彩、声音、跨镜一致性 | 逐镜镜头卡 + 分镜总表 + 各模型（视频四款 / 图片六款）独立 Prompt + 逐镜评分 |
 | **剧本/小说/文章**（叙事文本→场景化） | 场景切分、全局基调、逐场景七段+分镜 | 每个场景的图片 Prompt（默认 MJ+SD）+ 视频 Prompt（默认 Sora）+ 逐场景评分 |
 
 ### 1.2 十二种目标模型格式
@@ -56,6 +57,8 @@
 
 **未指定目标模型时，默认输出 Midjourney V8.2 + GPT-5.5/Claude 5.5 双版本**；其余模型按需追加（`--models` 接受模型 ID 或别名）。
 
+四个视频模板（Seedance / Sora 2 / Runway / Veo 3.1）与六个图片模板（Midjourney / Stable Diffusion / FLUX.2 / GPT Image / Muse Image / Nano Banana）另含独立的 `shot_style` 渲染段：`prompt_compiler.py shots` 按镜头逐条渲染，每个镜头输出一份可直接粘贴的 Prompt，而不是整片一段。视频素材默认出四款视频模型，单张图片默认出六款图片模型。
+
 ### 1.3 质量评分
 
 每个生成的 Prompt 附百分制评分，六维加权（权重见下表），评分后自动附 1-2 条优化建议：
@@ -71,15 +74,16 @@
 ```
 作品（文本/图片/视频/剧本）
    │
-   ├── 脚本层（本地确定性信号）──→ 字数/句式统计 · 主色/构图/EXIF · 镜头切分/关键帧 · 场景切分信号
+   ├── 脚本层（本地确定性信号）──→ 字数/句式统计 · 主色/构图/EXIF/景深 · 镜头切分/首中末关键帧/运镜轴 · 场景切分信号
    │        analyze_text.py / analyze_image.py / analyze_video.py / analyze_scenes.py
    │
-   ├── Agent 多模态本体（语义分析）──→ 主体 · 风格 · 结构 · 叙事 · 逐场景七段+分镜（按规则库）
+   ├── Agent 多模态本体（语义分析）──→ 主体 · 风格 · 结构 · 叙事 · 逐场景七段+分镜 · 逐镜镜头卡（按规则库）
    │
-   ├── 编译层 prompt_compiler.py ──→ 模板渲染成 12 种模型格式 + 六维评分 + 安全过滤（含 scenes 子命令逐场景编译）
+   ├── 编译层 prompt_compiler.py ──→ 模板渲染成 12 种模型格式 + 六维评分 + 安全过滤（scenes 逐场景编译、shots 逐镜编译）
    │
    └── 输出：元信息卡 + 分析摘要 + Prompt 列表 + 评分表 + 使用提示
              （场景化：总览 + 场景总表 + 逐场景 Prompt + 逐场景评分）
+             （镜头反推：分镜总表 + 逐镜 Prompt + 逐镜评分 + 镜头审查清单）
 ```
 
 **脚本只做「本地可计算」的事，语义判断归 Agent**——因此脚本不可用时（如豆包纯文本模式）技能仍可完整运行，仅缺少量化信号（降级路径已内置于 SKILL.md）。
@@ -127,6 +131,8 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 
 拆解这个视频的分镜脚本，转成 Sora prompt：https://example.com/video.mp4
 
+把这段实拍视频逐镜反推成提示词，Sora / Veo 各出一版：D:\videos\night_street.mp4
+
 把这部短剧按场景生成图片和视频提示词：D:\scripts\rain_umbrella.txt
 ```
 
@@ -138,7 +144,7 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 
 ### 3.1 触发方式
 
-提供具体内容（粘贴文本 / 本地文件路径 / URL）并表达「逆向 / 复刻 / 拆解 / 变成 prompt / 优化 prompt」意图即触发。英文触发词：`prompt reverse engineering`、`reverse engineer this text/image/video`、`recreate this style as a prompt`。
+提供具体内容（粘贴文本 / 本地文件路径 / URL）并表达「逆向 / 复刻 / 拆解 / 变成 prompt / 优化 prompt」意图即触发；实拍图片/视频说「反推镜头 / 复刻这个运镜 / 拆成分镜」走镜头反推分支。英文触发词：`prompt reverse engineering`、`reverse engineer this text/image/video/shot`、`recreate this style as a prompt`、`recreate this camera move as a prompt`。
 
 ### 3.2 文本模式（文章/文案/小说/脚本）
 
@@ -212,6 +218,19 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py compile   --anal
 
 Seedance 模板（`assets/templates/seedance.json`）与 Sora / Runway / Veo 模板**相互独立**，共用视频分镜与 `video_references` 底层契约；Seedance 模型更新只改自己的文件。六种模式、素材角色、参数边界与审查清单见 `references/seedance_rules.md`、`references/model_mappings.md` 5.4 节。
 
+**逐镜反推（实拍素材，`shots` 子命令）**：给了实拍视频/照片并要求「反推镜头提示词 / 复刻这个运镜 / 拆成分镜」时，走镜头反推分支。视频脚本额外输出首/中/末关键帧、运镜轴（Z 推拉 / X 水平摇移 / Y 升降 / R 旋转）、逐镜主色与黑边信号，图片脚本额外输出 EXIF 焦段/光圈/快门/ISO、景深与黑边推断；Agent 逐帧复核后按 `references/shot_reverse_rules.md` 填镜头卡（景别 / 机位 / 运镜 / 时长 / 画面动作 / 环境 / 光影 / 色彩 / 锚点 / 声音 / 衔接 / 转场 / 证据），再由编译器逐镜、逐模型独立渲染：
+
+```bash
+python prompt-reverse-engineer-skill/scripts/prompt_compiler.py shots \
+  --analysis shot.json --models sora,runway,veo,seedance --auto --format md
+
+# 单张实拍图：不指定 --models 时默认六款图片模型全出
+python prompt-reverse-engineer-skill/scripts/prompt_compiler.py shots \
+  --analysis shot_image.json --auto --format md
+```
+
+输出分镜总表 + 每镜镜头卡 + 每个模型的独立 Prompt + 逐镜六维评分 + 镜头审查清单。未指定模型时按模态取默认：视频素材出四款视频模型，单张图片出六款图片模型，可用 `--models mj,sd` 等自选；镜头卡字段错误（编号不连续/重复、枚举不符、时长 ≤ 0、运镜超两轴、锚点超 5 个、证据无置信度标签）退出 4 并报镜头号；指定模型都没有 `shot_style` 段时退出 1。示例见 `assets/examples/shot_reverse_example/output.md`。
+
 ### 3.5 叙事文本场景化模式（剧本/小说/文章）
 
 **输入**：本地文本路径、URL 或直接粘贴的剧本/小说/文章，并表达「生成对应场景的图片/视频提示词」「把故事变成画面」「逐场景出图」意图。
@@ -235,6 +254,7 @@ Seedance 模板（`assets/templates/seedance.json`）与 Sora / Runway / Veo 模
 | 「做系列图」/「在上一版上改」/「海报文字排版」 | Muse 的 `anchored_composition` / `conversational_refinement` / `text_layout`（见 3.3 节） |
 | 「也出 DeepSeek 版」 | 追加 DeepSeek 格式（含思考档位，见 `model_mappings.md` 第 8 节） |
 | 「也出 Seedance 版」/「做首尾帧视频」/「按参考视频延长」 | 追加 Seedance 模板，按 `seedance_rules.md` 判定六种任务模式；首帧 / 首尾帧 / 全模态参考互斥 |
+| 「反推这个运镜」/「拆成分镜」/「复刻这段实拍」 | 逐镜镜头卡 + 分镜总表；视频默认 **Sora 2 / Runway / Veo 3.1 / Seedance**，图片默认 **Midjourney / SD 3.5 / FLUX.2 / GPT Image / Muse Image / Nano Banana**（见 3.4 节） |
 | 「全部模型」 | 全部 12 种格式输出（`--models all`） |
 | 指定了未注册的模型名 | 回退默认双版本并说明 |
 | 场景化模式（不指定） | 图片默认 **MJ + SD**、视频默认 **Sora 2**（`--image-models` / `--video-models` 可换） |
@@ -257,11 +277,11 @@ Seedance 模板（`assets/templates/seedance.json`）与 Sora / Runway / Veo 模
 │   ├── SKILL.md                       # 核心定义：触发条件/六步工作流/输出规范/异常处理
 │   ├── scripts/
 │   │   ├── analyze_text.py            # 文本确定性统计
-│   │   ├── analyze_image.py           # 图片信号提取（主色/构图/EXIF/人脸）
-│   │   ├── analyze_video.py           # 视频镜头切分+关键帧+运镜估计（无需 ffmpeg）
+│   │   ├── analyze_image.py           # 图片信号提取（主色/构图/EXIF/景深/黑边/镜头信号）
+│   │   ├── analyze_video.py           # 视频镜头切分+首中末关键帧+运镜轴+逐镜色彩（无需 ffmpeg）
 │   │   ├── analyze_scenes.py          # 叙事文本场景切分信号（剧本场次标记/散文候选块）
 │   │   ├── _net.py                    # 受限 URL 下载（仅公网/逐跳复检重定向/大小上限）
-│   │   └── prompt_compiler.py         # 编译/评分/安全过滤（compile|score|filter|all|scenes|validate-templates）
+│   │   └── prompt_compiler.py         # 编译/评分/安全过滤（compile|score|filter|all|scenes|shots|validate-templates）
 │   ├── references/                    # 规则知识库（Markdown，Agent 阅读）
 │   │   ├── prompt_framework.md        # 六要素+字段契约+评分细则+安全规则（总纲，含 2.5 节 story 契约）
 │   │   ├── image_rules.md             # 摄影/绘画/光影/色彩术语库（含七段结构）
@@ -270,16 +290,19 @@ Seedance 模板（`assets/templates/seedance.json`）与 Sora / Runway / Veo 模
 │   │   ├── seedance_rules.md          # Seedance 2.5 独立编译规则（六模式/素材角色/参数边界/审查清单）
 │   │   ├── seedance_sources.md        # Seedance 官方资料索引与「官方能力 vs 本 Skill 设计」边界
 │   │   ├── video_rules.md             # 电影镜头语言+分镜规范
+│   │   ├── shot_reverse_rules.md      # 实拍镜头反推规则（镜头卡 12 维/证据置信度/跨镜一致性/逐模型写法）
 │   │   └── model_mappings.md          # 十二模型格式映射表（含 DeepSeek 思考档位与版本迁移）
 │   └── assets/
 │       ├── templates/                 # 13 个 JSON 模板（12 模型渲染 + 1 评分报告，新模型=新文件，自动注册）
-│       └── examples/                  # 四模态示例（输入媒体+金标输出，含 story_example / muse_image_example / seedance_example）
+│       └── examples/                  # 四模态示例（输入媒体+金标输出，含 story_example / muse_image_example / seedance_example / shot_reverse_example）
 ├── platform-adapters/                 # 平台适配层（内容由 install.py 物化，勿手改）
 │   ├── codex/…/.codex-plugin/plugin.json
 │   ├── deepseek/README.md             # DeepSeek Harness 适配说明（~/.dsh/skills）
 │   └── doubao/                        # 豆包：上传 zip + 粘贴指令双产物
 ├── docs/                              # 项目文档
 │   ├── 2026-11-14-项目改进方案.md     # 工程与 GPT Image 专项改进方案
+│   ├── 2026-11-15-跨平台工作流升级方案.md # IR / 平台适配 / 工作流升级（已确认）
+│   ├── 2026-11-15-实拍镜头反推方案.md  # 镜头信号 / 镜头卡 / shots 逐镜渲染（已实施）
 │   ├── DEVLOG.md                      # 阶段开发记录（改动/验证/回滚）
 │   └── RELEASE.md                     # 发布检查表（版本源/tag/Release）
 ├── tasks/
@@ -287,8 +310,8 @@ Seedance 模板（`assets/templates/seedance.json`）与 Sora / Runway / Veo 模
 ├── VERSION                            # 版本单一源（codex plugin.json 与之对齐）
 └── tools/
     ├── install.py                     # 一键安装（junction/copy，幂等，--dry-run）
-    ├── gen_examples.py                # 从 fixtures 重新生成四模态 + Muse / Seedance 示例（确定性）
-    ├── verify.py                      # 离线端到端验证（53 项断言）
+    ├── gen_examples.py                # 从 fixtures 重新生成四模态 + Muse / Seedance / 镜头反推示例（确定性）
+    ├── verify.py                      # 离线端到端验证（58 项断言）
     └── fixtures/                      # 金标语义分析 JSON（契约测试/字段范例）
 ```
 
@@ -314,6 +337,7 @@ L3 编译器 → Agent：     {prompts[], score_report{}, filter{blocked, matche
 - **新增目标模型**：在 `assets/templates/` 新增一个 `*.json`（含 `model`/`display_name`/`vendor`/`version`/`last_verified`/`alias`/`default_params`/`modalities`），编译器自动注册并检测别名冲突，**零代码改动**
 - **模板自检**：`python scripts/prompt_compiler.py validate-templates` 一次列出全部问题（元数据缺失、日期非法、未知占位符、大括号未闭合、`kind_requires` 指向不存在的用途/字段）
 - **新增分析维度**：`references/prompt_framework.md` 加字段定义 → 模板占位符引用 → SKILL.md 补一行
+- **新增视频/图片模型的逐镜支持**：模板加 `shot_style` 段即可被 `shots` 子命令渲染，字段只用镜头卡契约（见 `references/shot_reverse_rules.md`）；无 `shot_style` 的模型在 shots 输出中自动跳过，全部指定模型都缺失时退出 1
 - **新增评分维度**：`prompt_compiler.py` 的 `DIMENSIONS`（权重和须为 100）与 `prompt_framework.md` 第三、五节**两处同步修改**
 
 ---
@@ -324,7 +348,7 @@ L3 编译器 → Agent：     {prompts[], score_report{}, filter{blocked, matche
 python tools/verify.py
 ```
 
-53 项断言、全部离线、可重复执行：
+58 项断言、全部离线、可重复执行：
 
 | 层 | 覆盖 |
 |---|---|
@@ -336,7 +360,8 @@ python tools/verify.py
 | DeepSeek 模型 | 别名（`deepseek`/`ds`/`deepseek-flash`/`deepseek-1017`）解析一致 + 三模态渲染含模型名/思考档/推理段 + 不混入默认集合 |
 | 模板层 | 12 个模型模板元数据齐全且在对应模态均渲染非空 Prompt；FLUX.2 无负向、GPT Image/Muse/Seedance/Nano Banana/Veo/Runway/Sora 结构正确；Markdown 排版；模板别名冲突→退出码 4；GPT Image 六项审查清单齐全且不参与总分；Muse、Seedance 六项审查清单各自独立且不串用；模板引用 `{uncertainty}` 被拒 |
 | 任务模式 | GPT Image 五用途、Muse 八用途、Seedance 六任务模式互斥渲染（`--kind` / `task_type` 映射）；编辑顺序 Change→Scope→Preserve→Do not change；参考图逐行带编号；Muse / Seedance 模板与其他模型独立（本模型用途齐全、无串用）；Anchor/多轮/文字版式结构正确；首帧 / 首尾帧 / 全模态参考互斥、`素材N` 角色与编号校验；嵌套对象/编号缺失重复/未知 task_type/冲突→退出码 4，无模型支持→退出码 1 |
-| 一致性 | `VERSION` 与 codex 清单版本一致；清单描述含十二模型与 DeepSeek；豆包脚本文案与 `scripts/*.py` 同步；豆包三产物两次生成哈希一致；README 依赖声明与脚本导入一致；README 断言数与实际一致；四模态 + Muse / Seedance 示例可由 `gen_examples.py` 逐字节复现；8 个参考图角色在 references 中齐全；unknown 项进正文会提示而不改变总分 |
+| 镜头反推 | 图片脚本输出 EXIF/景深/黑边镜头信号且带置信度；视频脚本输出首/中/末关键帧、运镜轴、逐镜色彩与黑边；`shots` 三镜 × 四视频模型独立 Prompt、分镜表、逐镜评分与审查清单齐全；单张图片默认 × 六图片模型（MJ `/imagine` 参数行、SD 正负向、FLUX 无负向、GPT/Muse/Nano 规格书），EXIF 焦段与景别进全部 Prompt，单帧无视频时长句式；`--dims` 人工评分与 `--format md` 排版；10 类镜头卡错误（编号/枚举/时长/运镜轴/锚点/证据标签）→退出码 4，图片多镜→退出码 4，无 `shot_style`→退出码 1，黑名单→退出码 5 且 `--sanitize` 放行 |
+| 一致性 | `VERSION` 与 codex 清单版本一致；清单描述含十二模型与 DeepSeek；豆包脚本文案与 `scripts/*.py` 同步；豆包三产物两次生成哈希一致；README 依赖声明与脚本导入一致；README 断言数与实际一致；四模态 + Muse / Seedance / 镜头反推示例可由 `gen_examples.py` 逐字节复现；8 个参考图角色在 references 中齐全；unknown 项进正文会提示而不改变总分 |
 | 安全加固 | 全角、词内/词间零宽、大小写西里尔同形字 5 类绕过仍阻断；纯注入措辞（`act as if`/`ignore all prior rules`）只进 `injection_flags` 不阻断；`validate-templates` 全量通过且 5 类坏模板均报错；私网/回环/凭据/非 http URL 被拒，四脚本退出码 3 |
 | 四场景 | ① 营销文案→GPT Prompt（角色/风格/结构约束）② 赛博朋克图→MJ Prompt（`/imagine`+`--no`+风格迁移）③ 10 秒视频→分镜 Prompt（镜头数=分镜段落数）④ 剧本→逐场景 Prompt（每场景 MJ/SD/Sora 2 齐全 + 逐场景评分） |
 

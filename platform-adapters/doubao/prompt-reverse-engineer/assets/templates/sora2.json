@@ -8,6 +8,11 @@
   "alias": ["sora", "sora-2", "sora2", "sora-2-pro", "sora2-pro"],
   "default_params": {"duration": "12", "aspect_ratio": "16:9", "resolution": "1280x720", "model_id": "sora-2"},
   "optional_fields": ["character", "camera", "atmosphere", "lighting", "color", "audio", "narration", "reference_note", "dialogue"],
+  "shot_style": {
+    "shot_prefix": "画幅 {aspect_ratio}。视频总长 {total_duration} 秒，本段 {duration_s} 秒。整体风格：{style}。",
+    "shot": "镜头 {shot_no}：{subject_action}\n视觉锚点：{anchors}\n景别：{shot_size}\n机位：{camera_angle}\n运镜：{camera_move}\n环境：{environment}\n光影：{lighting}\n色彩：{color}\n声音：{sound}\n衔接：{continuity}",
+    "shot_suffix": "镜头：{lens}\n焦点：{focus}\n首帧提示：{first_frame}\n转场：{transition}\n补充：{shot_note}\n避免：{negative_words}"
+  },
   "modalities": {
     "video": {
       "storyboard": "创作一支 {duration} 秒的短视频，画幅 {aspect_ratio}。\n\n{story}\n\n{storyboard}\n\n摄影：{camera}\n灯光：{lighting}\n色彩：{color}\n氛围：{atmosphere}\n声音：{audio}\n旁白：{narration}\n参考：{reference_note}",

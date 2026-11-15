@@ -11,6 +11,7 @@
 | 视频逆向 | `sora2` | 需要镜头先行/短时长时加 `runway` 或 `veo3` |
 | 视频首尾帧 / 参考素材 / 编辑 / 延长 | `seedance`（2.5） | 其余视频模型无对应能力或仅部分支持 |
 | 叙事场景化 | 图片 `mj,sd` + 视频 `sora`（解析为 `sora2`） | 可用 `--image-models` / `--video-models` 覆盖 |
+| 实拍镜头反推 | 视频 `sora,runway,veo,seedance`；图片 `midjourney,stable_diffusion,flux2,gpt_image,muse_image,nano_banana` | `shots` 按 `modality` 自动取默认；`--models` 可缩小子集 |
 
 `--models` 接受模型 ID 或别名（逗号分隔），`default` 为 `midjourney,gpt4_claude`，`all` 为全部已注册模型。**模型版本升级只改模板 JSON 与本节表格，不改编译器代码。**
 

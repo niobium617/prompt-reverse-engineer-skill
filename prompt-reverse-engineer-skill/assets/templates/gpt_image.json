@@ -21,6 +21,10 @@
     "reference_guided": ["reference_images"],
     "compose": ["reference_images", "spatial"]
   },
+  "shot_style": {
+    "shot": "Create an image with the following specification.\n\nSubject and action: {subject_action}\nShot: {shot_size}\nCamera angle: {camera_angle}\nScene: {environment}\nStyle: {style}\nLighting: {lighting}\nColor: {color}\nVisual anchors: {anchors}\nConstraints: render this as a single still frame; do not invent details that are not visible in the reference; no extra text, logos, or watermarks.",
+    "shot_suffix": "Lens: {lens}\nFocus: {focus}\nAvoid: {negative_words}\nAspect ratio: {aspect_ratio}"
+  },
   "modalities": {
     "image": {
       "prompt": "Create an image with the following specification.\n\nSubject: {subject}\nPosition: {subject_position}\nScale: {subject_scale}\nSpatial layout: {spatial}\nScene: {scene}\nShot: {shot_type}\nCamera angle: {camera_angle}\nStyle: {style}\nLighting: {lighting}\nColor: {color}\nComposition: {composition}\nCamera: {photo_params}\nMaterial: {material}\nQuality: {quality_words}\nText in image: {text_content}\nReferences: {reference_note}\nConstraints: render all text exactly as written; no extra text, logos, or watermarks. {negative_words}",

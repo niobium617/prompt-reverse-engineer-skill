@@ -26,6 +26,10 @@
     "conversational_refinement": ["iteration_context"],
     "text_layout": ["text_content", "text_layout"]
   },
+  "shot_style": {
+    "shot": "Main subject and action: {subject_action}\nShot size: {shot_size}\nCamera angle: {camera_angle}\nScene: {environment}\nLighting: {lighting}\nColor: {color}\nVisual style: {style}\nVisual anchors: {anchors}",
+    "shot_suffix": "Lens: {lens}\nFocus: {focus}\nAvoid: {negative_words}\nAspect ratio: {aspect_ratio}"
+  },
   "modalities": {
     "image": {
       "prompt": "Create a new image from the following brief.\n\nTask: generate one coherent image that satisfies every requirement below.\nMain subject: {subject}\nPosition and scale: {subject_position}. {subject_scale}\nSpatial relationships: {spatial}. {spatial_relationships}\nScene: {scene}\nComposition and camera: {composition}. {shot_type}. {camera_angle}\nVisual style: {style}. Lighting: {lighting}. Color: {color}. Material: {material}.\nText in image: {text_content}\nAvoid: {negative_words}\nAspect ratio: {aspect_ratio}\nConstraints: keep proportions, perspective, lighting direction and color temperature consistent across all elements; preserve a clear visual hierarchy; do not add elements that are not described above.",

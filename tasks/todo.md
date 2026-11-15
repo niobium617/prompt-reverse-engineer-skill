@@ -63,6 +63,26 @@
 - [x] `verify.py` 新增 4 项（独立模板/六任务模式/字段契约/审查清单），共 53 项
 - [x] README / VERSION / plugin.json / 豆包指令同步（2.3.0）
 
+## 阶段 3.7：实拍图片/视频逐镜反推
+
+- [x] `analyze_image.py` 输出 `shot_hints`（EXIF 焦段/光圈/快门/ISO、景深、黑边、人脸），每项带置信度
+- [x] `analyze_video.py` 逐镜输出首/中/末关键帧、运镜轴、逐镜主色、黑边、景别/机位提示
+- [x] 新规则 `references/shot_reverse_rules.md`：三条硬原则、镜头卡 12 维、证据标签、跨镜一致性、逐模型写法、自检清单
+- [x] 编译器 `shots` 子命令：`--models` / `--dims` / `--auto` / `--format md`，逐镜渲染 + 逐镜评分 + 镜头审查清单
+- [x] 镜头卡契约校验（编号/枚举/时长/运镜轴/锚点/证据/焦段），错误退出 4 并报镜头号
+- [x] `semantic_shot_reverse.json` + `shot_reverse_example` 金标输出
+- [x] `verify.py` 新增 4 项（图片镜头信号/视频镜头信号/逐镜渲染+评分/字段与安全），共 57 项
+- [x] README / SKILL.md / video_rules.md / image_rules.md 同步；VERSION 与 plugin.json 升至 2.4.0
+
+## 阶段 3.8：镜头反推覆盖六个图片模型
+
+- [x] 六个图片模板补 `shot_style`：MJ `/imagine` + `--ar`、SD `Positive/Negative` + 采样参数、FLUX.2 无负向、GPT Image/Nano Banana 规格书、Muse 完整句
+- [x] 编译器按 `modality` 选默认模型（视频四款 / 图片六款），图片模板允许 `shot_style`
+- [x] `semantic_shot_reverse_image.json` 单图金标（EXIF 85mm / f/1.8 / 3s）
+- [x] `verify.py` 新增 1 项（图片六模型渲染），共 58 项；无 `shot_style` 用例改用 `deepseek`
+- [x] `prompt_framework.md` 2.6 / `shot_reverse_rules.md` 第七节 / `SKILL.md` / README 1.2、3.4、3.6、验证表同步
+- [x] VERSION 与 plugin.json 升至 2.4.1；豆包产物重新生成
+
 ## 阶段 4：迭代与差异分析（可选）
 
 - [ ] `SKILL.md` 增加生成结果回传与迭代工作流
@@ -73,3 +93,13 @@
 - [x] `VERSION` 递增，tag 与 release notes
 - [x] 重新生成豆包 zip 与 Codex 清单
 - [x] 更新仓库描述、README 模型数与断言数
+
+## 跨平台工作流升级（已确认，自甲阶段开始）
+
+> 方案：[`docs/2026-11-15-跨平台工作流升级方案.md`](../docs/2026-11-15-跨平台工作流升级方案.md)（2026-11-15 冻结）。实施时按文档 §0.1 开工检查单执行。
+
+- [ ] 甲：IR 契约、三注册表、置信度推广
+- [ ] 乙：`creative-platforms/` 首批三平台（ComfyUI / Runway / LibTV）
+- [ ] 丙：ComfyUI 工作流只读解析与兼容性校验
+- [ ] 丁：可灵等模型模板 + `benchmarks/`
+- [ ] 戊（可选）：WAV 音频信号、专业软件 L1 说明

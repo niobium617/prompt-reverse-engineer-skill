@@ -223,6 +223,64 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 
 场景切分原则：**时间 / 地点 / 人物关系任一变化即新场景**；每个场景独立完成七段提炼与分镜设计，风格基调沿用顶层 `summary` 结论保持一致。跨场景一致性优先写进各场景 `character` / `continuity` / `reference_note`，不要把全局角色表原样复制进每个场景。
 
+### 2.6 实拍镜头反推字段（shots[]，modality=image|video）
+
+用于「真实图片 / 视频 → 逐镜头卡 → 可复用 AI 视频提示词」。图片按单帧反推（`shots` 恰好 1 项），视频按脚本切出的镜头逐个反推。编译命令：
+
+```bash
+python scripts/prompt_compiler.py shots --analysis shot.json \
+  [--models sora,runway,veo,seedance|mj,sd,flux,gpt_image,muse_image,nano_banana] \
+  [--dims dims.json | --auto] \
+  [--sanitize] [--format md] [-o out.json]
+```
+
+镜头组字段（`semantic_analysis` 顶层，所有镜头共享；渲染顺序为 `shot_prefix + shot + shot_suffix`，每个镜头输出一段可独立粘贴的 Prompt）：
+
+| 字段 | 必填 | 说明与示例 |
+|---|---|---|
+| style | 是 | 全片视觉风格与质感，如 `"霓虹写实电影感，轻微颗粒，冷调高对比"` |
+| aspect_ratio | 是 | 分镜画幅，如 `"16:9"`；写实素材按原片画幅填 |
+| total_duration | 视频必填 | 各镜头 `duration_s` 之和（秒，容差 0.5）；图片可省略，省略时按镜头时长补齐 |
+| color_script | 建议 | 全片色彩脚本：底色 + 强调色 + 色彩变化 |
+| sound_plan | 建议 | 声音设计总纲：环境音 + 关键音效 + 音乐情绪 |
+| continuity_notes | 建议 | 跨镜一致项：人物造型、道具、光线方向、时间推进 |
+| negative_words | 可选 | 负向词；模型不支持时由模板决定是否渲染 |
+| summary / source_note | 可选 | 素材概述与来源说明 |
+
+镜头卡字段（`shots[i]`，扁平契约，禁止嵌套对象）：
+
+| 字段 | 必填 | 说明与示例 |
+|---|---|---|
+| shot_no | 是 | 镜头编号，从 1 起连续整数；重复/跳号退出码 4 |
+| shot_size | 是 | 枚举：`大远景/远景/全景/中景/近景/特写/大特写` |
+| camera_angle | 是 | 枚举：`平拍/仰拍/俯拍/低机位/过肩/第一人称/鸟瞰/斜角` |
+| camera_move | 是 | 运镜词：`固定/推/拉/摇/移/跟/升降/环绕/手持/变焦/希区柯克变焦/甩镜/旋转`；复合运镜用 `+`（如 `推+摇`），**最多两个轴**，`固定` 不得与其他组合 |
+| duration_s | 是 | 镜头时长（秒，数字且 > 0） |
+| subject_action | 是 | 一个可见事件：谁做了什么，不写「然后/接着」串联多段动作 |
+| environment | 是 | 环境：地点 + 时间 + 天气 + 关键陈设 |
+| lighting | 是 | 光影：光源方向 + 质感 + 明暗关系 |
+| color | 是 | 镜头色彩：主色 + 高光/阴影色 |
+| anchors | 是 | 视觉锚点 3–5 项（字符串数组）：画面里最有辨识度的细节，写入 Prompt 前 1/3 |
+| sound | 是 | 本镜声音：环境音 + 关键音效 + 对白（对白放引号内） |
+| continuity | 是 | 与前后镜的衔接：人物位置/运动方向/光线连续性 |
+| lens | 可选 | 焦段，如 `"约 35mm 广角视角"`；**无法从画面确认就省略**，不得写「未知/unknown」 |
+| focus | 可选 | 焦点与景深，如 `"浅景深，焦点在眼睛"`；同上，无法确认就省略 |
+| transition | 可选 | 转场：`硬切/叠化/渐暗收尾/甩镜转场` 等 |
+| first_frame | 可选 | 首帧静态描述（图生视频可直接用） |
+| shot_note | 可选 | 本镜补充说明（不写推测性参数） |
+| evidence | 可选 | 镜头参数依据，字符串数组，每项 `observed:` / `inferred:` / `unknown:` 开头；写 `lens`/`focus` 时应提供 |
+
+校验与渲染规则（`prompt_compiler.py` 强制）：
+
+- 镜头编号必须 `1..N` 连续；图片模态 `shots` 必须恰好 1 项；视频模态必须给 `total_duration` 且与镜头时长之和相差不超过 0.5 秒。
+- `camera_move` 超过两轴、出现未知运镜、`固定` 与其他组合、枚举越界、锚点超过 5 项、`evidence` 缺置信度标签、`lens`/`focus` 写 unknown，均退出码 4。
+- 逐镜头模板写在模型模板的 `shot_style`（`shot_prefix` / `shot` / `shot_suffix`，`shot` 必填），占位符只允许镜头卡字段、镜头组字段与 `default_params`；不得引用 `{uncertainty}`。视频与图片模板均可含 `shot_style`。没有 `shot_style` 的模型会进 `skipped` 列表并在输出中说明。
+- 未指定 `--models` 时按模态取默认：`modality=video` → `sora,runway,veo,seedance`；`modality=image` → `midjourney,stable_diffusion,flux2,gpt_image,muse_image,nano_banana`。显式指定的模型全部缺失 `shot_style` 时退出码 1。
+- 逐镜头评分格式：`[{"shot_no": 1, "dims": [{"key": "theme_clarity", "score": 85, "note": "依据"}]}]`；每个镜头必须给全六维。`--auto` 仅用于离线验证。
+- 命中安全黑名单退出码 5（`--sanitize` 替换为 `[已过滤]` 后放行）；`unknown` 项泄漏进正文时输出 `warnings`。
+
+镜头语言词表、证据规则、逐模型写法与完整示例见 `references/shot_reverse_rules.md`。
+
 ## 三、评分细则
 
 百分制，六维加权。权重定义于 `prompt_compiler.py`（启动时校验权重和为 100，禁止修改不一致）。
@@ -283,6 +341,19 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 
 清单只提示，不改变六维总分与退出码。Seedance 的任务模式、素材角色、参数边界与已知限制见 `seedance_rules.md`。
 
+### 3.4 镜头反推审查清单（不参与总分）
+
+`shots` 子命令在输出末尾附六项清单（JSON 字段 `review_checklist`，Markdown 为「## 镜头审查清单（不参与总分）」），与 3.1–3.3 分开维护：
+
+| 检查项 key | 自动判定方式 | 结论含义 |
+|---|---|---|
+| shot_contract | 每个镜头卡的必填字段是否齐全 | 通过 / 待复核（列出缺失字段） |
+| motion_axes | `camera_move` 复合运镜是否超过两个轴 | 通过 / 待复核（列出超轴镜头） |
+| one_event | `subject_action` 是否用「然后/接着/随后/之后/再」串联多段动作 | 通过 / 待复核 |
+| anchors | 视觉锚点是否 3–5 个 | 通过 / 待复核（列出数量异常镜头） |
+| lens_evidence | 写了 `lens`/`focus` 的镜头是否有 `evidence`；`unknown` 项是否泄漏进正文 | 通过 / 待复核 |
+| continuity_sound | 每镜是否写明 `sound` 与 `continuity` | 通过 / 待复核 |
+
 > 口径提醒：Prompt 评分衡量的是**提示词本身的结构质量**，不是生成图像与原图的相似度；不要把评分当作复刻准确率的证明。
 
 ## 四、安全规则（输出前必检）
@@ -308,10 +379,13 @@ Agent 完成语义分析后，按本表产出 `semantic_analysis` 对象，交 `
 - param_reasonableness：① 对照 model_mappings.md 核对参数语法与取值范围；② 删除与内容不匹配的多余参数。
 - adaptability：① 把具体样例中的可变项替换为 `[变量]` 占位；② 为可调参数添加注释说明取值范围。
 
+`shots` 子命令使用 `prompt_compiler.py` 中独立的 `SHOT_SUGGESTIONS`（按同样六个维度给逐镜头建议，如「一镜只保留一个可见事件」），与上面的通用建议库分开维护；修改时同步本节与脚本常量。
+
 ## 六、扩展指南
 
 - **新增分析维度**：在本文档 2.x 添加字段定义 → 在对应模型模板 JSON 的占位串中引用新字段 → 在 SKILL.md 分析要点补一行。无需改脚本。
 - **新增评分维度**：修改 `prompt_compiler.py` 中 `DIMENSIONS`（含权重，和须为 100）→ 在本文档第三节补锚点 → 在第五节补建议条目（保持两处镜像）。
 - **新增目标模型**：在 `assets/templates/` 新增一个 `*.json` 模板文件，必需元数据 `model` / `display_name` / `vendor` / `version` / `last_verified`，以及 `alias`、`default_params`、`modalities`；编译器自动注册并校验别名冲突。在 `model_mappings.md` 补映射表行并更新 `last_verified`。零代码改动。模板内若需引用非语义字段（模型名、调用参数等），写进 `default_params` 由编译器注入（范例：`deepseek.json` 的 `model_id` / `thinking_effort`），**不要**加进本文档第二节字段表。
+- **新增逐镜头模型**：视频或图片模板加 `shot_style` 对象（`shot` 必填，`shot_prefix` / `shot_suffix` 可选），占位符只用 2.6 节的镜头卡字段、镜头组字段与 `default_params`；`validate-templates` 会校验键名、大括号与占位符。无 `shot_style` 的模板在 `shots` 中自动跳过，不影响其他模型。模板写法参考 `shot_reverse_rules.md` 第七节。
 - **模型独立编译**：共享 `semantic_analysis` 扁平契约，但每个模型独立维护模板与规则文件。Muse Image 的范例是 `assets/templates/muse_image.json` + `references/muse_image_rules.md`，Seedance 的范例是 `assets/templates/seedance.json` + `references/seedance_rules.md`；不得把其自然语言结构复制进 `gpt_image.json` / `sora2.json`，模型更新只改自己的文件。新增任务模式时，先加入本文档 2.3.1 / 2.4.1，再同步 `prompt_compiler.py` 的 `TASK_KINDS` / `TASK_REQUIRED`，最后才在模板里加 kind。
 - **条件渲染**：只有提供某字段才应输出的用途（如 `style_transfer` / `edit` / `negative`），在模板中写 `kind_requires`，不要靠空串清理。

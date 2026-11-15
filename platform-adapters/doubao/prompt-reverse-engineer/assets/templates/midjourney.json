@@ -9,6 +9,9 @@
   "default_params": {"aspect_ratio": "16:9", "version": "8.2"},
   "optional_fields": ["style", "photo_params", "quality_words", "negative_words", "target_style", "text_content"],
   "kind_requires": {"negative": ["negative_words"], "style_transfer": ["target_style"]},
+  "shot_style": {
+    "shot": "/imagine prompt: {subject_action}, {shot_size}, {camera_angle}, 运镜：{camera_move}, {environment}, {lighting}, {color}, {style}, 视觉锚点：{anchors}, {lens}, {focus} --ar {aspect_ratio} --v {version}"
+  },
   "modalities": {
     "image": {
       "positive": "/imagine prompt: {subject}, {scene}, {style}, {lighting}, {color}, {composition}, {photo_params}, {quality_words}, 文字「{text_content}」 --ar {aspect_ratio} --v {version}",

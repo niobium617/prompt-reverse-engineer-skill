@@ -62,31 +62,246 @@ def aspect_ratio_str(w, h):
     return f"{int(w) // g}:{int(h) // g}"
 
 
+def _num(value):
+    """EXIF 数值统一转 float；解析失败返回 None。"""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fmt_num(value):
+    """数值文本：整数不带小数点，其余保留两位。"""
+    if value is None:
+        return None
+    if abs(value - round(value)) < 1e-6:
+        return str(int(round(value)))
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def _exposure_str(seconds):
+    """快门时间：≥1 秒写「2s」，其余写「1/125」。"""
+    if seconds is None or seconds <= 0:
+        return None
+    if seconds >= 1:
+        return f"{_fmt_num(seconds)}s"
+    return f"1/{int(round(1 / seconds))}"
+
+
+def focal_class(mm):
+    """等效焦距粗略分级（只用于镜头语言提示）。"""
+    if mm is None:
+        return None
+    if mm <= 18:
+        return "超广角"
+    if mm <= 35:
+        return "广角"
+    if mm <= 70:
+        return "标准"
+    if mm <= 135:
+        return "中长焦"
+    return "长焦"
+
+
 def extract_exif(data: bytes):
+    """读取 EXIF。lens 为结构化镜头参数；顶层键保持旧版兼容。
+
+    注意：旧版把 37386（FocalLength，实际焦距）标成 focal_length_35mm，
+    版本修正为 41989（FocalLengthIn35mmFilm，35mm 等效焦距），
+    顶层同时保留 focal_length 与 focal_length_35mm 两个语义正确的键。
+    """
     exif = {}
+    lens = {}
     try:
         img = Image.open(io.BytesIO(data))
         info = img.getexif()
-        mapping = {
-            271: "camera_make",
-            272: "camera_model",
-            37386: "focal_length_35mm",
-            33437: "aperture_fnumber",
-            37377: "shutter_speed",
-            34855: "iso",
-            306: "datetime",
-            274: "orientation",
-        }
-        for tag_id, name in mapping.items():
-            if tag_id in info:
-                value = info[tag_id]
-                exif[name] = str(value)
+
+        def raw(tag_id):
+            return info.get(tag_id)
+
+        make, model = raw(271), raw(272)
+        if make:
+            exif["camera_make"] = str(make).strip()
+            lens["camera_make"] = str(make).strip()
+        if model:
+            exif["camera_model"] = str(model).strip()
+            lens["camera_model"] = str(model).strip()
+
+        focal = _num(raw(37386))
+        focal35 = _num(raw(41989))
+        fnumber = _num(raw(33437))
+        exposure = _num(raw(33434))
+        shutter_apex = _num(raw(37377))
+        lens_model = raw(42036)
+        iso = raw(34855)
+
+        if focal is not None:
+            exif["focal_length"] = _fmt_num(focal)
+            lens["focal_length_mm"] = _fmt_num(focal)
+        if focal35 is not None:
+            exif["focal_length_35mm"] = _fmt_num(focal35)
+            lens["focal_length_35mm_eq"] = _fmt_num(focal35)
+        if fnumber is not None:
+            exif["aperture_fnumber"] = f"f/{_fmt_num(fnumber)}"
+            lens["aperture_fnumber"] = f"f/{_fmt_num(fnumber)}"
+        if exposure is not None:
+            exif["exposure_time"] = _exposure_str(exposure)
+            lens["exposure_time"] = _exposure_str(exposure)
+        if shutter_apex is not None:
+            # 37377 是 APEX 快门值，仅作兼容保留（换算请用 33434）
+            exif["shutter_speed"] = _fmt_num(shutter_apex)
+        if iso is not None:
+            exif["iso"] = str(iso)
+            lens["iso"] = str(iso)
+        if lens_model:
+            lens["lens_model"] = str(lens_model).strip()
+
+        datetime_value, orientation = raw(306), raw(274)
+        if datetime_value:
+            exif["datetime"] = str(datetime_value)
+        if orientation is not None:
+            exif["orientation"] = str(orientation)
     except Exception:
         pass
+    if lens:
+        exif["lens"] = lens
     return exif
 
 
-def analyze_bgr(bgr: np.ndarray, data_size: int, pil_format: str):
+def detect_letterbox(bgr: np.ndarray):
+    """检测黑边/白边信箱（letterbox / pillarbox）。"""
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+
+    def bar_count(means, stds):
+        count = 0
+        for mean, std in zip(means, stds):
+            if std < 2.5 and (mean < 20 or mean > 235):
+                count += 1
+            else:
+                break
+        return count
+
+    row_means = gray.mean(axis=1)
+    row_stds = gray.std(axis=1)
+    col_means = gray.mean(axis=0)
+    col_stds = gray.std(axis=0)
+    top = min(bar_count(row_means, row_stds), int(h * 0.3))
+    bottom = min(bar_count(row_means[::-1], row_stds[::-1]), int(h * 0.3))
+    left = min(bar_count(col_means, col_stds), int(w * 0.3))
+    right = min(bar_count(col_means[::-1], col_stds[::-1]), int(w * 0.3))
+    content_w = w - left - right
+    content_h = h - top - bottom
+    detected = any((top, bottom, left, right))
+    return {
+        "detected": bool(detected),
+        "confidence": "high" if detected else "low",
+        "top_px": int(top),
+        "bottom_px": int(bottom),
+        "left_px": int(left),
+        "right_px": int(right),
+        "content_aspect_ratio": aspect_ratio_str(content_w, content_h)
+        if detected and content_w > 0 and content_h > 0 else None,
+    }
+
+
+def depth_of_field_hint(gray: np.ndarray):
+    """中心与边缘的清晰度差异 → 景深提示（只是提示，不是测量）。"""
+    h, w = gray.shape
+    cy0, cy1 = int(h * 0.3), max(int(h * 0.7), 1)
+    cx0, cx1 = int(w * 0.3), max(int(w * 0.7), 1)
+    center = float(cv2.Laplacian(gray[cy0:cy1, cx0:cx1], cv2.CV_64F).var())
+    band_h = max(int(h * 0.15), 1)
+    band_w = max(int(w * 0.15), 1)
+    crops = [
+        gray[:band_h, :], gray[h - band_h:, :],
+        gray[:, :band_w], gray[:, w - band_w:],
+    ]
+    border = float(np.mean(
+        [cv2.Laplacian(crop, cv2.CV_64F).var() for crop in crops]))
+    ratio = rounded(min(center / max(border, 1e-6), 999.0), 3)
+    if ratio >= 3.0:
+        hint = "浅景深（中心清晰、边缘虚化）"
+    elif ratio <= 1.3:
+        hint = "深景深（前后景都较清晰）"
+    else:
+        hint = "中等景深"
+    return {"hint": hint, "confidence": "medium" if ratio >= 3.0 or ratio <= 1.3
+            else "low", "center_laplacian": rounded(center, 2),
+            "border_laplacian": rounded(border, 2), "ratio": ratio}
+
+
+def shot_size_hint(face_boxes):
+    """按人脸框高度占画面比例推断景别；没有人脸则不猜。"""
+    if not face_boxes:
+        return {"hint": None, "basis": "none", "confidence": "low"}
+    height = max(box[3] for box in face_boxes)
+    if height >= 0.5:
+        hint = "特写"
+    elif height >= 0.3:
+        hint = "近景"
+    elif height >= 0.15:
+        hint = "中景"
+    else:
+        hint = "全景（人物偏小，环境为主）"
+    return {"hint": hint, "basis": "face_box_height",
+            "confidence": "medium" if height >= 0.15 else "low"}
+
+
+def camera_angle_hint(face_boxes):
+    """按人脸在画面中的纵向位置给出低置信机位提示。"""
+    if not face_boxes:
+        return {"hint": None, "basis": "none", "confidence": "low"}
+    center_y = float(np.mean([box[1] + box[3] / 2 for box in face_boxes]))
+    if center_y < 0.38:
+        hint = "疑似仰拍/低机位（人脸偏画面上方）"
+    elif center_y > 0.62:
+        hint = "疑似俯拍/高机位（人脸偏画面下方）"
+    else:
+        hint = "平拍（人脸居中）"
+    return {"hint": hint, "basis": "face_vertical_position", "confidence": "low"}
+
+
+def key_light_hint(gray: np.ndarray):
+    """画面四象限亮度 → 主光方向粗略提示。"""
+    h, w = gray.shape
+    mid_h, mid_w = h // 2, w // 2
+    quads = {
+        "左上": gray[:mid_h, :mid_w], "右上": gray[:mid_h, mid_w:],
+        "左下": gray[mid_h:, :mid_w], "右下": gray[mid_h:, mid_w:],
+    }
+    means = {name: float(crop.mean()) for name, crop in quads.items()}
+    bright = max(means, key=means.get)
+    dark = min(means, key=means.get)
+    if means[bright] - means[dark] < 12:
+        return {"direction": "均匀光线（无明显主光方向）",
+                "basis": "frame_quadrant_luminance", "confidence": "low"}
+    return {"direction": f"{bright}偏亮，疑似主光来自{bright}",
+            "basis": "frame_quadrant_luminance", "confidence": "low"}
+
+
+def lens_hint(exif, dof):
+    """镜头焦段提示：优先 EXIF，其次由景深推断（均标注依据）。"""
+    lens = exif.get("lens") or {}
+    focal35 = _num(lens.get("focal_length_35mm_eq"))
+    focal = focal35 if focal35 is not None else _num(lens.get("focal_length_mm"))
+    if focal is not None:
+        return {"hint": focal_class(focal), "basis": "exif",
+                "focal_mm": _fmt_num(focal),
+                "confidence": "high" if focal35 is not None else "medium"}
+    if dof["ratio"] >= 3.0:
+        return {"hint": "疑似中长焦（浅景深）", "basis": "dof_inference",
+                "focal_mm": None, "confidence": "low"}
+    if dof["ratio"] <= 1.3:
+        return {"hint": "疑似广角（深景深）", "basis": "dof_inference",
+                "focal_mm": None, "confidence": "low"}
+    return {"hint": None, "basis": "none", "focal_mm": None,
+            "confidence": "low"}
+
+
+def analyze_bgr(bgr: np.ndarray, data_size: int, pil_format: str, exif=None):
     h, w = bgr.shape[:2]
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
@@ -177,6 +392,21 @@ def analyze_bgr(bgr: np.ndarray, data_size: int, pil_format: str):
     except Exception:
         pass
 
+    # --- 实拍镜头反推提示（全部为近似信号，供 Agent 参考，不写入 Prompt 事实） ---
+    dof = depth_of_field_hint(gray)
+    hints = {
+        "letterbox": detect_letterbox(bgr),
+        "shot_size": shot_size_hint(face_boxes),
+        "camera_angle": camera_angle_hint(face_boxes),
+        "depth_of_field": dof,
+        "lens": lens_hint(exif or {}, dof),
+        "key_light": key_light_hint(gray),
+    }
+    hints["notes"] = [
+        "景别/机位/焦段提示均来自确定性像素统计，只能作为初稿参考",
+        "无法从画面确认的镜头参数请省略，不要编造光圈、快门、ISO",
+    ]
+
     return {
         "meta": {
             "width": int(w),
@@ -207,6 +437,7 @@ def analyze_bgr(bgr: np.ndarray, data_size: int, pil_format: str):
             "underexposed_ratio": underexposed,
         },
         "faces": {"face_count": face_count, "face_boxes": face_boxes},
+        "shot_hints": hints,
     }
 
 
@@ -246,6 +477,7 @@ def main():
             interpolation=cv2.INTER_AREA,
         )
 
+    exif = extract_exif(data)
     envelope = {
         "schema_version": SCHEMA_VERSION,
         "tool": TOOL,
@@ -256,9 +488,9 @@ def main():
             "sha256": hashlib.sha256(data).hexdigest(),
             "size_bytes": len(data),
         },
-        "local_features": analyze_bgr(bgr, len(data), pil_format),
+        "local_features": analyze_bgr(bgr, len(data), pil_format, exif),
     }
-    envelope["local_features"]["meta"]["exif"] = extract_exif(data)
+    envelope["local_features"]["meta"]["exif"] = exif
     out = json.dumps(envelope, ensure_ascii=False, sort_keys=True)
     if args.output:
         with open(args.output, "w", encoding="utf-8") as fh:

@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "tool": "agent",
+  "modality": "image",
+  "semantic_analysis": {
+    "summary": [
+      "单张雨夜街头人像实拍，EXIF 含 85mm 焦段",
+      "人物面部特写，背景霓虹虚化成光斑",
+      "可作为图生视频的首帧"
+    ],
+    "suggestions": [
+      "若用于视频，可补一句人物呼吸带来的轻微起伏"
+    ],
+    "style": "霓虹写实电影感，浅景深，冷调高对比",
+    "aspect_ratio": "16:9",
+    "color_script": "冷蓝背景，面部暖白高光，霓虹橙点缀",
+    "sound_plan": "环境雨声与远处车流，音量偏低",
+    "continuity_notes": "单帧素材，无跨镜一致项",
+    "negative_words": "无字幕、无水印、无变形、无多余肢体",
+    "source_note": "用户提供的单张实拍照片，含 EXIF",
+    "uncertainty": [
+      "observed: EXIF 记录焦距 85mm、光圈 f/1.8",
+      "inferred: 夜间商业街，光源来自上方招牌",
+      "unknown: 背景招牌的具体文字"
+    ],
+    "shots": [
+      {
+        "shot_no": 1,
+        "shot_size": "特写",
+        "camera_angle": "平拍",
+        "camera_move": "固定",
+        "duration_s": 3,
+        "subject_action": "女子站在雨夜街头，抬眼看向镜头，睫毛挂着水珠",
+        "environment": "雨夜商业街，背景霓虹招牌被虚化成光斑",
+        "lighting": "上方招牌为主光，面部暖白高光，侧后方青色轮廓光",
+        "color": "冷蓝夜色，面部暖白，霓虹橙点缀",
+        "anchors": ["睫毛上的水珠", "瞳孔里的霓虹光斑", "被照亮的颧骨轮廓"],
+        "sound": "雨声、远处车流，环境音偏低",
+        "continuity": "单帧素材，无前后镜衔接",
+        "lens": "85mm 中长焦",
+        "focus": "f/1.8 浅景深，焦点在眼睛",
+        "transition": "无",
+        "first_frame": "女子面部特写，雨珠挂在睫毛，背景霓虹虚化",
+        "evidence": [
+          "observed: EXIF 焦距 85mm、光圈 f/1.8",
+          "inferred: 由背景虚化判断为浅景深"
+        ]
+      }
+    ]
+  }
+}

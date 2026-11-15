@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 """视频本地信号提取脚本（prompt-reverse-engineer 技能组件）。
 
-做镜头切分（相邻帧颜色直方图差）、关键帧抽取（JPEG 写工作目录，路径进 JSON 供
-Agent Read 后做多模态语义分析）、运镜估计（Farneback 光流）、逐秒亮度曲线。
+做镜头切分（相邻帧颜色直方图差）、关键帧抽取（每镜首/中/末三帧 JPEG 写工作目录，
+路径进 JSON 供 Agent Read 后做多模态语义分析）、运镜估计（Farneback 光流）、
+逐秒亮度曲线，以及实拍镜头反推用的确定性提示（景别/机位/运镜轴/色彩/黑边）。
 
 资源约定：
   - 单次解码只保留当前帧与统计量，不缓存全部抽样帧；
@@ -210,6 +211,150 @@ def dominant_color_hex(hsv):
     return "#%02X%02X%02X" % (int(bgr_px[2]), int(bgr_px[1]), int(bgr_px[0]))
 
 
+def color_block(frame):
+    """单帧色彩统计：主色（4bit 固定分桶，幂等）、亮度、饱和度、色温。"""
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    small = cv2.resize(frame, (64, 64), interpolation=cv2.INTER_AREA)
+    bins = {}
+    for row in small.reshape(-1, 3):
+        key = (int(row[0]) >> 4, int(row[1]) >> 4, int(row[2]) >> 4)
+        bins[key] = bins.get(key, 0) + 1
+    total_px = small.shape[0] * small.shape[1]
+    ranked = sorted(bins.items(), key=lambda kv: (-kv[1], kv[0]))
+    dominant_colors = []
+    for (br, bg, bb), cnt in ranked[:3]:
+        rep = ((br << 4) | 8, (bg << 4) | 8, (bb << 4) | 8)
+        dominant_colors.append({
+            "hex": "#%02X%02X%02X" % (rep[2], rep[1], rep[0]),
+            "ratio": round(cnt / total_px, 4),
+        })
+    b_mean = float(frame[:, :, 0].mean())
+    r_mean = float(frame[:, :, 2].mean())
+    if b_mean - r_mean > 12:
+        temperature = "冷"
+    elif r_mean - b_mean > 12:
+        temperature = "暖"
+    else:
+        temperature = "中性"
+    saturation_mean = rounded(hsv[:, :, 1].mean())
+    return {
+        "dominant_hex": dominant_color_hex(hsv),
+        "dominant_colors": dominant_colors,
+        "brightness_mean": rounded(gray.mean()),
+        "saturation_mean": saturation_mean,
+        "color_temperature_hint": temperature,
+        "is_grayscale": bool(saturation_mean < 5.0),
+    }
+
+
+def detect_letterbox(gray):
+    """检测画幅黑边/白边（只在首帧运行一次）。"""
+    h, w = gray.shape
+
+    def bar_count(means, stds, limit):
+        count = 0
+        for mean, std in zip(means, stds):
+            if std < 2.5 and (mean <= 20 or mean >= 235):
+                count += 1
+            else:
+                break
+        return min(count, limit)
+
+    row_means, row_stds = gray.mean(axis=1), gray.std(axis=1)
+    col_means, col_stds = gray.mean(axis=0), gray.std(axis=0)
+    top = bar_count(row_means, row_stds, int(h * 0.3))
+    bottom = bar_count(row_means[::-1], row_stds[::-1], int(h * 0.3))
+    left = bar_count(col_means, col_stds, int(w * 0.3))
+    right = bar_count(col_means[::-1], col_stds[::-1], int(w * 0.3))
+    detected = any((top, bottom, left, right))
+    return {
+        "detected": bool(detected),
+        "top_px": int(top), "bottom_px": int(bottom),
+        "left_px": int(left), "right_px": int(right),
+    }
+
+
+_FACE_CASCADE = None
+
+
+def face_hints(frame):
+    """人脸检测 → 景别/机位提示（Haar，静默降级）。"""
+    global _FACE_CASCADE
+    try:
+        if _FACE_CASCADE is None:
+            _FACE_CASCADE = cv2.CascadeClassifier(
+                cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape
+        small = cv2.resize(gray, (256, max(int(256 * h / w), 1)))
+        found = _FACE_CASCADE.detectMultiScale(small, 1.1, 4)
+    except Exception:
+        found = []
+    if len(found) == 0:
+        return {
+            "face_count": 0,
+            "shot_size": {"hint": None, "basis": "none", "confidence": "low"},
+            "camera_angle": {"hint": None, "basis": "none", "confidence": "low"},
+        }
+    boxes = [[fx / small.shape[1], fy / small.shape[0],
+              fw / small.shape[1], fh / small.shape[0]] for fx, fy, fw, fh in found]
+    height = max(box[3] for box in boxes)
+    if height >= 0.5:
+        size_hint = "特写"
+    elif height >= 0.3:
+        size_hint = "近景"
+    elif height >= 0.15:
+        size_hint = "中景"
+    else:
+        size_hint = "全景（人物偏小，环境为主）"
+    center_y = float(np.mean([box[1] + box[3] / 2 for box in boxes]))
+    if center_y < 0.38:
+        angle_hint = "疑似仰拍/低机位（人脸偏画面上方）"
+    elif center_y > 0.62:
+        angle_hint = "疑似俯拍/高机位（人脸偏画面下方）"
+    else:
+        angle_hint = "平拍（人脸居中）"
+    return {
+        "face_count": int(len(found)),
+        "shot_size": {"hint": size_hint, "basis": "face_box_height",
+                      "confidence": "medium" if height >= 0.15 else "low"},
+        "camera_angle": {"hint": angle_hint, "basis": "face_vertical_position",
+                         "confidence": "low"},
+    }
+
+
+def motion_hint(level, direction, zoom):
+    """光流 → 运镜轴与提示。轴代号：Z=推拉 / X=水平 / Y=垂直。"""
+    if level < MOTION_SILENT:
+        return {"axes": [], "hint": "固定", "confidence": "medium",
+                "basis": "optical_flow"}
+    axes, moves = [], []
+    if zoom == "推近":
+        axes.append("Z")
+        moves.append("推")
+    elif zoom == "拉远":
+        axes.append("Z")
+        moves.append("拉")
+    if direction in ("左移", "右移"):
+        axes.append("X")
+        if not moves:
+            moves.append("摇")
+    elif direction in ("上移", "下移"):
+        axes.append("Y")
+        if not moves:
+            moves.append("升降")
+    if not moves:
+        # 光流有量但无方向：强运动按手持晃动处理，弱运动仍视为固定
+        moves.append("手持" if level > MOTION_STRONG else "固定")
+    return {
+        "axes": axes[:2],
+        "hint": "+".join(moves[:2]),
+        "confidence": "medium" if len(axes) <= 1 else "low",
+        "basis": "optical_flow（无法区分摇镜与移镜，需人工确认）",
+    }
+
+
 def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
             keyframes_dir: str):
     keyframes_dir = os.path.abspath(str(keyframes_dir))
@@ -273,24 +418,35 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
             merged.append(sf)
     merged = [sf for sf in merged if sf]
 
-    # 只登记需要取色的帧：每镜头首帧（运镜基准）与中点帧（关键帧）
+    # 只登记需要的帧：每镜首帧（运镜基准）、中点帧（关键帧）、末帧（运镜终点）
     wanted = {}
     for i, sf in enumerate(merged):
-        wanted.setdefault(sf[0], set()).add((i, "first"))
-        wanted.setdefault(sf[len(sf) // 2], set()).add((i, "mid"))
+        for idx, tag in ((sf[0], "first"), (sf[len(sf) // 2], "mid"),
+                         (sf[-1], "last")):
+            wanted.setdefault(idx, set()).add((i, tag))
 
     records = {}
     first_gray = {}
+    frame_paths = {}
+    mid_stats = {}
+    mid_hints = {}
+    letterbox = None
     last_frame = None
     last_gray = None
+
+    def frame_path(i, tag):
+        name = "keyframe" if tag == "mid" else tag
+        return os.path.abspath(os.path.join(
+            keyframes_dir, f"shot_{i + 1:02d}_{name}.jpg"))
 
     def record_shot(i, frame, gray, base_gray):
         sf = merged[i]
         start_s = round(sf[0] / fps, 3)
         end_s = round(sf[-1] / fps, 3)
-        key_path = os.path.join(keyframes_dir, f"shot_{i + 1:02d}_keyframe.jpg")
-        cv2.imwrite(key_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        dom_hex = dominant_color_hex(cv2.cvtColor(frame, cv2.COLOR_BGR2HSV))
+        stats = mid_stats.get(i) or color_block(frame)
+        hints = mid_hints.get(i) or face_hints(frame)
+        paths = frame_paths.get(i, {})
+        key_path = paths.get("mid") or frame_path(i, "mid")
         motion_level, motion_direction, zoom = estimate_motion(base_gray, gray)
         if motion_level < MOTION_SILENT:
             shot_type = "静止"
@@ -298,21 +454,33 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
             shot_type = "强烈运动"
         else:
             shot_type = "镜头运动"
+        move = motion_hint(motion_level, motion_direction, zoom)
         records[i] = {
             "index": i + 1,
             "start_s": start_s,
             "end_s": end_s,
             "duration_s": round(end_s - start_s, 3),
-            "keyframe_path": os.path.abspath(key_path),
-            "avg_brightness": rounded(gray.mean()),
-            "dominant_color_hex": dom_hex,
+            "keyframe_path": key_path,
+            "first_frame_path": paths.get("first") or key_path,
+            "last_frame_path": paths.get("last") or key_path,
+            "avg_brightness": stats["brightness_mean"],
+            "dominant_color_hex": stats["dominant_hex"],
+            "color": stats,
+            "face_count": hints["face_count"],
+            "shot_size_hint": hints["shot_size"],
+            "camera_angle_hint": hints["camera_angle"],
             "motion_level": rounded(motion_level),
             "motion_direction": motion_direction,
             "zoom": zoom,
+            "motion_axes": move["axes"],
+            "camera_move_hint": move,
             "shot_type_hint": shot_type,
+            "letterbox": letterbox or {"detected": False, "top_px": 0,
+                                       "bottom_px": 0, "left_px": 0,
+                                       "right_px": 0},
         }
 
-    # 第二遍：顺序解码到目标帧，取首帧灰度与中点彩色帧
+    # 第二遍：顺序解码到目标帧，写首/中/末关键帧，末帧处收口运镜估计
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print("错误：无法解码为视频", file=sys.stderr)
@@ -326,9 +494,17 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
             if frame_idx % stride == 0 and frame_idx in wanted:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 last_frame, last_gray = frame, gray
+                if letterbox is None:
+                    letterbox = detect_letterbox(gray)
                 for i, tag in sorted(wanted[frame_idx]):
+                    path = frame_path(i, tag)
+                    cv2.imwrite(path, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    frame_paths.setdefault(i, {})[tag] = path
                     if tag == "first":
                         first_gray[i] = gray
+                    elif tag == "mid":
+                        mid_stats[i] = color_block(frame)
+                        mid_hints[i] = face_hints(frame)
                     else:
                         record_shot(i, frame, gray, first_gray.pop(i, gray))
             frame_idx += 1
@@ -370,6 +546,9 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
             "file_size": int(data_size),
             "truncated": truncated,
             "keyframes_dir": keyframes_dir,
+            "letterbox": letterbox or {"detected": False, "top_px": 0,
+                                       "bottom_px": 0, "left_px": 0,
+                                       "right_px": 0},
         },
         "shots": {"shot_count": len(shot_list), "shot_list": shot_list},
         "brightness_curve": brightness_curve,

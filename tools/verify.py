@@ -17,6 +17,7 @@
  12. 一致性：VERSION/清单/依赖/README 断言数/示例复现/豆包产物可复现与换行/角色文档
  13. 安装降级：copy 模式（全平台）、无 tomllib 的 Python 3.10 降级
  14. 参考图与置信度：角色枚举校验、uncertainty 标签、泄漏提示、审查清单不计分
+ 15. 实拍镜头反推：analyze 脚本镜头信号、shots 逐镜渲染/评分（视频四模型 / 图片六模型）、镜头卡契约与安全
 
 用法：python tools/verify.py [--filter 子串]
 退出码：0 全部通过；1 存在失败项；2 参数错误。
@@ -554,6 +555,9 @@ def main():
         flux = [p for p in data["prompts"] if p["model"] == "flux2"]
         assert not any(p["kind"] == "negative" for p in flux), "FLUX.2 不应有 negative"
         assert any(p["kind"] == "params" for p in flux), "FLUX.2 缺参数行"
+        flux_positive = next(p for p in flux if p["kind"] == "positive")
+        assert "不在画面中额外添加文字" in flux_positive["text"], \
+            "FLUX.2 缺「不额外添加文字/水印」约束（无负向时的替代写法）"
         for p in data["prompts"]:
             assert "文字「」" not in p["text"], f"{p['model']} 残留空文字槽"
             assert ".." not in p["text"], f"{p['model']} 出现连续句号"
@@ -565,6 +569,8 @@ def main():
                   if p["model"] == "nano_banana" and p["kind"] == "prompt")
         assert "Create an image with the following specification." in nb["text"]
         assert "Text in image: APS 2077" in nb["text"]
+        assert "Constraints: render any text exactly as written" in nb["text"], \
+            "Nano Banana 缺文字/水印约束行"
 
         # 3) 视频模板：五段式/镜头开头/声音设计
         rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
@@ -606,7 +612,7 @@ def main():
                           "--models", "mj", "--template-dir", dup_dir])
         assert rc == 4, f"别名冲突应退出码 4，实际 {rc}"
         assert "别名冲突" in decode(err), "未提示别名冲突"
-        return True, ("12 个模型模板元数据齐全；FLUX.2 无负向/参数行；"
+        return True, ("12 个模型模板元数据齐全；FLUX.2 无负向/参数行/替代文字水印约束；"
                       "GPT Image/Muse/Seedance/Nano Banana/Veo/Runway/Sora 结构正确；"
                       "Markdown 排版与别名冲突检测通过")
 
@@ -1308,6 +1314,218 @@ def main():
                       "非 Seedance 不串用；缺分镜/声音/禁止迁移/参数越界均标待复核；"
                       "Markdown 置于评分之后")
 
+    # ---------------- 9.8 实拍镜头反推（shots） ----------------
+    def image_shot_hints():
+        rc, out, err = run([PYTHON, SCRIPTS / "analyze_image.py",
+                            EXAMPLES / "image_example" / "input.png"])
+        data = stdout_json(rc, out, err)
+        lf = data["local_features"]
+        assert "exif" in lf["meta"], "meta 缺少 exif 块"
+        hints = lf.get("shot_hints")
+        assert isinstance(hints, dict), "缺少 shot_hints"
+        for key in ("shot_size", "camera_angle", "depth_of_field",
+                    "lens", "key_light", "letterbox"):
+            assert key in hints, f"shot_hints 缺少 {key}"
+            assert "confidence" in hints[key], f"{key} 缺少 confidence"
+        assert hints["shot_size"]["hint"] is None, "无人脸图不应猜景别"
+        assert hints["lens"]["basis"] == "dof_inference", \
+            f"无 EXIF 时焦段依据应为 dof_inference：{hints['lens']}"
+        assert hints["letterbox"]["detected"] is False, "示例图不应检出黑边"
+        assert hints["letterbox"]["content_aspect_ratio"] is None
+        assert isinstance(hints["notes"], list) and hints["notes"], "缺少提示说明"
+        assert lf["meta"].get("exif") == {}, f"PNG 不应有 EXIF：{lf['meta'].get('exif')}"
+        return True, "EXIF 块 + 6 类 shot_hints（无 EXIF 时不猜焦段/景别）齐全"
+
+    def video_shot_signals():
+        rc, out, err = run([PYTHON, SCRIPTS / "analyze_video.py",
+                            EXAMPLES / "video_example" / "input.mp4"])
+        data = stdout_json(rc, out, err)
+        lf = data["local_features"]
+        shot_list = lf["shots"]["shot_list"]
+        assert lf["meta"]["letterbox"]["detected"] is True, "示例视频应检出黑边"
+        assert lf["meta"]["letterbox"]["left_px"] > 0
+        for shot in shot_list:
+            for field in ("first_frame_path", "keyframe_path", "last_frame_path"):
+                assert field in shot, f"镜头 {shot['index']} 缺少 {field}"
+                assert Path(shot[field]).exists(), f"{field} 文件不存在"
+            axes = shot["motion_axes"]
+            assert isinstance(axes, list) and set(axes) <= {"Z", "X", "Y"}, axes
+            assert shot["camera_move_hint"]["hint"], "缺少运镜提示"
+            colors = shot["color"]["dominant_colors"]
+            assert colors and "hex" in colors[0], "逐镜主色缺失"
+            assert isinstance(shot["letterbox"]["detected"], bool)
+            assert "shot_size_hint" in shot and "camera_angle_hint" in shot
+        return True, (f"{len(shot_list)} 镜均含首/中/末关键帧、运镜轴、"
+                      "逐镜色彩、黑边与人脸提示")
+
+    def shots_render_score():
+        cmd = [PYTHON, SCRIPTS / "prompt_compiler.py", "shots",
+               "--analysis", FIXTURES / "semantic_shot_reverse.json", "--auto"]
+        rc, out, err = run(cmd + ["--format", "json"])
+        data = stdout_json(rc, out, err)
+        assert data["subcommand"] == "shots" and data["modality"] == "video"
+        assert data["models"] == ["sora2", "runway", "veo3", "seedance"], data["models"]
+        assert not data["skipped"], f"默认模型不应被跳过：{data['skipped']}"
+        assert data["program"]["total_duration"] == 10
+        assert [r["shot_no"] for r in data["storyboard"]] == [1, 2, 3]
+        assert len(data["shots"]) == 3
+        assert not data.get("warnings"), f"金标不应有审查提示：{data.get('warnings')}"
+        for shot in data["shots"]:
+            assert [p["model"] for p in shot["prompts"]] == \
+                ["sora2", "runway", "veo3", "seedance"], "逐镜模型数/顺序异常"
+            report = shot["score_report"]
+            recomputed = round(sum(WEIGHTS[d["key"]] * d["score"]
+                                   for d in report["dimensions"]) / 100.0, 1)
+            assert report["total"] == recomputed, "镜头总分 != 六维加权和"
+            assert 1 <= len(report["suggestions"]) <= 2
+        texts = {p["model"]: p["text"]
+                 for p in data["shots"][0]["prompts"]}
+        assert texts["sora2"].startswith("画幅 16:9") and "镜头 1：" in texts["sora2"]
+        assert "视觉锚点：透明伞面水珠" in texts["sora2"]
+        assert texts["runway"].startswith("远景，平拍，运镜 推")
+        assert texts["veo3"].startswith("电影摄影：远景，平拍，推")
+        assert texts["seedance"].startswith("生成 3 秒视频，画幅 16:9")
+        assert all("女子撑透明伞从街道深处走来" in t for t in texts.values()), \
+            "镜头 1 的动作应进入全部模型 Prompt"
+        keys = [i["key"] for i in data["review_checklist"]]
+        assert keys == ["shot_contract", "motion_axes", "one_event", "anchors",
+                        "lens_evidence", "continuity_sound"], keys
+        assert all(i["status"] in ("pass", "warn", "manual")
+                   for i in data["review_checklist"])
+
+        # --dims：逐镜人工评分
+        dims = [{"shot_no": n,
+                 "dims": [{"key": k, "score": 88, "note": "人工"} for k in WEIGHTS]}
+                for n in (1, 2, 3)]
+        dims_path = TMP / "shot_dims.json"
+        dims_path.write_text(json.dumps(dims, ensure_ascii=False), encoding="utf-8")
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "shots",
+                            "--analysis", FIXTURES / "semantic_shot_reverse.json",
+                            "--dims", dims_path, "--format", "json"])
+        scored = stdout_json(rc, out, err)
+        assert all(s["score_report"]["total"] == 88.0
+                   and s["score_report"]["grade"] == "B" for s in scored["shots"])
+
+        rc, out, err = run(cmd + ["--format", "md"])
+        text = decode(out)
+        for kw in ("## 分镜总表", "### Sora 2（v2） · 镜头 1", "### 镜头 1 评分",
+                   "## 镜头审查清单（不参与总分）", "| 1 | 远景 | 平拍 | 推 | 3 |"):
+            assert kw in text, f"Markdown 输出缺少「{kw}」"
+        assert text.index("## 镜头审查清单") > text.index("### 镜头 3 评分"), \
+            "审查清单应位于全部镜头评分之后"
+        return True, ("3 镜 × 4 模型独立 Prompt；分镜表/评分/审查清单齐全；"
+                      "--dims 人工评分与 Markdown 排版通过")
+
+    def shots_image_render():
+        cmd = [PYTHON, SCRIPTS / "prompt_compiler.py", "shots",
+               "--analysis", FIXTURES / "semantic_shot_reverse_image.json",
+               "--auto"]
+        rc, out, err = run(cmd + ["--format", "json"])
+        data = stdout_json(rc, out, err)
+        expect = ["midjourney", "stable_diffusion", "flux2",
+                  "gpt_image", "muse_image", "nano_banana"]
+        assert data["modality"] == "image"
+        assert data["models"] == expect, data["models"]
+        assert not data["skipped"], f"图片模型不应被跳过：{data['skipped']}"
+        assert data["program"]["total_duration"] == 3, "图片缺少时长时按镜头补齐"
+        assert len(data["shots"]) == 1, "图片必须恰好 1 镜"
+        prompts = data["shots"][0]["prompts"]
+        assert [p["model"] for p in prompts] == expect, "图片模型顺序异常"
+        texts = {p["model"]: p["text"] for p in prompts}
+        assert all("特写" in t and "85mm" in t for t in texts.values()), \
+            "景别与 EXIF 焦段应进入全部图片模型 Prompt"
+        assert texts["midjourney"].startswith("/imagine prompt: ") \
+            and "--ar 16:9" in texts["midjourney"], "MJ 镜头 Prompt 参数行异常"
+        assert texts["stable_diffusion"].startswith("Positive: ") \
+            and "Negative:" in texts["stable_diffusion"], "SD 正负向结构异常"
+        assert "Negative" not in texts["flux2"], "FLUX.2 不应出现负向"
+        assert "Shot: 特写" in texts["gpt_image"] and "Aspect ratio: 16:9" \
+            in texts["gpt_image"], "GPT Image 规格书结构异常"
+        assert "Shot size: 特写" in texts["muse_image"], "Muse 镜头结构异常"
+        assert "Resolution: 2K" in texts["nano_banana"], "Nano Banana 参数行异常"
+        assert not any("视频总长" in t or "秒视频" in t for t in texts.values()), \
+            "图片单帧不应出现视频时长句式"
+        assert data["review_checklist"], "图片单帧同样需要镜头审查清单"
+
+        # 图片模态显式指定单个图像模型也应成功（不再退出 1）
+        rc, out, err = run(cmd + ["--format", "json", "--models", "mj"])
+        single = stdout_json(rc, out, err)
+        assert single["models"] == ["midjourney"] and len(single["shots"]) == 1
+
+        rc, out, err = run(cmd + ["--format", "md"])
+        text = decode(out)
+        assert "### Midjourney V8.2（v8.2） · 镜头 1" in text, \
+            "图片反推 Markdown 缺少 MJ 镜头卡片"
+        return True, ("单张实拍图 → 六图片模型独立 Prompt；默认图片模型、"
+                      "EXIF 焦段、正负向/规格书结构与审查清单通过")
+
+    def shots_contracts():
+        base = json.loads(
+            (FIXTURES / "semantic_shot_reverse.json").read_text(encoding="utf-8"))
+        case_dir = TMP / "shots_contracts"
+        shutil.rmtree(str(case_dir), ignore_errors=True)
+        case_dir.mkdir(parents=True)
+
+        def write(name, mutate, modality=None):
+            data = json.loads(json.dumps(base, ensure_ascii=False))
+            if modality:
+                data["modality"] = modality
+            mutate(data["semantic_analysis"])
+            path = case_dir / f"{name}.json"
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            return path
+
+        def shot(semantic, index=1):
+            return semantic["shots"][index - 1]
+
+        def run_shots(path, *extra):
+            return run([PYTHON, SCRIPTS / "prompt_compiler.py", "shots",
+                        "--analysis", path, "--auto", "--format", "json", *extra])
+
+        cases = [
+            ("编号重复", lambda s: shot(s, 2).update(shot_no=1), "重复"),
+            ("编号跳号", lambda s: shot(s, 3).update(shot_no=4), "连续"),
+            ("缺必填字段", lambda s: shot(s, 2).pop("subject_action"), "subject_action"),
+            ("景别枚举", lambda s: shot(s, 2).update(shot_size="超特写"), "shot_size"),
+            ("固定复合", lambda s: shot(s, 1).update(camera_move="固定+推"), "固定"),
+            ("三轴运镜", lambda s: shot(s, 1).update(camera_move="推+摇+移"), "两个轴"),
+            ("时长总和不符", lambda s: s.update(total_duration=20), "不一致"),
+            ("锚点超限", lambda s: shot(s, 1).update(
+                anchors=["a", "b", "c", "d", "e", "f"]), "最多 5"),
+            ("证据缺标签", lambda s: shot(s, 3).update(evidence=["背景虚化明显"]),
+             "置信度标签"),
+            ("焦段写未知", lambda s: shot(s, 2).update(lens="unknown"), "省略"),
+        ]
+        for label, mutate, needle in cases:
+            rc, _, err = run_shots(write(label, mutate))
+            assert rc == 4, f"{label} 应退出码 4，实际 {rc}：{decode(err)[:160]}"
+            assert needle in decode(err), \
+                f"{label} 未报出「{needle}」：{decode(err)[:160]}"
+
+        # 图片模态：只允许单帧
+        def two_shots(s):
+            s["shots"] = [s["shots"][0], s["shots"][1]]
+        rc, _, err = run_shots(write("image_two", two_shots, modality="image"))
+        assert rc == 4 and "恰好 1 项" in decode(err), \
+            f"图片多镜应退出码 4，实际 {rc}：{decode(err)[:160]}"
+
+        # 无 shot_style 的模型 → 退出码 1（文本模型不受镜头反推支持）
+        rc, _, err = run_shots(
+            write("clean_for_text", lambda s: None), "--models", "deepseek")
+        assert rc == 1 and "shot_style" in decode(err), \
+            f"无 shot_style 应退出码 1，实际 {rc}：{decode(err)[:160]}"
+
+        # 黑名单：逐镜命中 → 退出码 5；--sanitize 放行
+        evil = write("blacklist", lambda s: shot(s, 1).update(
+            subject_action="机房里有人喷下 rm -rf / 的涂鸦"))
+        rc, _, err = run_shots(evil)
+        assert rc == 5, f"镜头黑名单应退出码 5，实际 {rc}"
+        rc, out, err = run_shots(evil, "--sanitize")
+        assert rc == 0, f"--sanitize 应放行，实际 {rc}：{decode(err)[:160]}"
+        assert "[已过滤]" in decode(out)
+        return True, ("编号/字段/枚举/运镜/时长/锚点/证据/焦段 10 类错误退出 4；"
+                      "图片多镜退出 4；无 shot_style 退出 1；黑名单退出 5 且 sanitize 放行")
+
     # ---------------- 10. 安全加固（归一化 + 注入标记） ----------------
     def security_normalization():
         variants = {
@@ -1696,6 +1914,11 @@ def main():
         ("模板层/Seedance 六任务模式", seedance_task_modes),
         ("契约层/Seedance 字段契约", seedance_contracts),
         ("模板层/Seedance 审查清单", seedance_review_checklist),
+        ("单元层/analyze_image 镜头信号", image_shot_hints),
+        ("单元层/analyze_video 镜头信号", video_shot_signals),
+        ("镜头反推/逐镜渲染+评分", shots_render_score),
+        ("镜头反推/图片六模型渲染", shots_image_render),
+        ("契约层/镜头卡字段与安全", shots_contracts),
         ("模板层/uncertainty 不入正文", uncertainty_template_ban),
         ("模板层/十二模型全量渲染", all_templates_render),
         ("安全层/归一化绕过", security_normalization),

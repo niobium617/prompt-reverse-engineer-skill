@@ -10,11 +10,15 @@
   "negative_support": false,
   "optional_fields": ["style", "photo_params", "quality_words", "target_style", "text_content", "reference_note"],
   "kind_requires": {"style_transfer": ["target_style"]},
+  "shot_style": {
+    "shot": "{subject_action}。景别：{shot_size}，机位：{camera_angle}，运镜：{camera_move}。{environment}。{lighting}。{color}。风格：{style}。视觉锚点：{anchors}。不在画面中额外添加文字、水印或 logo。",
+    "shot_suffix": "焦段：{lens}\n焦点：{focus}\n画幅 {aspect_ratio}。"
+  },
   "modalities": {
     "image": {
-      "positive": "{subject}. {scene}. {style}. {lighting}. {color}. {composition}. {photo_params}. {quality_words}. 文字「{text_content}」. {reference_note}",
+      "positive": "{subject}. {scene}. {style}. {lighting}. {color}. {composition}. {photo_params}. {quality_words}. 文字「{text_content}」. 不在画面中额外添加文字、水印或 logo。{reference_note}",
       "params": "Guidance: {guidance}, Steps: {steps}, Aspect ratio: {aspect_ratio}",
-      "style_transfer": "{subject}. {scene}. {target_style}. {lighting}. {color}. {composition}. {photo_params}. {quality_words}. 文字「{text_content}」. {reference_note}"
+      "style_transfer": "{subject}. {scene}. {target_style}. {lighting}. {color}. {composition}. {photo_params}. {quality_words}. 文字「{text_content}」. 不在画面中额外添加文字、水印或 logo。{reference_note}"
     }
   }
 }

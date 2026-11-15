@@ -60,6 +60,12 @@ JOBS = [
         "title": "叙事文本逐场景（剧本 → 图片 + 视频提示词）",
         "command": ["scenes"],
     },
+    {
+        "dir": "shot_reverse_example",
+        "fixture": "semantic_shot_reverse.json",
+        "title": "实拍视频逐镜反推（10 秒 3 镜 → 四视频模型独立 Prompt）",
+        "command": ["shots"],
+    },
 ]
 
 HEADER = (

@@ -8,6 +8,7 @@
   filter   安全过滤（命中黑名单→退出码 5 阻断，--sanitize 则替换后放行）
   all      compile + filter + score 串联
   scenes   叙事文本逐场景编译（image + video）
+  shots    实拍镜头反推：逐镜头卡 → 各模型独立 Prompt（shot_style 模板）
   validate-templates  校验模板元数据/占位符/用途契约（全部错误一次列出）
 
 任务模式：semantic_analysis.task_type（八枚举：前五通用 + 后三 Muse 扩展）经
@@ -72,6 +73,16 @@ SUGGESTIONS = {
         "把具体样例中的可变项替换为 [变量] 占位",
         "为可调参数添加注释说明取值范围",
     ],
+}
+
+# --- 实拍镜头反推的逐镜头建议（shots 子命令专用，替换通用建议库） ---
+SHOT_SUGGESTIONS = {
+    "theme_clarity": "主体动作写清「谁做了什么」，一镜只保留一个可见事件",
+    "scene_completeness": "补齐环境、光影、色彩三项，避免只写人物动作",
+    "style_fit": "把整体风格写进每个镜头，保证跨镜统一",
+    "structure_clarity": "景别、机位、运镜三项齐全，运镜不超过两个轴",
+    "param_reasonableness": "按镜头实际时长填写 duration_s，并写明转场方式",
+    "adaptability": "在 continuity_notes 写清跨镜一致项，便于换模型复用",
 }
 
 # --- 安全黑名单（与 prompt_framework.md 第四节对应） ---
@@ -237,6 +248,30 @@ UNCERTAINTY_ITEM_RE = re.compile(r"^(observed|inferred|unknown)\s*[:：]\s*(.+)$
                                  re.I | re.S)
 MODALITY_NAMES = {"text", "image", "video"}
 KIND_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+# --- 实拍镜头反推契约（与 prompt_framework.md 2.6 节、shot_reverse_rules.md 镜像） ---
+SHOT_SIZES = ("大远景", "远景", "全景", "中景", "近景", "特写", "大特写")
+CAMERA_ANGLES = ("平拍", "仰拍", "俯拍", "低机位", "过肩", "第一人称", "鸟瞰", "斜角")
+CAMERA_MOVE_TERMS = ("固定", "推", "拉", "摇", "移", "跟", "升降", "环绕",
+                     "手持", "变焦", "希区柯克变焦", "甩镜", "旋转")
+CAMERA_MOVE_SPLIT_RE = re.compile(r"\s*[+＋/／、]\s*")
+SHOT_REQUIRED = ("shot_size", "camera_angle", "camera_move", "duration_s",
+                 "subject_action", "environment", "lighting", "color",
+                 "anchors", "sound", "continuity")
+SHOT_STRING_FIELDS = ("shot_size", "camera_angle", "camera_move",
+                      "subject_action", "environment", "lighting", "color",
+                      "sound", "continuity", "lens", "focus", "transition",
+                      "first_frame", "shot_note")
+SHOT_LIST_FIELDS = ("anchors", "evidence")
+PROGRAM_REQUIRED = ("style", "aspect_ratio", "total_duration")
+PROGRAM_STRING_FIELDS = PROGRAM_REQUIRED + (
+    "color_script", "sound_plan", "continuity_notes", "negative_words",
+    "summary", "source_note")
+SHOT_STYLE_KEYS = ("shot", "shot_prefix", "shot_suffix")
+# 未指定 --models 时按模态选默认：视频四模型 / 图片六模型（均需模板含 shot_style）
+VIDEO_SHOT_MODELS = "sora,runway,veo,seedance"
+IMAGE_SHOT_MODELS = ("midjourney,stable_diffusion,flux2,"
+                     "gpt_image,muse_image,nano_banana")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TEMPLATE_META = ("model", "display_name", "vendor", "version",
                  "last_verified", "alias", "default_params", "modalities")
@@ -470,6 +505,38 @@ def template_errors(filename, t):
             unknown = sorted(set(fields) - allowed_fields)
             if unknown:
                 err(f"kind_requires.{kind} 引用了未知字段：{', '.join(unknown)}")
+
+    # 实拍镜头反推：shot_style 逐镜头模板（prompt_framework.md 2.6 节）
+    shot_style = t.get("shot_style")
+    if shot_style is not None:
+        if not isinstance(shot_style, dict) or not shot_style:
+            err("shot_style 必须是非空对象")
+        else:
+            if not ({"image", "video"} & set(modalities)):
+                err("shot_style 只适用于含 image 或 video 模态的模板")
+            allowed_shot = (allowed_fields
+                            | set(SHOT_STRING_FIELDS) | set(SHOT_LIST_FIELDS)
+                            | {"shot_no", "duration_s"}
+                            | set(PROGRAM_STRING_FIELDS) | {"suggestions"})
+            if not isinstance(shot_style.get("shot"), str) or not shot_style["shot"].strip():
+                err("shot_style.shot 必须是非空字符串")
+            for key, value in shot_style.items():
+                if key not in SHOT_STYLE_KEYS:
+                    err(f"shot_style 含未知键：{key}（可用：{', '.join(SHOT_STYLE_KEYS)}）")
+                    continue
+                if not isinstance(value, str):
+                    err(f"shot_style.{key} 必须是字符串")
+                    continue
+                leftover = re.sub(r"\{\w+\}", "", value)
+                if "{" in leftover or "}" in leftover:
+                    err(f"shot_style.{key} 含未闭合的大括号")
+                placeholders = set(FIELD_RE.findall(value))
+                unknown = sorted(placeholders - allowed_shot)
+                if unknown:
+                    err(f"shot_style.{key} 引用了未知占位符：{', '.join(unknown)}")
+                if "uncertainty" in placeholders:
+                    err(f"shot_style.{key} 不得引用 {{uncertainty}}："
+                        "不确定项只进说明，不进 Prompt 正文")
     return errors
 
 
@@ -1508,9 +1575,9 @@ def cmd_all(args):
         sys.exit(5)
 
 
-def report_markdown(report):
+def report_markdown(report, header="## 评分报告"):
     """纯文本输出用的评分表（与 score_report.json 的表格列保持一致）。"""
-    lines = ["## 评分报告", "", "| 维度 | 权重 | 得分 | 依据 |", "|---|---:|---:|---|"]
+    lines = [header, "", "| 维度 | 权重 | 得分 | 依据 |", "|---|---:|---:|---|"]
     for dim in report.get("dimensions", []):
         note = (dim.get("note") or "—").replace("|", "\\|")
         lines.append(f"| {dim['name']} | {dim['weight']}% | {dim['score']} | {note} |")
@@ -1768,6 +1835,525 @@ def emit_scenes_text(result, output):
 
 
 # ---------------------------------------------------------------------------
+# shots（实拍镜头反推）
+# ---------------------------------------------------------------------------
+def parse_camera_moves(value):
+    """拆分复合运镜，返回 (tokens, invalid)。「推+摇」记两个轴。"""
+    tokens = [t for t in CAMERA_MOVE_SPLIT_RE.split(str(value or "").strip()) if t]
+    return tokens, [t for t in tokens if t not in CAMERA_MOVE_TERMS]
+
+
+def validate_shots(semantic, modality, where="semantic_analysis"):
+    """校验镜头卡契约（prompt_framework.md 2.6 节），返回 shots 列表。
+
+    结构错误一律退出码 4：编号不连续、枚举非法、运镜超过两轴、
+    镜头时长非正数、锚点/证据格式不符、镜头字段写成 unknown。
+    """
+    def err(message):
+        die(f"{where}：{message}", 4)
+
+    shots = semantic.get("shots")
+    if not isinstance(shots, list) or not shots:
+        err("缺少非空 shots 数组（字段规范见 prompt_framework.md 2.6 节）")
+    if modality == "image" and len(shots) != 1:
+        err(f"图片模态只反推单帧，shots 必须恰好 1 项，当前 {len(shots)} 项")
+    for field in ("style", "aspect_ratio"):
+        if not _has_value(semantic, field):
+            err(f"缺少镜头组必填字段：{field}（style / aspect_ratio）")
+    total = semantic.get("total_duration")
+    if modality == "video" and not _has_value(semantic, "total_duration"):
+        err("视频模态缺少 total_duration（镜头时长之和，单位为秒）")
+    if _has_value(semantic, "total_duration"):
+        try:
+            total_value = float(total)
+        except (TypeError, ValueError):
+            err(f"total_duration 必须是秒数，当前：{total!r}")
+        if total_value <= 0:
+            err(f"total_duration 必须大于 0，当前：{total!r}")
+        durations = [card.get("duration_s") for card in shots
+                     if isinstance(card, dict)]
+        numeric = all(isinstance(d, (int, float)) and not isinstance(d, bool)
+                      for d in durations)
+        shot_total = sum(float(d) for d in durations) if numeric else total_value
+        if abs(shot_total - total_value) > 0.5:
+            err(f"各镜头 duration_s 之和为 {shot_total:g} 秒，"
+                f"与 total_duration {total_value:g} 秒不一致（容差 0.5 秒）")
+
+    numbers = []
+    for index, card in enumerate(shots, 1):
+        label = f"shots[{index}]"
+        if not isinstance(card, dict):
+            err(f"{label} 必须是对象")
+        for key, value in card.items():
+            if isinstance(value, dict):
+                err(f"{label}.{key} 是对象（dict）；镜头卡要求扁平字段")
+        no = card.get("shot_no")
+        if not isinstance(no, int) or isinstance(no, bool):
+            err(f"{label} 缺少整数 shot_no 字段")
+        numbers.append(no)
+        for field in SHOT_STRING_FIELDS:
+            if field in card and not isinstance(card[field], str):
+                err(f"镜头 {no}：{field} 必须是字符串")
+        for field in SHOT_LIST_FIELDS:
+            if field in card and not (
+                    isinstance(card[field], list)
+                    and all(isinstance(item, str) for item in card[field])):
+                err(f"镜头 {no}：{field} 必须是字符串数组")
+        missing = [f for f in SHOT_REQUIRED if not _has_value(card, f)]
+        if missing:
+            err(f"镜头 {no} 缺少必填字段：{', '.join(missing)}")
+        if card.get("shot_size") not in SHOT_SIZES:
+            err(f"镜头 {no}：shot_size 必须是 {'/'.join(SHOT_SIZES)} 之一，"
+                f"当前：{card.get('shot_size')!r}")
+        if card.get("camera_angle") not in CAMERA_ANGLES:
+            err(f"镜头 {no}：camera_angle 必须是 {'/'.join(CAMERA_ANGLES)} 之一，"
+                f"当前：{card.get('camera_angle')!r}")
+        tokens, invalid = parse_camera_moves(card.get("camera_move"))
+        if invalid:
+            err(f"镜头 {no}：camera_move 含未知运镜 {', '.join(invalid)}"
+                f"（可用：{'/'.join(CAMERA_MOVE_TERMS)}，复合用 + 连接）")
+        if "固定" in tokens and len(tokens) > 1:
+            err(f"镜头 {no}：固定机位不能与其他运镜组合：{card.get('camera_move')}")
+        if len(tokens) > 2:
+            err(f"镜头 {no}：运镜最多两个轴，当前 {len(tokens)} 个"
+                f"（{card.get('camera_move')}）")
+        duration = card.get("duration_s")
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)):
+            err(f"镜头 {no}：duration_s 必须是秒数")
+        if duration <= 0:
+            err(f"镜头 {no}：duration_s 必须大于 0")
+        anchors = card.get("anchors") or []
+        if len(anchors) > 5:
+            err(f"镜头 {no}：anchors 最多 5 项，当前 {len(anchors)} 项")
+        for i, item in enumerate(card.get("evidence") or [], 1):
+            if not UNCERTAINTY_TAG_RE.match(str(item).strip()):
+                err(f"镜头 {no}：evidence[{i}] 必须以置信度标签开头"
+                    f"（observed: / inferred: / unknown:）：{item}")
+        for field in ("lens", "focus"):
+            value = str(card.get(field) or "")
+            if re.search(r"unknown|未知", value, re.I):
+                err(f"镜头 {no}：{field} 无法从画面确认时请省略该字段，"
+                    "不要写「未知/unknown」进 Prompt")
+
+    duplicates = sorted({n for n in numbers if numbers.count(n) > 1})
+    if duplicates:
+        err(f"镜头 shot_no 重复：{', '.join(str(n) for n in duplicates)}")
+    if numbers != list(range(1, len(numbers) + 1)):
+        err("镜头 shot_no 必须从 1 连续编号，当前：" +
+            ", ".join(str(n) for n in numbers))
+    return shots
+
+
+def shot_storyboard(shots):
+    """分镜总表（模型无关的确定性摘要）。"""
+    rows = []
+    for card in shots:
+        rows.append({
+            "shot_no": card["shot_no"],
+            "shot_size": card["shot_size"],
+            "camera_angle": card["camera_angle"],
+            "camera_move": card["camera_move"],
+            "duration_s": card["duration_s"],
+            "action": card["subject_action"],
+            "transition": str(card.get("transition") or ""),
+        })
+    return rows
+
+
+def render_shot_part(template_str, template, card, program):
+    """渲染 shot_style 的单段模板：镜头卡优先，其次镜头组字段与模板默认值。"""
+    if not isinstance(template_str, str) or not template_str.strip():
+        return ""
+    defaults = template.get("default_params", {})
+    context = {}
+    for field in sorted(set(FIELD_RE.findall(template_str))):
+        if field in card and _has_value(card, field):
+            value = card[field]
+        elif field in program and _has_value(program, field):
+            value = program[field]
+        elif field in defaults:
+            value = defaults[field]
+        else:
+            value = ""
+        context[field] = format_field(field, value) if value != "" else ""
+    return clean_rendered(template_str.format(**context), drop_empty_label_lines=True)
+
+
+def render_shot_prompt(template, card, program):
+    """按模板的 shot_style 渲染单镜头 Prompt；无该配置返回 None。"""
+    style = template.get("shot_style")
+    if not isinstance(style, dict) or not str(style.get("shot", "")).strip():
+        return None
+    parts = [render_shot_part(style.get(key, ""), template, card, program)
+             for key in ("shot_prefix", "shot", "shot_suffix")]
+    text = "\n\n".join(part for part in parts if part.strip())
+    return text or None
+
+
+def heuristic_shot_scores(program, card):
+    """逐镜头启发式近似评分，仅供离线验证；真实使用请由 Agent 用 --dims 给分。"""
+    def present(value):
+        return bool(str(value or "").strip())
+
+    anchors = card.get("anchors") or []
+    scores = {}
+    s = 60 + (15 if len(str(card.get("subject_action", ""))) > 10 else 0)
+    s += 10 if present(card.get("environment")) else 0
+    s += 10 if anchors else 0
+    scores["theme_clarity"] = min(s, 100)
+
+    s = 60
+    s += 15 if present(card.get("environment")) else 0
+    s += 10 if present(card.get("lighting")) else 0
+    s += 10 if present(card.get("color")) else 0
+    scores["scene_completeness"] = min(s, 100)
+
+    s = 60
+    s += 20 if present(program.get("style")) else 0
+    s += 10 if present(card.get("lighting")) else 0
+    s += 10 if present(program.get("color_script")) else 0
+    scores["style_fit"] = min(s, 100)
+
+    s = 60
+    s += 20 if present(card.get("camera_move")) and present(card.get("camera_angle")) else 0
+    s += 10 if present(card.get("continuity")) else 0
+    scores["structure_clarity"] = min(s, 100)
+
+    s = 60
+    s += 20 if card.get("duration_s") else 0
+    s += 10 if present(card.get("transition")) else 0
+    s += 10 if present(program.get("negative_words")) else 0
+    scores["param_reasonableness"] = min(s, 100)
+
+    s = 60
+    s += 20 if present(program.get("continuity_notes")) else 0
+    s += 10 if present(program.get("sound_plan")) else 0
+    scores["adaptability"] = min(s, 100)
+    return scores
+
+
+def build_shot_review_checklist(semantic, shots, texts):
+    """实拍镜头反推的六项审查清单（不参与总分）。"""
+    items = []
+
+    def add(key, item, status, detail):
+        items.append({"key": key, "item": item, "status": status, "detail": detail})
+
+    missing = []
+    for card in shots:
+        missing += [f"镜头{card['shot_no']}.{field}" for field in SHOT_REQUIRED
+                    if not _has_value(card, field)]
+    if missing:
+        add("shot_contract", "镜头卡必填项是否齐全", "warn",
+            "缺少字段：" + "、".join(missing))
+    else:
+        add("shot_contract", "镜头卡必填项是否齐全", "pass",
+            f"{len(shots)} 个镜头卡必填项齐全")
+
+    over = [f"镜头{card['shot_no']}（{card['camera_move']}）" for card in shots
+            if len(parse_camera_moves(card["camera_move"])[0]) > 2]
+    if over:
+        add("motion_axes", "运镜轴数是否不超过两个", "warn",
+            "运镜超过两轴：" + "、".join(over))
+    else:
+        add("motion_axes", "运镜轴数是否不超过两个", "pass",
+            "每个镜头运镜均不超过两个轴")
+
+    connectors = ("然后", "接着", "随后", "之后", "再")
+    multi = [f"镜头{card['shot_no']}" for card in shots
+             if sum(str(card.get("subject_action", "")).count(word)
+                    for word in connectors) >= 2]
+    if multi:
+        add("one_event", "是否一镜只讲一个可见事件", "warn",
+            "同一镜头出现多个连续动作：" + "、".join(multi))
+    else:
+        add("one_event", "是否一镜只讲一个可见事件", "pass",
+            "镜头动作未被拆成多段事件")
+
+    bad_anchors = [f"镜头{card['shot_no']}（{len(card.get('anchors') or [])} 个）"
+                   for card in shots
+                   if not 3 <= len(card.get("anchors") or []) <= 5]
+    if bad_anchors:
+        add("anchors", "视觉锚点是否 3–5 个且靠前", "warn",
+            "锚点数量不在 3–5：" + "、".join(bad_anchors))
+    else:
+        add("anchors", "视觉锚点是否 3–5 个且靠前", "pass",
+            "每个镜头 3–5 个视觉锚点")
+
+    unbacked = [f"镜头{card['shot_no']}" for card in shots
+                if (str(card.get("lens") or "").strip()
+                    or str(card.get("focus") or "").strip())
+                and not (card.get("evidence") or [])]
+    leaks = [detail for tag, detail in _uncertainty_leaks(semantic, texts)
+             if tag == "unknown"]
+    if unbacked or leaks:
+        detail = []
+        if unbacked:
+            detail.append("镜头焦段/焦点缺少 evidence 标签：" + "、".join(unbacked))
+        if leaks:
+            detail.append("unknown 项疑似进入正文：" + "、".join(leaks))
+        add("lens_evidence", "镜头参数是否有画面证据", "warn", "；".join(detail))
+    else:
+        add("lens_evidence", "镜头参数是否有画面证据", "pass",
+            "焦段/焦点均有证据标签或已省略")
+
+    weak = [f"镜头{card['shot_no']}" for card in shots
+            if not str(card.get("sound") or "").strip()
+            or not str(card.get("continuity") or "").strip()]
+    if weak:
+        add("continuity_sound", "声音与跨镜衔接是否写明", "warn",
+            "缺少声音或衔接：" + "、".join(weak))
+    else:
+        add("continuity_sound", "声音与跨镜衔接是否写明", "pass",
+            "声音与衔接逐镜写明")
+    return items
+
+
+def load_shot_dims(path, shot_numbers):
+    """解析逐镜头评分：[{shot_no, dims: [{key, score, note}]}]。"""
+    data = load_json(path, "评分文件")
+    if not isinstance(data, list):
+        die("评分文件必须是数组：[{shot_no, dims: [...]}]", 4)
+    known = {k for k, _, _ in DIMENSIONS}
+    dims_map, notes_map, seen_shots = {}, {}, set()
+    for item in data:
+        if not isinstance(item, dict):
+            die("评分文件每项必须是对象", 4)
+        shot_no = item.get("shot_no")
+        if not isinstance(shot_no, int) or isinstance(shot_no, bool):
+            die("评分文件每项必须含整数 shot_no，发现：" +
+                json.dumps(item, ensure_ascii=False)[:120], 4)
+        if shot_no in seen_shots:
+            die(f"评分文件 shot_no 重复：{shot_no}", 4)
+        if shot_no not in shot_numbers:
+            die(f"评分文件 shot_no={shot_no} 不在镜头列表中", 4)
+        entries, seen = [], set()
+        for dim in item.get("dims", []):
+            key = dim.get("key")
+            if key not in known:
+                die(f"未知评分维度：{key}", 4)
+            if key in seen:
+                die(f"镜头 {shot_no} 评分维度重复：{key}", 4)
+            score = dim.get("score")
+            if not isinstance(score, (int, float)) or not 0 <= score <= 100:
+                die(f"维度 {key} 得分须为 0-100 的数字", 4)
+            entries.append((key, str(dim.get("note", "")).strip(), score))
+            seen.add(key)
+        missing = [k for k, _, _ in DIMENSIONS if k not in seen]
+        if missing:
+            die(f"镜头 {shot_no} 评分缺少维度：{', '.join(missing)}", 4)
+        dims_map[shot_no] = [(k, n, w, s) for k, _, s in entries
+                             for kk, n, w in DIMENSIONS if kk == k]
+        notes_map[shot_no] = {k: note for k, note, _ in entries}
+        seen_shots.add(shot_no)
+    missing_shots = [n for n in shot_numbers if n not in dims_map]
+    if missing_shots:
+        die("评分文件缺少镜头：" + ", ".join(str(n) for n in missing_shots), 4)
+    return dims_map, notes_map
+
+
+def cmd_shots(args):
+    """实拍镜头反推：镜头卡 → 分镜表 + 各视频模型逐镜头 Prompt。"""
+    analysis = load_analysis(args.analysis)
+    modality = analysis["modality"]
+    if modality not in ("image", "video"):
+        die("shots 子命令要求 analysis 的 modality 为 image 或 video", 1)
+    semantic = analysis["semantic_analysis"]
+    shots = validate_shots(semantic, modality)
+    shot_numbers = [card["shot_no"] for card in shots]
+
+    registry = load_registry(args.template_dir)
+    if not registry:
+        die(f"模板目录 {args.template_dir} 下未发现模型模板", 4)
+    if args.models is None:
+        args.models = (VIDEO_SHOT_MODELS if modality == "video"
+                       else IMAGE_SHOT_MODELS)
+    models, unknown = resolve_models(args.models, registry)
+    if unknown:
+        die(f"未知模型：{', '.join(unknown)}（可用：{', '.join(sorted(registry))}）", 1)
+    if not models:
+        die("未解析到任何模型", 1)
+    capable = [m for m in models
+               if isinstance(registry[m].get("shot_style"), dict)
+               and str(registry[m]["shot_style"].get("shot", "")).strip()]
+    if not capable:
+        die("给定的模型都没有 shot_style 逐镜头模板（模板需含 shot_style 段）", 1)
+
+    if args.dims and args.auto:
+        die("--dims 与 --auto 只能二选一", 1)
+    if args.dims:
+        shot_dims, notes_map = load_shot_dims(args.dims, shot_numbers)
+    elif args.auto:
+        shot_dims, notes_map = {}, {}
+        for card in shots:
+            scores = heuristic_shot_scores(semantic, card)
+            shot_dims[card["shot_no"]] = [
+                (k, n, w, scores[k]) for k, n, w in DIMENSIONS]
+            notes_map[card["shot_no"]] = {
+                k: "自动近似：依据镜头卡字段完整度" for k, _, _ in DIMENSIONS}
+    else:
+        shot_dims, notes_map = {}, {}
+
+    program = {key: semantic[key] for key in PROGRAM_STRING_FIELDS
+               if _has_value(semantic, key)}
+    if not _has_value(program, "total_duration"):
+        # 图片模态不要求 total_duration：按拟生成片段时长补齐
+        total = sum(float(card["duration_s"]) for card in shots)
+        program["total_duration"] = int(total) if total.is_integer() else total
+    skipped = [
+        {"model": model,
+         "reason": "模板缺少 shot_style 逐镜头模板"}
+        for model in models if model not in capable
+    ]
+
+    out_shots, all_texts, blocked_any = [], [], False
+    for card in shots:
+        prompts = []
+        for model in capable:
+            template = registry[model]
+            text = render_shot_prompt(template, card, program)
+            if not text:
+                continue
+            prompts.append({
+                "model": model,
+                "display_name": template.get("display_name", model),
+                "version": str(template.get("version", "")),
+                "shot_no": card["shot_no"],
+                "kind": "shot",
+                "text": text,
+                "template_id": template["template_id"],
+                "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            })
+        matches, injection_flags, sanitized = [], [], []
+        for prompt in prompts:
+            source = f"{prompt['model']}/镜头{prompt['shot_no']}"
+            injection_flags.extend(
+                dict(flag, prompt=source) for flag in scan_injection(prompt["text"]))
+            hit, clean = scan_text(prompt["text"])
+            matches.extend(hit)
+            sanitized.append(dict(prompt, text=clean))
+        all_texts.extend(p["text"] for p in sanitized)
+        if matches:
+            blocked_any = True
+        record = {
+            "shot_no": card["shot_no"],
+            "card": card,
+            "prompts": sanitized,
+            "filter": {"blocked": len(matches) > 0, "matches": matches,
+                       "injection_flags": injection_flags},
+        }
+        if card["shot_no"] in shot_dims:
+            report = build_report(
+                shot_dims[card["shot_no"]], bool(args.auto),
+                notes_map.get(card["shot_no"]))
+            weakest = sorted(report["dimensions"],
+                             key=lambda d: (d["score"], d["key"]))[:2]
+            report["suggestions"] = [SHOT_SUGGESTIONS[d["key"]]
+                                     for d in weakest
+                                     if SHOT_SUGGESTIONS.get(d["key"])]
+            record["score_report"] = report
+        out_shots.append(record)
+
+    result = {
+        "schema_version": SCHEMA_VERSION,
+        "tool": TOOL,
+        "subcommand": "shots",
+        "modality": modality,
+        "models": models,
+        "program": program,
+        "storyboard": shot_storyboard(shots),
+        "shots": out_shots,
+        "skipped": skipped,
+        "review_checklist": build_shot_review_checklist(
+            semantic, shots, all_texts),
+    }
+    warnings = uncertainty_warnings(semantic, all_texts)
+    if warnings:
+        result["warnings"] = warnings
+    if args.format == "json":
+        emit(result, args.output)
+    else:
+        emit_shots_text(result, args.output)
+    if blocked_any and not args.sanitize:
+        print("安全过滤阻断：生成结果命中黑名单，请重写后重试", file=sys.stderr)
+        sys.exit(5)
+
+
+def emit_shots_text(result, output):
+    program = result.get("program", {})
+    shots = result.get("shots", [])
+    models = result.get("models", [])
+
+    def cell(value):
+        return str(value if value not in (None, "") else "—").replace("|", "\\|")
+
+    lines = [
+        "# 实拍镜头反推 Prompt 编译结果",
+        "",
+        f"- 来源模态：`{result.get('modality')}`",
+        f"- 画幅：{cell(program.get('aspect_ratio'))}",
+        f"- 总时长：{cell(program.get('total_duration'))} 秒",
+        f"- 目标模型：{', '.join(f'`{m}`' for m in models) or '—'}",
+        "",
+        "## 分镜总表",
+        "",
+        "| 镜头 | 景别 | 机位 | 运镜 | 时长(s) | 画面动作 | 转场 |",
+        "|---:|---|---|---|---:|---|---|",
+    ]
+    for row in result.get("storyboard", []):
+        lines.append(
+            f"| {row['shot_no']} | {cell(row['shot_size'])} | {cell(row['camera_angle'])} "
+            f"| {cell(row['camera_move'])} | {cell(row['duration_s'])} "
+            f"| {cell(row['action'])} | {cell(row['transition'])} |")
+    lines.append("")
+
+    for shot in shots:
+        card = shot.get("card", {})
+        lines += [f"## 镜头 {shot['shot_no']} · {card.get('shot_size', '')} · "
+                  f"{card.get('camera_angle', '')} · {card.get('camera_move', '')}", ""]
+        for field, label in (("subject_action", "画面动作"), ("environment", "环境"),
+                             ("lighting", "光影"), ("color", "色彩"),
+                             ("sound", "声音"), ("continuity", "衔接")):
+            lines.append(f"- {label}：{cell(card.get(field))}")
+        anchors = card.get("anchors") or []
+        lines.append(f"- 视觉锚点：{cell('、'.join(anchors))}")
+        tokens, _ = parse_camera_moves(card.get("camera_move"))
+        lines.append(f"- 运镜轴数：{len(tokens)}"
+                     + (f"（{'、'.join(tokens)}）" if tokens else ""))
+        for field, label in (("lens", "镜头（焦段）"), ("focus", "焦点"),
+                             ("first_frame", "首帧提示"), ("transition", "转场")):
+            if str(card.get(field) or "").strip():
+                lines.append(f"- {label}：{cell(card.get(field))}")
+        evidence = card.get("evidence") or []
+        if evidence:
+            lines.append(f"- 置信度：{'；'.join(evidence)}")
+        lines.append("")
+        for prompt in shot.get("prompts", []):
+            title = prompt.get("display_name") or prompt["model"]
+            if prompt.get("version"):
+                title += f"（v{prompt['version']}）"
+            lines += [f"### {title} · 镜头 {shot['shot_no']}", "",
+                      "```text", prompt["text"], "```", ""]
+        report = shot.get("score_report")
+        if report:
+            lines += report_markdown(report, header=f"### 镜头 {shot['shot_no']} 评分")
+            lines.append("")
+
+    checklist = result.get("review_checklist")
+    if checklist:
+        lines += review_markdown(checklist, "## 镜头审查清单（不参与总分）")
+    if result.get("warnings"):
+        lines += ["", "## 审查提示", ""] + [f"- {w}" for w in result["warnings"]]
+
+    text = "\n".join(lines) + "\n"
+    if output:
+        with open(output, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    else:
+        print(text, end="")
+
+
+# ---------------------------------------------------------------------------
 # validate-templates
 # ---------------------------------------------------------------------------
 def cmd_validate_templates(args):
@@ -1853,6 +2439,24 @@ def main():
     p_scenes.add_argument("--template-dir", default=str(DEFAULT_TEMPLATE_DIR))
     p_scenes.add_argument("-o", "--output")
 
+    p_shots = sub.add_parser(
+        "shots", help="实拍镜头反推：逐镜头卡 → 各模型独立 Prompt")
+    p_shots.add_argument("--analysis", required=True,
+                         help="image/video 分析 JSON（semantic_analysis.shots[]）")
+    p_shots.add_argument("--models",
+                         help="目标模型列表（逗号分隔/别名，需模板含 shot_style；"
+                              "默认视频四模型，图片六模型）")
+    p_shots.add_argument("--dims",
+                         help="逐镜头评分 JSON：[{shot_no, dims: [{key, score, note}]}]")
+    p_shots.add_argument("--auto", action="store_true",
+                         help="启发式逐镜头近似评分（仅离线验证）")
+    p_shots.add_argument("--sanitize", action="store_true")
+    p_shots.add_argument("--format", default="json",
+                         choices=["json", "text", "md", "markdown"],
+                         help="json 或 markdown/text（分镜表 + 镜头卡 + 评分表）")
+    p_shots.add_argument("--template-dir", default=str(DEFAULT_TEMPLATE_DIR))
+    p_shots.add_argument("-o", "--output")
+
     p_validate = sub.add_parser("validate-templates",
                                 help="校验模板元数据/占位符/用途契约")
     p_validate.add_argument("--template-dir", default=str(DEFAULT_TEMPLATE_DIR))
@@ -1869,6 +2473,8 @@ def main():
         cmd_all(args)
     elif args.command == "scenes":
         cmd_scenes(args)
+    elif args.command == "shots":
+        cmd_shots(args)
     elif args.command == "validate-templates":
         cmd_validate_templates(args)
 

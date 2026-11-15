@@ -50,7 +50,8 @@
 
 ## 六、分镜脚本规范（storyboard 字段）
 
-storyboard 为对象数组，每项字段如下（与 `prompt_framework.md` 2.4 节一致）：
+storyboard 为**整片**分镜摘要，用于一次性生成整段视频；每项字段如下（与 `prompt_framework.md` 2.4 节一致）。
+若目标是**逐镜独立生成**（实拍素材反推、单镜重生成、一个镜头一个 Prompt），改用 `shots` 镜头卡（`prompt_framework.md` 2.6 节、`shot_reverse_rules.md`），字段更细（机位/运镜轴/锚点/证据/衔接），由 `prompt_compiler.py shots` 渲染。
 
 | 字段 | 必填 | 说明与示例 |
 |---|---|---|
@@ -91,7 +92,7 @@ storyboard 为对象数组，每项字段如下（与 `prompt_framework.md` 2.4 
 - **先定场景**：文生视频 / 首帧 / 首尾帧 / 全模态参考四选一；编辑与延长归入全模态参考，用 `video_edit` / `video_extend` 表达。
 - **分镜与模型无关**：`storyboard` 仍按第六节规范写；Seedance 把它渲染为「镜头N：景别，运镜，时长秒。动作」逐行文本。
 - **素材角色显式**：多段素材时逐行 `素材N：reference_image|reference_video|reference_audio；用途；保留；禁止迁移`，编号连续。
-- **参数不混入正文**：`resolution` / `ratio` / `duration` / `generate_audio` / `watermark` / `draft` 写进 `params`；正文只描述画面与声音。
+- **参数不混入正文**：`resolution` / `ratio` / `duration` / `generate_audio` / `watermark` / `draft` 以键值写进 `params`，不写成指令或后缀；正文可用自然语言交代时长与画幅意图，其余只描述画面与声音。
 - **时长与画幅**：首帧 / 首尾帧 / 编辑 / 延长只支持 `adaptive`；编辑时长固定 `-1`。
 
 ## 九、声音设计（audio / narration）

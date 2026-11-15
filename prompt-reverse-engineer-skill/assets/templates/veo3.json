@@ -8,6 +8,11 @@
   "alias": ["veo", "veo3", "veo-3", "veo-3.1"],
   "default_params": {"duration": "8", "aspect_ratio": "16:9", "resolution": "1080p"},
   "optional_fields": ["character", "camera", "atmosphere", "lighting", "color", "audio", "narration", "reference_note", "style"],
+  "shot_style": {
+    "shot_prefix": "电影摄影：{shot_size}，{camera_angle}，{camera_move}。画幅 {aspect_ratio}，时长 {duration_s} 秒。",
+    "shot": "主体与动作：{subject_action}\n视觉锚点：{anchors}\n背景：{environment}\n风格：{style}\n灯光：{lighting}\n色彩：{color}\n音频：{sound}\n衔接：{continuity}",
+    "shot_suffix": "镜头：{lens}\n焦点：{focus}\n首帧：{first_frame}\n转场：{transition}\n负向：{negative_words}"
+  },
   "modalities": {
     "video": {
       "storyboard": "电影摄影：{camera}\n主体：{character}\n动作与故事：{story}\n\n{storyboard}\n\n背景：{atmosphere}\n风格：{style}\n灯光：{lighting}\n色彩：{color}\n音频：{audio}\n旁白：{narration}\n参考：{reference_note}",
