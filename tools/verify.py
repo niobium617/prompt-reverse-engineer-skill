@@ -40,6 +40,12 @@ EXAMPLES = SKILL / "assets" / "examples"
 FIXTURES = REPO / "tools" / "fixtures"
 TMP = REPO / "tools" / ".tmp_verify"
 
+PLATFORMS_DIR = REPO / "creative-platforms"
+PLATFORM_IDS = ("comfyui", "runway", "libtv")
+PLATFORM_FILES = ("platform_rules.md", "capability_map.json", "prompt_mapping.md",
+                  "workflow_mapping.json", "sources.md")
+CONFIDENCE_TAGS = ("verified", "unverified", "manual")
+
 WEIGHTS = {
     "theme_clarity": 20, "scene_completeness": 20, "style_fit": 20,
     "structure_clarity": 15, "param_reasonableness": 15, "adaptability": 10,
@@ -762,6 +768,257 @@ def main():
                 f"ok_{tag}", dict(base, uncertainty=[f"{tag}: 示例信息"]))
             assert rc == 0, f"{tag} 标签应放行，实际 {rc}：{decode(err)[:160]}"
         return True, "缺标签退出码 4；observed/inferred/unknown 三档均放行"
+
+    def ir_contract():
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "ir",
+                            "validate", "--analysis", FIXTURES / "semantic_image.json"])
+        data = stdout_json(rc, out, err)
+        assert data["valid"] is True and data["ir_version"] == "1.0", \
+            f"旧 JSON 未直接通过：{data.get('errors')}"
+        assert len(data["modules"]) == 11, "IR 模块数不是 11"
+
+        ir_dir = TMP / "ir_contract"
+        shutil.rmtree(str(ir_dir), ignore_errors=True)
+        ir_dir.mkdir(parents=True)
+        valid_asset = {"path": "input.png", "kind": "image", "sha256": "0" * 64}
+        cases = {
+            "version": ({"ir_version": "2.0"}, "ir_version"),
+            "workflow": ({"workflow": {"format": "comfyui_api"}}, "nodes"),
+            "asset": ({"assets": [{"path": "input.png", "kind": "image"}]}, "sha256"),
+            "path": ({"assets": [dict(valid_asset, path="C:/tmp/input.png")]}, "path"),
+            "confidence": ({"confidence": {"subject": {"status": "guessed",
+                                                        "basis": ""}}}, "status"),
+            "depth": ({"project": {"a": {"b": {"c": {"d": {"e": {"f": "x"}}}}}}},
+                      "深度"),
+        }
+        for name, (payload, needle) in cases.items():
+            path = ir_dir / f"{name}.json"
+            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "ir",
+                                "validate", "--analysis", path])
+            assert rc == 4, f"{name} 应退出码 4，实际 {rc}"
+            report = json.loads(decode(out))
+            joined = "\n".join(report["errors"])
+            assert needle in joined, f"{name} 错误缺少「{needle}」：{joined[:240]}"
+        valid = {
+            "ir_version": "1.0",
+            "project": {"name": "示例"},
+            "assets": [valid_asset],
+            "workflow": None,
+            "confidence": {"subject": {"status": "observed", "basis": "原图可见"}},
+        }
+        path = ir_dir / "valid.json"
+        path.write_text(json.dumps(valid, ensure_ascii=False), encoding="utf-8")
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "ir",
+                            "validate", "--analysis", path])
+        passed = stdout_json(rc, out, err)
+        assert passed["valid"] is True, f"合法 IR 未通过：{passed.get('errors')}"
+        return True, "旧 JSON 直接通过；6 类 IR 错误退出码 4；合法 IR 与 11 模块通过"
+
+    def workflow_parse():
+        out_dir = TMP / "workflow_parse"
+        shutil.rmtree(str(out_dir), ignore_errors=True)
+        out_dir.mkdir(parents=True)
+        api_report = out_dir / "wf_api.json"
+        rc, out, err = run([PYTHON, SCRIPTS / "analyze_workflow.py",
+                            FIXTURES / "workflow_api.json", "-o", api_report])
+        assert rc == 0, f"API 工作流解析失败：{decode(err)[:240]}"
+        data = json.loads(api_report.read_text(encoding="utf-8"))
+        assert data["modality"] == "workflow" and data["ir_version"] == "1.0"
+        wf = data["workflow"]
+        assert wf["format"] == "comfyui_api"
+        assert wf["stats"]["node_count"] == 11 and wf["stats"]["link_count"] == 15
+        assert wf["stats"]["model_count"] == 3 and wf["stats"]["asset_count"] == 1
+        assert wf["deps"]["model_files"] == [
+            "base.safetensors", "depth.safetensors", "detail.safetensors"]
+        assert not wf["issues"], f"API 样例不应有警告：{wf['issues']}"
+        rc, out1, _ = run([PYTHON, SCRIPTS / "analyze_workflow.py",
+                           FIXTURES / "workflow_api.json"])
+        rc, out2, _ = run([PYTHON, SCRIPTS / "analyze_workflow.py",
+                           FIXTURES / "workflow_api.json"])
+        assert rc == 0 and out1 == out2, "工作流解析输出不幂等"
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "ir",
+                            "validate", "--analysis", api_report])
+        assert stdout_json(rc, out, err)["valid"] is True, \
+            "analyze_workflow 输出未通过 IR 校验"
+
+        ui_report = out_dir / "wf_ui.json"
+        rc, _, err = run([PYTHON, SCRIPTS / "analyze_workflow.py",
+                          FIXTURES / "workflow_ui.json", "-o", ui_report])
+        assert rc == 0, f"UI 工作流解析失败：{decode(err)[:240]}"
+        ui = json.loads(ui_report.read_text(encoding="utf-8"))["workflow"]
+        assert ui["format"] == "comfyui_ui" and ui["version"] == "0.4"
+        assert ui["stats"]["node_count"] == 10 and ui["stats"]["link_count"] == 10
+        assert ui["stats"]["custom_node_count"] == 2
+        assert ui["stats"]["unknown_node_count"] == 1
+        assert any("MysteryNodeXP" in issue for issue in ui["issues"]), \
+            "未知节点应产生非阻断警告"
+        combined = api_report.read_text(encoding="utf-8") + \
+            ui_report.read_text(encoding="utf-8")
+        assert str(REPO.resolve()) not in combined and "C:\\" not in combined \
+            and "F:\\" not in combined, "工作流报告含绝对路径"
+        return True, ("API 11 节点/15 连线/3 模型；UI 10/10/2 自定义+1 未知警告；"
+                      "IR 通过；输出幂等；仅文件名")
+
+    def workflow_invalid():
+        bad_dir = TMP / "workflow_invalid"
+        shutil.rmtree(str(bad_dir), ignore_errors=True)
+        bad_dir.mkdir(parents=True)
+        api = json.loads((FIXTURES / "workflow_api.json").read_text(encoding="utf-8"))
+        ui = json.loads((FIXTURES / "workflow_ui.json").read_text(encoding="utf-8"))
+        dangling = json.loads(json.dumps(api))
+        dangling["8"]["inputs"]["samples"] = ["99", 0]
+        cycle = json.loads(json.dumps(api))
+        cycle["4"]["inputs"]["ckpt_name"] = ["8", 0]
+        ui_link = json.loads(json.dumps(ui))
+        ui_link["links"][0][1] = 99
+        cases = {
+            "dangling": (dangling, "悬空连线"),
+            "cycle": (cycle, "环"),
+            "ui_link": (ui_link, "不存在"),
+        }
+        for name, (payload, needle) in cases.items():
+            path = bad_dir / f"{name}.json"
+            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            rc, _, err = run([PYTHON, SCRIPTS / "analyze_workflow.py", path])
+            assert rc == 4, f"{name} 应退出码 4，实际 {rc}"
+            assert needle in decode(err), \
+                f"{name} 未报出「{needle}」：{decode(err)[:200]}"
+        broken = bad_dir / "broken.json"
+        broken.write_text("{not json", encoding="utf-8")
+        rc, _, _ = run([PYTHON, SCRIPTS / "analyze_workflow.py", broken])
+        assert rc == 4, f"坏 JSON 应退出码 4，实际 {rc}"
+
+        dup = {"workflow": {"nodes": [{"id": "1", "class_type": "A"},
+                                      {"id": "1", "class_type": "B"}]}}
+        loop = {"workflow": {
+            "nodes": [{"id": "1", "class_type": "A"},
+                      {"id": "2", "class_type": "B"}],
+            "links": [{"from": "1", "to": "2"}, {"from": "2", "to": "1"}],
+        }}
+        missing = {"workflow": {
+            "nodes": [{"id": "1", "class_type": "A"}],
+            "links": [{"from": "1", "to": "9"}],
+        }}
+        for name, payload, needle in (
+                ("ir_dup", dup, "重复"), ("ir_loop", loop, "环"),
+                ("ir_endpoint", missing, "不存在")):
+            path = bad_dir / f"{name}.json"
+            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            rc, out, _ = run([PYTHON, SCRIPTS / "prompt_compiler.py", "ir",
+                              "validate", "--analysis", path])
+            assert rc == 4, f"{name} 应退出码 4，实际 {rc}"
+            joined = "\n".join(json.loads(decode(out))["errors"])
+            assert needle in joined, f"{name} 错误缺少「{needle}」：{joined[:200]}"
+        return True, ("悬空连线/成环/UI 断链/坏 JSON 均退出码 4；"
+                      "IR 重复 ID/环/端点错误退出码 4")
+
+    def workflow_compat():
+        case_dir = TMP / "workflow_compat"
+        shutil.rmtree(str(case_dir), ignore_errors=True)
+        case_dir.mkdir(parents=True)
+        api_report = case_dir / "wf_api.json"
+        ui_report = case_dir / "wf_ui.json"
+        for fixture, target in ((FIXTURES / "workflow_api.json", api_report),
+                                (FIXTURES / "workflow_ui.json", ui_report)):
+            rc, _, err = run([PYTHON, SCRIPTS / "analyze_workflow.py",
+                              fixture, "-o", target])
+            assert rc == 0, f"准备报告失败：{decode(err)[:200]}"
+
+        def compat(report, target, fmt="json"):
+            args = [PYTHON, SCRIPTS / "prompt_compiler.py", "workflow",
+                    "--report", report, "--target", target, "--format", fmt,
+                    "--platforms-dir", PLATFORMS_DIR]
+            return run(args)
+
+        rc, out, err = compat(api_report, "comfyui")
+        same = stdout_json(rc, out, err)
+        assert same["overall"] == "compatible", f"同平台应为 compatible：{same['overall']}"
+        assert same["counts"]["compatible"] == 11 and same["counts"]["incompatible"] == 0
+        assert same["file_transfer"]["status"] == "compatible"
+        assert same["file_transfer"]["importable_output"] is False
+        rc, out, err = compat(ui_report, "comfyui")
+        same_ui = stdout_json(rc, out, err)
+        assert same_ui["counts"]["degraded"] == 2, \
+            f"自定义/未知节点应降级：{same_ui['counts']}"
+
+        rc, out, err = compat(api_report, "runway", "md")
+        assert rc == 0, decode(err)[:200]
+        md = decode(out)
+        assert "不可直接迁移" in md and "| 11 | LoadImage | image_asset | compatible |" in md
+        assert "不生成、不导入、不导出工作流文件" in md
+        assert "可导入产物：不生成" in md
+        rc, out, err = compat(api_report, "runway")
+        runway = stdout_json(rc, out, err)
+        assert runway["overall"] == "incompatible"
+        assert runway["counts"]["incompatible"] == 3, runway["counts"]
+        assert runway["file_transfer"]["status"] == "degraded"
+        assert runway["platform"]["target_formats"] == []
+
+        rc, out, err = compat(ui_report, "libtv")
+        libtv = stdout_json(rc, out, err)
+        assert libtv["overall"] == "degraded" and libtv["counts"]["incompatible"] == 0
+        assert libtv["platform"]["target_formats"] == []
+        assert all(item["mapping"] == [] or isinstance(item["mapping"], list)
+                   for item in libtv["items"])
+
+        rc, _, _ = compat(api_report, "nosuch")
+        assert rc == 1, f"未知目标应退出码 1，实际 {rc}"
+
+        # 幂等 + 无绝对路径
+        first, second = case_dir / "r1.md", case_dir / "r2.md"
+        for path in (first, second):
+            rc, _, err = compat(api_report, "runway", "md")
+            assert rc == 0
+        rc, out1, _ = compat(api_report, "runway", "md")
+        rc, out2, _ = compat(api_report, "runway", "md")
+        assert out1 == out2, "兼容报告输出不幂等"
+        text = decode(out1)
+        assert str(REPO.resolve()) not in text and "C:\\" not in text \
+            and "F:\\" not in text, "兼容报告含绝对路径"
+
+        # draft 平台：保守降级
+        draft_base = case_dir / "draft_platforms"
+        shutil.copytree(str(PLATFORMS_DIR / "runway"), str(draft_base / "runway"))
+        cap_path = draft_base / "runway" / "capability_map.json"
+        cap = json.loads(cap_path.read_text(encoding="utf-8"))
+        cap["status"] = "draft"
+        cap_path.write_text(json.dumps(cap, ensure_ascii=False), encoding="utf-8")
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "workflow",
+                            "--report", api_report, "--target", "runway",
+                            "--format", "json", "--platforms-dir", draft_base])
+        draft = stdout_json(rc, out, err)
+        assert draft["platform"]["draft"] is True
+        assert draft["overall"] == "degraded"
+        assert draft["counts"]["compatible"] == 0, "draft 平台不得给 compatible"
+        return True, ("comfyui 原生 11/11；UI 2 降级；runway 3 不兼容 + 手工步骤；"
+                      "libtv 全降级；未知目标退出 1；幂等；无绝对路径；draft 保守")
+
+    def workflow_docs():
+        spec = (SKILL / "references" / "ir_spec.md").read_text(encoding="utf-8")
+        for needle in ("analyze_workflow.py", "comfyui_api", "comfyui_ui",
+                       "importable_output", "category_aliases", "报告不可读",
+                       "悬空连线"):
+            assert needle in spec, f"ir_spec.md 缺少「{needle}」"
+        skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        for needle in ("analyze_workflow.py", "prompt_compiler.py workflow"):
+            assert needle in skill, f"SKILL.md 缺少「{needle}」"
+        readme = (REPO / "README.md").read_text(encoding="utf-8")
+        for needle in ("analyze_workflow", "ComfyUI", "兼容性报告"):
+            assert needle in readme, f"README 缺少「{needle}」"
+        cap = json.loads(
+            (PLATFORMS_DIR / "comfyui" / "capability_map.json").read_text(encoding="utf-8"))
+        feature = next((item for item in cap["features"]
+                        if "工作流只读解析" in item["name"]), None)
+        assert feature is not None, "ComfyUI 能力声明缺工作流解析"
+        assert feature["confidence"] == "verified", "工作流解析能力未标 verified"
+        assert "不生成" in feature["note"], "能力声明未保留不生成可导入工作流边界"
+        for pid in PLATFORM_IDS:
+            mapping = json.loads(
+                (PLATFORMS_DIR / pid / "workflow_mapping.json").read_text(encoding="utf-8"))
+            assert isinstance(mapping.get("category_aliases"), dict), \
+                f"{pid} workflow_mapping 缺 category_aliases"
+        return True, "IR 规范/SKILL/README 同步；ComfyUI 能力已 verified；三平台别名表齐全"
 
     def uncertainty_leak():
         base = json.loads(
@@ -1767,6 +2024,191 @@ def main():
         assert rc == 0, f"示例已漂移：{decode(out)[:400]}{decode(err)[:200]}"
         return True, "四模态 + Muse / Seedance 示例 output.md 与 gen_examples.py 生成结果逐字节一致"
 
+    def registry_reproducible():
+        rc, out, err = run([PYTHON, REPO / "tools" / "gen_registry.py", "--check"])
+        assert rc == 0, f"注册表已漂移：{decode(out)[:300]}{decode(err)[:300]}"
+        names = ("model_registry.json", "platform_registry.json",
+                 "capability_registry.json")
+        for name in names:
+            path = REPO / "config" / name
+            assert path.is_file(), f"缺少 config/{name}"
+            json.loads(path.read_text(encoding="utf-8"))
+        model_data = json.loads(
+            (REPO / "config" / "model_registry.json").read_text(encoding="utf-8"))
+        assert len(model_data["models"]) == 12, \
+            f"模型注册表应为 12 个，实际 {len(model_data['models'])}"
+        text = "\n".join(
+            (REPO / "config" / name).read_text(encoding="utf-8") for name in names)
+        assert str(REPO.resolve()) not in text and "C:\\" not in text \
+            and "F:\\" not in text, "注册表含绝对路径"
+        return True, "3 份注册表与源文件逐字节一致；12 模型；无绝对路径"
+
+    def registry_capability_claims():
+        names = ("model_registry.json", "platform_registry.json",
+                 "capability_registry.json")
+        texts = {name: (REPO / "config" / name).read_text(encoding="utf-8")
+                 for name in names}
+        capability = json.loads(texts["capability_registry.json"])
+        levels = capability["capability_levels"]
+        assert levels["L3"]["skill_support"] == "readonly_only", "L3 声明不符"
+        assert levels["L4"]["skill_support"] == "none", "L4 不得声明支持"
+        for model in capability["models"]:
+            assert model["capability_level"] in ("L1", "L2"), \
+                f"{model['id']} 能力等级异常：{model['capability_level']}"
+            assert "L1_prompt" in model["supported"], f"{model['id']} 缺 L1"
+            assert "L4_automation" in model["unsupported"], \
+                f"{model['id']} 未声明不支持 L4"
+        for name, text in texts.items():
+            assert "可运行" not in text, f"{name} 出现「可运行」表述"
+        platform = json.loads(texts["platform_registry.json"])
+        for item in platform["platforms"]:
+            assert item["status"] == "verified" and item["sources"], \
+                f"{item.get('platform')} 未通过来源闸门"
+        return True, "L3 只读/L4 不支持；12 模型均声明 L1 且不支持 L4；平台过来源闸门"
+
+    def platform_skeleton():
+        assert PLATFORMS_DIR.is_dir(), "缺少 creative-platforms/"
+        readme = (PLATFORMS_DIR / "README.md").read_text(encoding="utf-8")
+        assert "platform-adapters" in readme and "创作软件" in readme, \
+            "creative-platforms/README.md 未说明与 platform-adapters 的区别"
+        assert "L4" in readme and "draft" in readme, "README 未写能力等级或来源闸门"
+        for pid in PLATFORM_IDS:
+            folder = PLATFORMS_DIR / pid
+            missing = [name for name in PLATFORM_FILES if not (folder / name).is_file()]
+            assert not missing, f"{pid} 缺五件套文件：{missing}"
+            data = json.loads((folder / "capability_map.json").read_text(encoding="utf-8"))
+            assert data["platform"] == pid, f"{pid} 的 platform 字段不符"
+            assert data["status"] in ("verified", "draft"), f"{pid} status 非法"
+            assert data["automation"]["supported_by_skill"] is False, \
+                f"{pid} 不得声明由 Skill 支持自动化"
+            assert data["capability_level"] in ("L1", "L2", "L3"), \
+                f"{pid} 能力等级不得超过 L3：{data['capability_level']}"
+            assert isinstance(data["workflow_formats"], list)
+            for item in data.get("features", []) + data.get("models", []):
+                assert item.get("confidence") in CONFIDENCE_TAGS, \
+                    f"{pid} 条目缺置信度标记：{item}"
+            for source in data["sources"]:
+                assert source.get("url", "").startswith("https://"), \
+                    f"{pid} 来源 URL 必须为 https：{source.get('url')}"
+                assert isinstance(source.get("official"), bool) \
+                    and isinstance(source.get("verified"), bool), \
+                    f"{pid} 来源缺 official/verified 标记"
+            if data["status"] == "verified":
+                usable = [s for s in data["sources"]
+                          if s["official"] and s["verified"]]
+                assert usable, f"{pid} verified 但无已实际读取的官方来源（来源闸门）"
+            mapping = json.loads(
+                (folder / "workflow_mapping.json").read_text(encoding="utf-8"))
+            assert mapping["platform"] == pid and mapping["schema_version"] == "1.0"
+            assert isinstance(mapping["nodes"], list) and mapping["nodes"], \
+                f"{pid} workflow_mapping 无节点"
+            for node in mapping["nodes"]:
+                assert node.get("status") in ("mapped", "partial", "unknown"), \
+                    f"{pid} 节点状态非法：{node}"
+                assert node.get("confidence") in CONFIDENCE_TAGS, \
+                    f"{pid} 节点缺置信度：{node}"
+            aliases = mapping.get("category_aliases")
+            assert isinstance(aliases, dict), f"{pid} workflow_mapping 缺 category_aliases"
+            unified = {node["unified"] for node in mapping["nodes"]}
+            for key, values in aliases.items():
+                assert isinstance(key, str) and isinstance(values, list), \
+                    f"{pid} 别名表格式非法：{key}"
+                unknown = [value for value in values if value not in unified]
+                assert not unknown, f"{pid} 别名指向不存在的节点：{unknown}"
+            text = "\n".join((folder / name).read_text(encoding="utf-8")
+                             for name in PLATFORM_FILES)
+            for banned in ("可运行", "保证运行"):
+                assert banned not in text, f"{pid} 出现「{banned}」表述"
+            assert "需人工确认" in text, f"{pid} 缺少「需人工确认」降级/置信度说明"
+        return True, "三平台五件套齐全；schema/置信度/官方来源闸门通过"
+
+    def platform_registry_gate():
+        platform = json.loads(
+            (REPO / "config" / "platform_registry.json").read_text(encoding="utf-8"))
+        ids = [item["platform"] for item in platform["platforms"]]
+        assert ids == sorted(PLATFORM_IDS), \
+            f"平台注册表应为 {sorted(PLATFORM_IDS)}，实际 {ids}"
+        for item in platform["platforms"]:
+            pid = item["platform"]
+            assert item["status"] == "verified", f"{pid} 未通过来源闸门却进入注册表"
+            assert item["automation"]["supported_by_skill"] is False, \
+                f"{pid} 注册表声明了 Skill 自动化"
+            assert item["capability_level"] in ("L1", "L2", "L3"), \
+                f"{pid} 能力等级超过 L3"
+            assert any(s.get("official") and s.get("verified")
+                       for s in item["sources"]), f"{pid} 无已读官方来源"
+            assert item["source_path"] == f"creative-platforms/{pid}/capability_map.json", \
+                f"{pid} source_path 不符：{item['source_path']}"
+        capability = json.loads(
+            (REPO / "config" / "capability_registry.json").read_text(encoding="utf-8"))
+        pids = [item["id"] for item in capability["platforms"]]
+        assert pids == sorted(PLATFORM_IDS), f"能力注册表平台不符：{pids}"
+        for item in capability["platforms"]:
+            assert item["capability_level"] in ("L1", "L2", "L3")
+            assert "L3_workflow_generation" in item["unsupported"]
+            assert "L4_automation" in item["unsupported"]
+        combined = "\n".join(
+            (REPO / "config" / name).read_text(encoding="utf-8")
+            for name in ("platform_registry.json", "capability_registry.json"))
+        assert "可运行" not in combined and str(REPO.resolve()) not in combined
+        return True, "3 平台过闸门进入注册表；L1-L3；均声明不支持生成/L4；无绝对路径"
+
+    def platform_materialization():
+        target = TMP / "install_platforms"
+        shutil.rmtree(str(target), ignore_errors=True)
+        (target / ".claude").mkdir(parents=True)
+        cmd = [PYTHON, REPO / "tools" / "install.py",
+               "--target-root", target, "--platform", "claude"]
+        rc, out, err = run(cmd)
+        assert rc == 0, f"junction 安装失败：{decode(err)[:300]}"
+        assert (SKILL / "platforms").exists(), "技能本体下未物化 platforms/"
+        installed = (target / ".claude" / "skills" / "prompt-reverse-engineer"
+                     / "platforms")
+        for pid in PLATFORM_IDS:
+            assert (installed / pid / "capability_map.json").is_file(), \
+                f"junction 安装态读不到 {pid} 平台资料"
+        rc2, out2, _ = run(cmd)
+        assert rc2 == 0 and "[SKIP]" in decode(out2), "平台资料物化不幂等"
+        # copy 模式：物理复制到技能实例 platforms/
+        ctarget = TMP / "install_platforms_copy"
+        shutil.rmtree(str(ctarget), ignore_errors=True)
+        (ctarget / ".claude").mkdir(parents=True)
+        rc3, _, err3 = run([PYTHON, REPO / "tools" / "install.py", "--target-root", ctarget,
+                            "--platform", "claude", "--mode", "copy"])
+        assert rc3 == 0, f"copy 模式安装失败：{decode(err3)[:300]}"
+        cdest = ctarget / ".claude" / "skills" / "prompt-reverse-engineer"
+        for pid in PLATFORM_IDS:
+            assert (cdest / "platforms" / pid / "capability_map.json").is_file(), \
+                f"copy 模式缺 {pid} 平台资料"
+        # 豆包包：平台资料必须随包上传
+        rc4, _, err4 = run([PYTHON, REPO / "tools" / "install.py", "--platform", "doubao"])
+        assert rc4 == 0, f"豆包产物生成失败：{decode(err4)[:300]}"
+        import zipfile
+        zip_path = REPO / "platform-adapters" / "doubao" / "prompt-reverse-engineer.zip"
+        with zipfile.ZipFile(str(zip_path)) as zf:
+            names = set(zf.namelist())
+        for pid in PLATFORM_IDS:
+            entry = f"prompt-reverse-engineer/platforms/{pid}/capability_map.json"
+            assert entry in names, f"豆包包缺 {entry}"
+        return True, "junction/copy/豆包包均物化 platforms/，三平台资料可读且幂等"
+
+    def ir_docs():
+        spec = (SKILL / "references" / "ir_spec.md").read_text(encoding="utf-8")
+        modules = ("project", "subject", "scene", "visual", "shot", "prompt",
+                   "reference", "model", "parameters", "workflow", "assets")
+        missing = [module for module in modules if module not in spec]
+        assert not missing, f"ir_spec.md 缺少模块：{missing}"
+        for needle in ("ir_version", "1.0", "退出码 4", "unknown", "11",
+                       "analyze_workflow.py", "category_aliases"):
+            assert needle in spec, f"ir_spec.md 缺少「{needle}」"
+        skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        assert "ir validate" in skill and "IR 1.0" in skill and "ir_spec.md" in skill, \
+            "SKILL.md 未同步 IR 命令/元信息卡/参考索引"
+        readme = (REPO / "README.md").read_text(encoding="utf-8")
+        assert "IR 1.0" in readme and "ir_spec.md" in readme, \
+            "README 未同步 IR"
+        return True, "ir_spec 覆盖 11 模块与校验规则；SKILL/README 已同步"
+
     def reference_role_docs():
         roles = ("edit_target", "identity_reference", "pose_reference",
                  "clothing_reference", "style_reference", "composition_reference",
@@ -1890,6 +2332,11 @@ def main():
         ("负向层/场景编号", negative_scene_numbering),
         ("负向层/参考图角色", gpt_image_contracts),
         ("负向层/uncertainty 标签", uncertainty_tags),
+        ("契约层/IR 校验", ir_contract),
+        ("工作流层/只读解析与 IR", workflow_parse),
+        ("负向层/工作流结构错误", workflow_invalid),
+        ("工作流层/跨平台兼容报告", workflow_compat),
+        ("一致性/工作流文档与能力声明", workflow_docs),
         ("安装层/install 冒烟", install_smoke),
         ("安装层/copy 模式冒烟", install_copy_smoke),
         ("安装层/Python 3.10 降级", install_without_tomllib),
@@ -1933,8 +2380,14 @@ def main():
         ("一致性/依赖声明", dependency_docs),
         ("一致性/README 断言数", readme_assertion_counts),
         ("一致性/示例可复现", examples_reproducible),
+        ("一致性/注册表可复现", registry_reproducible),
+        ("一致性/注册表能力声明", registry_capability_claims),
+        ("一致性/IR 文档契约", ir_docs),
         ("一致性/参考图角色文档", reference_role_docs),
         ("一致性/uncertainty 泄漏提示", uncertainty_leak),
+        ("平台层/五件套与能力声明", platform_skeleton),
+        ("平台层/注册表闸门", platform_registry_gate),
+        ("安装层/平台资料物化", platform_materialization),
     ]
     global CHECKS_TOTAL
     CHECKS_TOTAL = len(checks)

@@ -1,0 +1,177 @@
+{
+  "platform": "libtv",
+  "display_name": "LibTV",
+  "status": "verified",
+  "version_verified": "2026-11-17",
+  "capability_level": "L1",
+  "modalities": [
+    "image",
+    "video",
+    "audio",
+    "text"
+  ],
+  "workflow_formats": [],
+  "import_export": {
+    "import": "unknown",
+    "export": "unknown"
+  },
+  "api": {
+    "local": false,
+    "cloud": "unknown"
+  },
+  "automation": {
+    "platform_level": "L4",
+    "supported_by_skill": false
+  },
+  "models": [
+    {
+      "name": "Wan 3.0",
+      "confidence": "verified",
+      "note": "官网首页模型列表"
+    },
+    {
+      "name": "Kling 4.0",
+      "confidence": "verified",
+      "note": "官网首页模型列表；落地页提及原生 4K"
+    },
+    {
+      "name": "SD2 Mini&Fast",
+      "confidence": "verified",
+      "note": "官网首页模型列表"
+    },
+    {
+      "name": "SD 2.5 Flash",
+      "confidence": "verified",
+      "note": "官网首页模型列表"
+    },
+    {
+      "name": "Seedream 5.5",
+      "confidence": "verified",
+      "note": "官网首页模型列表"
+    },
+    {
+      "name": "Seedance 2.5",
+      "confidence": "verified",
+      "note": "官网首页模型列表；落地页为定向优化版"
+    },
+    {
+      "name": "MiniMax H3",
+      "confidence": "verified",
+      "note": "AI 视频落地页模型区"
+    }
+  ],
+  "features": [
+    {
+      "name": "LibTV 画布",
+      "confidence": "verified",
+      "note": "官网首页导航"
+    },
+    {
+      "name": "LibTV Agent（BETA）",
+      "confidence": "verified",
+      "note": "官网首页导航"
+    },
+    {
+      "name": "LibTV 3D-BOX",
+      "confidence": "verified",
+      "note": "官网首页导航"
+    },
+    {
+      "name": "视频生成 / 图片生成 / 音频生成",
+      "confidence": "verified",
+      "note": "官网首页功能入口"
+    },
+    {
+      "name": "剧本生成 / 智能剪辑",
+      "confidence": "verified",
+      "note": "官网首页功能入口"
+    },
+    {
+      "name": "导入剧本、原创剧本与改编",
+      "confidence": "verified",
+      "note": "AI 视频落地页"
+    },
+    {
+      "name": "6 大场景模板（短剧/漫剧/影视/自媒体/TVC广告/游戏）",
+      "confidence": "verified",
+      "note": "AI 视频落地页"
+    },
+    {
+      "name": "TV Director 辅助分镜语言与导演风格",
+      "confidence": "verified",
+      "note": "AI 视频落地页"
+    },
+    {
+      "name": "角色设定 / 核心看点 / 时代背景 / 目标受众",
+      "confidence": "verified",
+      "note": "AI 视频落地页剧本设定区"
+    },
+    {
+      "name": "LibTV Plugin 让 Agent 自动化生成视频或图像",
+      "confidence": "verified",
+      "note": "插件页；属平台 + Plugin 原生能力，本 Skill 不调用"
+    },
+    {
+      "name": "画布节点类型、连线格式、节点参数",
+      "confidence": "unverified",
+      "note": "官方公开页面未说明"
+    },
+    {
+      "name": "项目/工作流文件导入导出",
+      "confidence": "unverified",
+      "note": "官方公开页面未说明"
+    },
+    {
+      "name": "公开 REST API 与鉴权",
+      "confidence": "unverified",
+      "note": "未核验到公开 API 文档；插件安装不等同于 REST API"
+    }
+  ],
+  "incompatible": [
+    "由本 Skill 自动执行 LibTV 创作流程（L4 不做）",
+    "由本 Skill 安装 Plugin 或完成账号授权",
+    "公开 REST API 调用（未核验到）",
+    "项目/工作流文件导入导出（官方未公开格式）",
+    "节点级参数精确映射（节点结构未公开）"
+  ],
+  "degrade": [
+    "分镜字段/节点结构未知：只给剧本、分镜内容与逐镜 Prompt，由用户手动填入",
+    "账号或 Plugin 不可用：按手动创作流程给步骤，不承诺自动执行",
+    "模型可用性未知：列候选模型，提示以账号内列表为准",
+    "安装态找不到 platforms/：只输出通用 Prompt，并说明未加载平台资料"
+  ],
+  "dependencies": {
+    "runtime": "cloud",
+    "version": "unknown",
+    "notes": [
+      "依赖 LibTV 账号；本 Skill 不登录、不授权、不读取账号数据",
+      "Plugin 需用户自行安装并授权，本 Skill 不代装"
+    ]
+  },
+  "sources": [
+    {
+      "title": "LibTV - 专业视频创作工具（官网首页）",
+      "url": "https://www.liblib.tv/",
+      "accessed": "2026-11-17",
+      "official": true,
+      "verified": true,
+      "note": "读取到画布/Agent/3D-BOX、五类生成能力、模型列表与导航"
+    },
+    {
+      "title": "AI 视频生成 - 一句话剧本复刻爆款成片 | LibTV",
+      "url": "https://www.liblib.tv/ai-video/scene",
+      "accessed": "2026-11-17",
+      "official": true,
+      "verified": true,
+      "note": "读取到导入剧本、6 大场景模板、TV Director、角色设定等"
+    },
+    {
+      "title": "LibTV Plugin（插件页）",
+      "url": "https://www.liblib.tv/plugin",
+      "accessed": "2026-11-17",
+      "official": true,
+      "verified": true,
+      "note": "读取到 Agent 集成、安装命令、账户授权、支持宿主"
+    }
+  ]
+}

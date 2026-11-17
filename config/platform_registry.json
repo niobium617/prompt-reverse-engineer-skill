@@ -1,0 +1,456 @@
+{
+  "generated_by": "tools/gen_registry.py",
+  "platforms": [
+    {
+      "api": {
+        "cloud": "unknown",
+        "local": true
+      },
+      "automation": {
+        "platform_level": "L4",
+        "supported_by_skill": false
+      },
+      "capability_level": "L2",
+      "degrade": [
+        "缺少节点或模型：映射标 unknown，并给出人工补装方向，不自动下载",
+        "无法读取工作流：只给人工搭建说明与通用 Prompt",
+        "安装态找不到 platforms/：只输出通用 Prompt，并说明未加载平台资料",
+        "工作流无效（悬空连线/成环/结构非法）：退出码 4，不输出解析结论",
+        "兼容性报告只做只读结论：不生成、不导入、不导出可导入工作流，不调用平台 API"
+      ],
+      "dependencies": {
+        "custom_nodes": [],
+        "notes": [
+          "自定义节点与模型权重按具体工作流逐个登记；本文件不维护全量清单"
+        ],
+        "version": "unknown"
+      },
+      "display_name": "ComfyUI",
+      "features": [
+        {
+          "confidence": "verified",
+          "name": "节点式画布与有向图工作流",
+          "note": "官方 Workflow JSON 规范以 nodes/links/groups 描述图结构"
+        },
+        {
+          "confidence": "verified",
+          "name": "UI 保存格式（version 1.0，兼容旧版 0.4）",
+          "note": "官方规范当前版为 1.0（Latest），并保留 0.4"
+        },
+        {
+          "confidence": "verified",
+          "name": "API 格式工作流（节点 ID → class_type/inputs）",
+          "note": "官方 Workflow API Format 文档；API 格式省略位置/颜色/分组等 UI 元数据"
+        },
+        {
+          "confidence": "verified",
+          "name": "File → Export Workflow (API) 导出 API 格式",
+          "note": "官方文档给出的导出入口"
+        },
+        {
+          "confidence": "verified",
+          "name": "自定义节点扩展",
+          "note": "官方提供自定义节点开发与安装文档；具体节点包不在本 Skill 核验范围"
+        },
+        {
+          "confidence": "manual",
+          "name": "官方内置节点类名（如 CLIPTextEncode / KSampler）",
+          "note": "类名随版本与本机安装变化，必须以本机节点定义（object_info）确认"
+        },
+        {
+          "confidence": "verified",
+          "name": "工作流只读解析与兼容性报告",
+          "note": "analyze_workflow.py 解析 API/UI JSON，prompt_compiler.py workflow 输出兼容性报告；不生成、不导入可导入工作流，类名与端口仍需本机 object_info 确认"
+        }
+      ],
+      "import_export": {
+        "export": true,
+        "import": true
+      },
+      "incompatible": [
+        "闭源工程文件（.blend / .psd / .prproj / .aep 等）",
+        "未安装的自定义节点",
+        "缺失的模型权重 / LoRA / ControlNet",
+        "只有成品图或视频、没有工作流文件时，无法确定性还原制作过程"
+      ],
+      "modalities": [
+        "image",
+        "video",
+        "workflow"
+      ],
+      "models": [],
+      "platform": "comfyui",
+      "source_path": "creative-platforms/comfyui/capability_map.json",
+      "sources": [
+        {
+          "accessed": "2026-11-17",
+          "note": "读取到 version/nodes/links/groups 与 1.0/0.4 版本说明",
+          "official": true,
+          "title": "Workflow JSON - ComfyUI",
+          "url": "https://docs.comfy.org/specs/workflow_json",
+          "verified": true
+        },
+        {
+          "accessed": "2026-11-17",
+          "note": "读取到 Save vs API、class_type/inputs、Export Workflow (API)、API 省略 UI 元数据",
+          "official": true,
+          "title": "Workflow API Format - ComfyUI",
+          "url": "https://docs.comfy.org/development/api-development/workflow-api-format",
+          "verified": true
+        },
+        {
+          "accessed": "2026-11-17",
+          "note": "官方索引收录；本次未逐页读取正文",
+          "official": true,
+          "title": "Workflow JSON 0.4 - ComfyUI",
+          "url": "https://docs.comfy.org/specs/workflow_json_0.4",
+          "verified": false
+        },
+        {
+          "accessed": "2026-11-17",
+          "note": "官方索引收录；节点定义字段未逐项核验",
+          "official": true,
+          "title": "Node Definition JSON - ComfyUI",
+          "url": "https://docs.comfy.org/specs/nodedef_json",
+          "verified": false
+        },
+        {
+          "accessed": "2026-11-17",
+          "note": "官方索引收录；本次未读取正文",
+          "official": true,
+          "title": "ComfyUI Workflow Metadata in Output Files",
+          "url": "https://docs.comfy.org/development/api-development/workflow-metadata",
+          "verified": false
+        }
+      ],
+      "status": "verified",
+      "version_verified": "2026-11-17",
+      "workflow_formats": [
+        "ui_json",
+        "api_json"
+      ]
+    },
+    {
+      "api": {
+        "cloud": "unknown",
+        "local": false
+      },
+      "automation": {
+        "platform_level": "L4",
+        "supported_by_skill": false
+      },
+      "capability_level": "L1",
+      "degrade": [
+        "分镜字段/节点结构未知：只给剧本、分镜内容与逐镜 Prompt，由用户手动填入",
+        "账号或 Plugin 不可用：按手动创作流程给步骤，不承诺自动执行",
+        "模型可用性未知：列候选模型，提示以账号内列表为准",
+        "安装态找不到 platforms/：只输出通用 Prompt，并说明未加载平台资料"
+      ],
+      "dependencies": {
+        "notes": [
+          "依赖 LibTV 账号；本 Skill 不登录、不授权、不读取账号数据",
+          "Plugin 需用户自行安装并授权，本 Skill 不代装"
+        ],
+        "runtime": "cloud",
+        "version": "unknown"
+      },
+      "display_name": "LibTV",
+      "features": [
+        {
+          "confidence": "verified",
+          "name": "LibTV 画布",
+          "note": "官网首页导航"
+        },
+        {
+          "confidence": "verified",
+          "name": "LibTV Agent（BETA）",
+          "note": "官网首页导航"
+        },
+        {
+          "confidence": "verified",
+          "name": "LibTV 3D-BOX",
+          "note": "官网首页导航"
+        },
+        {
+          "confidence": "verified",
+          "name": "视频生成 / 图片生成 / 音频生成",
+          "note": "官网首页功能入口"
+        },
+        {
+          "confidence": "verified",
+          "name": "剧本生成 / 智能剪辑",
+          "note": "官网首页功能入口"
+        },
+        {
+          "confidence": "verified",
+          "name": "导入剧本、原创剧本与改编",
+          "note": "AI 视频落地页"
+        },
+        {
+          "confidence": "verified",
+          "name": "6 大场景模板（短剧/漫剧/影视/自媒体/TVC广告/游戏）",
+          "note": "AI 视频落地页"
+        },
+        {
+          "confidence": "verified",
+          "name": "TV Director 辅助分镜语言与导演风格",
+          "note": "AI 视频落地页"
+        },
+        {
+          "confidence": "verified",
+          "name": "角色设定 / 核心看点 / 时代背景 / 目标受众",
+          "note": "AI 视频落地页剧本设定区"
+        },
+        {
+          "confidence": "verified",
+          "name": "LibTV Plugin 让 Agent 自动化生成视频或图像",
+          "note": "插件页；属平台 + Plugin 原生能力，本 Skill 不调用"
+        },
+        {
+          "confidence": "unverified",
+          "name": "画布节点类型、连线格式、节点参数",
+          "note": "官方公开页面未说明"
+        },
+        {
+          "confidence": "unverified",
+          "name": "项目/工作流文件导入导出",
+          "note": "官方公开页面未说明"
+        },
+        {
+          "confidence": "unverified",
+          "name": "公开 REST API 与鉴权",
+          "note": "未核验到公开 API 文档；插件安装不等同于 REST API"
+        }
+      ],
+      "import_export": {
+        "export": "unknown",
+        "import": "unknown"
+      },
+      "incompatible": [
+        "由本 Skill 自动执行 LibTV 创作流程（L4 不做）",
+        "由本 Skill 安装 Plugin 或完成账号授权",
+        "公开 REST API 调用（未核验到）",
+        "项目/工作流文件导入导出（官方未公开格式）",
+        "节点级参数精确映射（节点结构未公开）"
+      ],
+      "modalities": [
+        "image",
+        "video",
+        "audio",
+        "text"
+      ],
+      "models": [
+        {
+          "confidence": "verified",
+          "name": "Wan 3.0",
+          "note": "官网首页模型列表"
+        },
+        {
+          "confidence": "verified",
+          "name": "Kling 4.0",
+          "note": "官网首页模型列表；落地页提及原生 4K"
+        },
+        {
+          "confidence": "verified",
+          "name": "SD2 Mini&Fast",
+          "note": "官网首页模型列表"
+        },
+        {
+          "confidence": "verified",
+          "name": "SD 2.5 Flash",
+          "note": "官网首页模型列表"
+        },
+        {
+          "confidence": "verified",
+          "name": "Seedream 5.5",
+          "note": "官网首页模型列表"
+        },
+        {
+          "confidence": "verified",
+          "name": "Seedance 2.5",
+          "note": "官网首页模型列表；落地页为定向优化版"
+        },
+        {
+          "confidence": "verified",
+          "name": "MiniMax H3",
+          "note": "AI 视频落地页模型区"
+        }
+      ],
+      "platform": "libtv",
+      "source_path": "creative-platforms/libtv/capability_map.json",
+      "sources": [
+        {
+          "accessed": "2026-11-17",
+          "note": "读取到画布/Agent/3D-BOX、五类生成能力、模型列表与导航",
+          "official": true,
+          "title": "LibTV - 专业视频创作工具（官网首页）",
+          "url": "https://www.liblib.tv/",
+          "verified": true
+        },
+        {
+          "accessed": "2026-11-17",
+          "note": "读取到导入剧本、6 大场景模板、TV Director、角色设定等",
+          "official": true,
+          "title": "AI 视频生成 - 一句话剧本复刻爆款成片 | LibTV",
+          "url": "https://www.liblib.tv/ai-video/scene",
+          "verified": true
+        },
+        {
+          "accessed": "2026-11-17",
+          "note": "读取到 Agent 集成、安装命令、账户授权、支持宿主",
+          "official": true,
+          "title": "LibTV Plugin（插件页）",
+          "url": "https://www.liblib.tv/plugin",
+          "verified": true
+        }
+      ],
+      "status": "verified",
+      "version_verified": "2026-11-17",
+      "workflow_formats": []
+    },
+    {
+      "api": {
+        "cloud": true,
+        "local": false
+      },
+      "automation": {
+        "platform_level": "L4",
+        "supported_by_skill": false
+      },
+      "capability_level": "L1",
+      "degrade": [
+        "节点参数未确认：只给步骤级映射，参数标「需人工确认」",
+        "无 API Key 或账号不可用：不执行，仅给人工搭建步骤",
+        "无法确认模型可用性：给候选模型并提示以账号内列表为准",
+        "安装态找不到 platforms/：只输出通用 Prompt，并说明未加载平台资料"
+      ],
+      "dependencies": {
+        "notes": [
+          "依赖 Runway 账号与 Runway Dev API Key，但本 Skill 不读取、不调用",
+          "模型上线状态与参数以账号内 Workflows 界面为准"
+        ],
+        "runtime": "cloud",
+        "version": "unknown"
+      },
+      "display_name": "Runway Workflows",
+      "features": [
+        {
+          "confidence": "verified",
+          "name": "可视化多步骤工作流",
+          "note": "官方定义：连接模型、Prompt 与媒体操作的视觉化流水线"
+        },
+        {
+          "confidence": "verified",
+          "name": "一个工作流发布为一个 API 端点",
+          "note": "开发者页明确；端点不随内部编辑改变"
+        },
+        {
+          "confidence": "verified",
+          "name": "输入节点（图片/视频/文本）",
+          "note": "产品页 Input Nodes 说明"
+        },
+        {
+          "confidence": "verified",
+          "name": "媒体模型节点（图片/视频生成）",
+          "note": "产品页 Media Model Nodes 说明"
+        },
+        {
+          "confidence": "verified",
+          "name": "LLM 节点（扩写/分析/统一风格）",
+          "note": "产品页 LLM Nodes 说明"
+        },
+        {
+          "confidence": "verified",
+          "name": "预置 Recipes（广告本地化/产品广告/多镜头视频等）",
+          "note": "开发者页 Recipes 列表"
+        },
+        {
+          "confidence": "verified",
+          "name": "按模型与处理步骤计费",
+          "note": "开发者页 FAQ"
+        },
+        {
+          "confidence": "unverified",
+          "name": "工作流文件导入/导出格式",
+          "note": "官方页面未公开文件格式；不假设存在"
+        },
+        {
+          "confidence": "unverified",
+          "name": "节点参数名与默认值",
+          "note": "本次核验页面未逐项列出；需在账号界面人工确认"
+        }
+      ],
+      "import_export": {
+        "export": "unknown",
+        "import": "unknown"
+      },
+      "incompatible": [
+        "本地执行（Runway Workflows 是云端产品）",
+        "任意自定义节点 / 第三方节点包",
+        "未公开的工作流文件导入导出",
+        "由本 Skill 直接调用 API 或发布端点（L4 不做）"
+      ],
+      "modalities": [
+        "image",
+        "video",
+        "text"
+      ],
+      "models": [
+        {
+          "confidence": "verified",
+          "name": "Gen-4.5",
+          "note": "开发者 Workflows 页面展示 Gen-4.5 节点"
+        },
+        {
+          "confidence": "verified",
+          "name": "Gen-4",
+          "note": "产品页 Media Model Nodes 可用模型列表"
+        },
+        {
+          "confidence": "verified",
+          "name": "Gen-4 Turbo",
+          "note": "产品页 Media Model Nodes 可用模型列表"
+        },
+        {
+          "confidence": "verified",
+          "name": "Flash 2.5",
+          "note": "产品页 Media Model Nodes 可用模型列表"
+        },
+        {
+          "confidence": "verified",
+          "name": "Veo 3.1",
+          "note": "产品页 Media Model Nodes 可用模型列表；第三方模型"
+        },
+        {
+          "confidence": "verified",
+          "name": "其他实验室精选模型",
+          "note": "官方 FAQ 明确 Workflows 可组合其他实验室模型；具体清单随上线变化，需人工确认"
+        }
+      ],
+      "platform": "runway",
+      "source_path": "creative-platforms/runway/capability_map.json",
+      "sources": [
+        {
+          "accessed": "2026-11-17",
+          "note": "读取到工作流定义、单端点、节点类别、Recipes、计费与发布说明",
+          "official": true,
+          "title": "Workflows: AI Media Pipelines as One API Endpoint | Runway",
+          "url": "https://dev.runway.com/workflows",
+          "verified": true
+        },
+        {
+          "accessed": "2026-11-17",
+          "note": "读取到 Input/Media Model/LLM 节点说明与可用模型列表",
+          "official": true,
+          "title": "Runway Workflows | Runway AI",
+          "url": "https://runwayml.com/workflows",
+          "verified": true
+        }
+      ],
+      "status": "verified",
+      "version_verified": "2026-11-17",
+      "workflow_formats": []
+    }
+  ],
+  "schema_version": "1.0"
+}

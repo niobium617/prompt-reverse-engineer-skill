@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "platform": "libtv",
+  "status": "verified",
+  "last_verified": "2026-11-17",
+  "scope": "v1 骨架：只登记官方公开的产品环节与能力类别。节点类型、字段结构、项目文件格式与公开 REST API 均未公开，统一标 unknown；不生成、不导入、不导出项目或工作流文件。",
+  "nodes": [
+    {
+      "unified": "script",
+      "platform": [
+        "剧本生成",
+        "导入剧本"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "官网首页与 AI 视频落地页均列出；字段结构未公开"
+    },
+    {
+      "unified": "character",
+      "platform": [
+        "角色设定"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "落地页剧本设定区；实现方式与字段未公开"
+    },
+    {
+      "unified": "storyboard",
+      "platform": [
+        "分镜",
+        "TV Director"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "TV Director 辅助分镜语言与导演风格；分镜字段需人工确认"
+    },
+    {
+      "unified": "scene_template",
+      "platform": [
+        "6 大场景模板"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "短剧 / 漫剧 / 影视 / 自媒体 / TVC 广告 / 游戏；具体选项需人工确认"
+    },
+    {
+      "unified": "text_prompt",
+      "platform": [
+        "生成界面的 Prompt 输入"
+      ],
+      "status": "mapped",
+      "confidence": "manual",
+      "note": "界面存在输入区，但字段名与长度限制未公开"
+    },
+    {
+      "unified": "image_asset",
+      "platform": [
+        "图片生成 / 资产"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "官网首页列出图片生成；参考图接入方式需人工确认"
+    },
+    {
+      "unified": "video_model",
+      "platform": [
+        "视频生成"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "模型列表已验证存在；逐模型参数需人工确认"
+    },
+    {
+      "unified": "audio",
+      "platform": [
+        "音频生成"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "官网首页列出音频生成；参数与接口未核验"
+    },
+    {
+      "unified": "editing",
+      "platform": [
+        "智能剪辑"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "官网首页列出；具体能力边界未公开"
+    },
+    {
+      "unified": "agent_automation",
+      "platform": [
+        "LibTV Agent（BETA）",
+        "LibTV Plugin"
+      ],
+      "status": "unknown",
+      "confidence": "unverified",
+      "note": "平台 + Plugin 原生能力；调用链、配额、鉴权未公开，本 Skill 不调用"
+    },
+    {
+      "unified": "workflow_file",
+      "platform": [],
+      "status": "unknown",
+      "confidence": "unverified",
+      "note": "官方未公开项目/工作流文件导入导出格式；不假设存在"
+    },
+    {
+      "unified": "api",
+      "platform": [],
+      "status": "unknown",
+      "confidence": "unverified",
+      "note": "未核验到公开 REST API 与鉴权文档"
+    }
+  ],
+  "category_aliases": {
+    "negative_prompt": ["text_prompt"],
+    "model_loader": ["image_asset", "video_model"],
+    "sampler": ["image_asset", "video_model"],
+    "decode": ["image_asset", "video_model"],
+    "resolution": ["image_asset", "video_model"],
+    "image_output": ["image_asset"],
+    "video_output": ["editing"],
+    "lora": [],
+    "controlnet": [],
+    "upscale": [],
+    "conditioning": []
+  },
+  "edges": [
+    {
+      "from": "script",
+      "to": "character",
+      "status": "observed",
+      "confidence": "verified",
+      "note": "落地页流程：剧本后做角色与剧本设定"
+    },
+    {
+      "from": "character",
+      "to": "storyboard",
+      "status": "observed",
+      "confidence": "verified",
+      "note": "角色设定完成后进入分镜"
+    },
+    {
+      "from": "storyboard",
+      "to": "video_model",
+      "status": "observed",
+      "confidence": "verified",
+      "note": "分镜驱动逐镜视频生成"
+    },
+    {
+      "from": "image_asset",
+      "to": "video_model",
+      "status": "observed",
+      "confidence": "manual",
+      "note": "图生视频可用参考图；具体接入方式需人工确认"
+    },
+    {
+      "from": "video_model",
+      "to": "editing",
+      "status": "observed",
+      "confidence": "verified",
+      "note": "生成片段进入智能剪辑"
+    }
+  ],
+  "unmapped": [
+    "画布节点类型、连线格式、端口名",
+    "分镜字段名与可选值",
+    "各模型时长/画幅/分辨率限制",
+    "音频生成与智能剪辑的参数",
+    "公开 REST API 端点、鉴权、配额",
+    "项目/工作流文件格式",
+    "插件调用的具体链路"
+  ],
+  "notes": [
+    "本文件是映射资料，不是项目或工作流文件；不得据此生成可导入 JSON 或接口调用",
+    "Agent / Plugin 的自动化是平台原生能力，不计入本 Skill 能力",
+    "本 Skill 不安装插件、不授权账号、不调用生成接口"
+  ]
+}

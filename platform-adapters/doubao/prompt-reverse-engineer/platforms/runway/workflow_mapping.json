@@ -1,0 +1,140 @@
+{
+  "schema_version": "1.0",
+  "platform": "runway",
+  "status": "verified",
+  "last_verified": "2026-11-17",
+  "scope": "v1 骨架：只登记官方 Workflows 页面明确给出的节点类别与输入输出。具体参数、端口名、默认值未公开，统一标需人工确认。不生成、不导入、不导出工作流文件。",
+  "nodes": [
+    {
+      "unified": "text_prompt",
+      "platform": [
+        "Input nodes（Text）"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "官方 Input Nodes 支持手动输入文本"
+    },
+    {
+      "unified": "image_asset",
+      "platform": [
+        "Input nodes（Image）"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "官方 Input Nodes 支持上传图片"
+    },
+    {
+      "unified": "video_asset",
+      "platform": [
+        "Input nodes（Video）"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "官方 Input Nodes 支持上传视频"
+    },
+    {
+      "unified": "image_model",
+      "platform": [
+        "Media Model Nodes（图片输出）"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "官方说明媒体模型节点可输出图片；具体模型与参数需人工确认"
+    },
+    {
+      "unified": "video_model",
+      "platform": [
+        "Media Model Nodes（视频输出）"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "官方说明媒体模型节点可输出视频；具体模型与参数需人工确认"
+    },
+    {
+      "unified": "llm",
+      "platform": [
+        "LLM Nodes"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "官方说明 LLM 节点可分析/增强/改写 Prompt；本 Skill 默认不启用"
+    },
+    {
+      "unified": "output",
+      "platform": [
+        "API endpoint（发布后的工作流端点）"
+      ],
+      "status": "mapped",
+      "confidence": "verified",
+      "note": "官方说明一个工作流发布为一个端点；本 Skill 不调用"
+    },
+    {
+      "unified": "audio",
+      "platform": [],
+      "status": "unknown",
+      "confidence": "unverified",
+      "note": "本次核验的 Workflows 页面未展开音频节点"
+    },
+    {
+      "unified": "workflow_file",
+      "platform": [],
+      "status": "unknown",
+      "confidence": "unverified",
+      "note": "官方未公开工作流文件导入/导出格式；不假设存在"
+    }
+  ],
+  "category_aliases": {
+    "negative_prompt": ["text_prompt"],
+    "model_loader": ["image_model", "video_model"],
+    "sampler": ["image_model", "video_model"],
+    "decode": ["image_model", "video_model"],
+    "resolution": ["image_model", "video_model"],
+    "image_output": ["output"],
+    "video_output": ["output"],
+    "lora": [],
+    "controlnet": [],
+    "upscale": [],
+    "conditioning": []
+  },
+  "edges": [
+    {
+      "from": "text_prompt",
+      "to": "image_model",
+      "status": "observed",
+      "confidence": "verified",
+      "note": "文本输入可作为媒体模型节点的 Prompt"
+    },
+    {
+      "from": "image_asset",
+      "to": "video_model",
+      "status": "observed",
+      "confidence": "verified",
+      "note": "图片可作为视频模型的输入（图生视频）"
+    },
+    {
+      "from": "image_model",
+      "to": "video_model",
+      "status": "observed",
+      "confidence": "verified",
+      "note": "官方说明可直接把输出接到下一节点输入"
+    },
+    {
+      "from": "video_model",
+      "to": "output",
+      "status": "observed",
+      "confidence": "verified",
+      "note": "最终产物通过发布后的端点输出"
+    }
+  ],
+  "unmapped": [
+    "节点参数名、默认值、可选范围",
+    "各模型的时长/画幅/分辨率限制",
+    "音频与配乐链路",
+    "端点鉴权、配额、计费细节",
+    "Recipes 的内部步骤结构"
+  ],
+  "notes": [
+    "本文件是映射资料，不是工作流文件；不得据此生成可导入 JSON 或 API 调用",
+    "Workflows 属云端产品，本 Skill 不做本地执行，也不调用 Runway API"
+  ]
+}

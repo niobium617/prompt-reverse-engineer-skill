@@ -2,6 +2,8 @@
 
 技能唯一事实源是 `../prompt-reverse-engineer-skill/`。本目录只存放各 Agent 平台的「外壳」，安装时由 `tools/install.py` 物化联接（junction）或复制，**不手工维护内容副本**。
 
+> 名字相近的 `../creative-platforms/` 是**创作软件**适配层（ComfyUI / Runway / LibTV 的规则、能力声明与映射），管的是「Prompt 怎么落到创作工具」，不是 Agent 安装。安装时它会被物化到技能实例的 `platforms/` 目录。
+
 ## 各平台映射关系
 
 | 平台 | 安装位置 | 方式 |

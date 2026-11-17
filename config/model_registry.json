@@ -1,0 +1,493 @@
+{
+  "generated_by": "tools/gen_registry.py",
+  "models": [
+    {
+      "aliases": [
+        "deepseek-1017",
+        "deepseek-flash",
+        "deepseek-v4",
+        "deepseek-v4-flash",
+        "deepseek-v4.1-flash",
+        "deepseek-v4.1-flash-1017",
+        "ds"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "model_id": "deepseek-flash",
+        "snapshot": "V4.1-Flash-1017",
+        "thinking_effort": "high"
+      },
+      "display_name": "DeepSeek V4.1 Flash 1017",
+      "id": "deepseek",
+      "last_verified": "2026-11-05",
+      "modalities": [
+        "image",
+        "text",
+        "video"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/deepseek.json",
+      "task_modes": {
+        "image": [
+          "replicate"
+        ],
+        "text": [
+          "optimize",
+          "replicate"
+        ],
+        "video": [
+          "storyboard"
+        ]
+      },
+      "vendor": "DeepSeek",
+      "version": "4.1"
+    },
+    {
+      "aliases": [
+        "bfl",
+        "flux",
+        "flux-2",
+        "flux-2-pro",
+        "flux2",
+        "flux2-pro"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9",
+        "guidance": "4.5",
+        "steps": "28"
+      },
+      "display_name": "FLUX.2 [pro]",
+      "id": "flux2",
+      "last_verified": "2026-11-05",
+      "modalities": [
+        "image"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/flux2.json",
+      "task_modes": {
+        "image": [
+          "params",
+          "positive",
+          "style_transfer"
+        ]
+      },
+      "vendor": "Black Forest Labs",
+      "version": "2"
+    },
+    {
+      "aliases": [
+        "chatgpt",
+        "claude",
+        "claude-5",
+        "claude-5.5",
+        "gpt",
+        "gpt-4",
+        "gpt-5",
+        "gpt-5.5",
+        "gpt4",
+        "gpt5"
+      ],
+      "capability_level": "L1",
+      "capability_scope": [
+        "L1_prompt"
+      ],
+      "default_params": {},
+      "display_name": "GPT-5.5 / Claude 5.5",
+      "id": "gpt4_claude",
+      "last_verified": "2026-11-05",
+      "modalities": [
+        "image",
+        "text",
+        "video"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/gpt4_claude.json",
+      "task_modes": {
+        "image": [
+          "replicate"
+        ],
+        "text": [
+          "optimize",
+          "replicate"
+        ],
+        "video": [
+          "storyboard"
+        ]
+      },
+      "vendor": "OpenAI / Anthropic",
+      "version": "5.5"
+    },
+    {
+      "aliases": [
+        "dalle",
+        "gpt-image",
+        "gpt-image-2",
+        "gpt-image-2.5",
+        "gptimage"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9",
+        "quality": "high"
+      },
+      "display_name": "GPT Image 2.5",
+      "id": "gpt_image",
+      "last_verified": "2026-11-05",
+      "modalities": [
+        "image"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/gpt_image.json",
+      "task_modes": {
+        "image": [
+          "compose",
+          "edit",
+          "params",
+          "prompt",
+          "recreate",
+          "reference_guided"
+        ]
+      },
+      "vendor": "OpenAI",
+      "version": "2.5"
+    },
+    {
+      "aliases": [
+        "mid-journey",
+        "midjourney",
+        "mj"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9",
+        "version": "8.2"
+      },
+      "display_name": "Midjourney V8.2",
+      "id": "midjourney",
+      "last_verified": "2026-11-05",
+      "modalities": [
+        "image"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/midjourney.json",
+      "task_modes": {
+        "image": [
+          "negative",
+          "positive",
+          "style_transfer"
+        ]
+      },
+      "vendor": "Midjourney",
+      "version": "8.2"
+    },
+    {
+      "aliases": [
+        "meta-muse",
+        "muse",
+        "muse-image",
+        "muse-image-1.0"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9"
+      },
+      "display_name": "Muse Image 1.0",
+      "id": "muse_image",
+      "last_verified": "2026-11-15",
+      "modalities": [
+        "image"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md",
+        "prompt-reverse-engineer-skill/references/muse_image_sources.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/muse_image.json",
+      "task_modes": {
+        "image": [
+          "anchored_composition",
+          "compose",
+          "conversational_refinement",
+          "edit",
+          "prompt",
+          "recreate",
+          "reference_guided",
+          "text_layout"
+        ]
+      },
+      "vendor": "Meta",
+      "version": "1.0"
+    },
+    {
+      "aliases": [
+        "gemini-image",
+        "nano-banana",
+        "nano-banana-pro",
+        "nb"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9",
+        "resolution": "2K"
+      },
+      "display_name": "Nano Banana Pro",
+      "id": "nano_banana",
+      "last_verified": "2026-11-05",
+      "modalities": [
+        "image"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/nano_banana.json",
+      "task_modes": {
+        "image": [
+          "edit",
+          "params",
+          "prompt"
+        ]
+      },
+      "vendor": "Google",
+      "version": "3"
+    },
+    {
+      "aliases": [
+        "gen-4.5",
+        "gen4.5",
+        "runway",
+        "runway-gen-4",
+        "runway-gen4"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9",
+        "duration": "10",
+        "resolution": "1280x720"
+      },
+      "display_name": "Runway Gen-4.5",
+      "id": "runway",
+      "last_verified": "2026-11-05",
+      "modalities": [
+        "video"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/runway.json",
+      "task_modes": {
+        "video": [
+          "params",
+          "replicate",
+          "storyboard"
+        ]
+      },
+      "vendor": "Runway",
+      "version": "4.5"
+    },
+    {
+      "aliases": [
+        "doubao-seedance",
+        "doubao-seedance-2.5",
+        "seedance",
+        "seedance-2.5",
+        "seedance25"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "adaptive",
+        "draft": "false",
+        "duration": "5",
+        "generate_audio": "true",
+        "model_id": "doubao-seedance-2-5-260628",
+        "resolution": "720p",
+        "watermark": "false"
+      },
+      "display_name": "Seedance 2.5",
+      "id": "seedance",
+      "last_verified": "2026-11-15",
+      "modalities": [
+        "video"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md",
+        "prompt-reverse-engineer-skill/references/seedance_sources.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/seedance.json",
+      "task_modes": {
+        "video": [
+          "first_last_frame",
+          "image_to_video",
+          "params",
+          "reference_to_video",
+          "storyboard",
+          "video_edit",
+          "video_extend"
+        ]
+      },
+      "vendor": "ByteDance",
+      "version": "2.5"
+    },
+    {
+      "aliases": [
+        "sora",
+        "sora-2",
+        "sora-2-pro",
+        "sora2",
+        "sora2-pro"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9",
+        "duration": "12",
+        "model_id": "sora-2",
+        "resolution": "1280x720"
+      },
+      "display_name": "Sora 2",
+      "id": "sora2",
+      "last_verified": "2026-11-05",
+      "modalities": [
+        "video"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/sora2.json",
+      "task_modes": {
+        "video": [
+          "params",
+          "replicate",
+          "storyboard"
+        ]
+      },
+      "vendor": "OpenAI",
+      "version": "2"
+    },
+    {
+      "aliases": [
+        "sd",
+        "sd3",
+        "sd3.5",
+        "stable diffusion",
+        "stable-diffusion"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9",
+        "cfg": "4.5",
+        "height": "576",
+        "sampler": "DPM++ 2M",
+        "scheduler": "Karras",
+        "steps": "28",
+        "width": "1024"
+      },
+      "display_name": "Stable Diffusion 3.5",
+      "id": "stable_diffusion",
+      "last_verified": "2026-11-05",
+      "modalities": [
+        "image"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/stable_diffusion.json",
+      "task_modes": {
+        "image": [
+          "negative",
+          "params",
+          "positive",
+          "style_transfer"
+        ]
+      },
+      "vendor": "Stability AI",
+      "version": "3.5"
+    },
+    {
+      "aliases": [
+        "veo",
+        "veo-3",
+        "veo-3.1",
+        "veo3"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9",
+        "duration": "8",
+        "resolution": "1080p"
+      },
+      "display_name": "Veo 3.1",
+      "id": "veo3",
+      "last_verified": "2026-11-05",
+      "modalities": [
+        "video"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/veo3.json",
+      "task_modes": {
+        "video": [
+          "negative",
+          "params",
+          "storyboard"
+        ]
+      },
+      "vendor": "Google",
+      "version": "3.1"
+    }
+  ],
+  "schema_version": "1.0"
+}

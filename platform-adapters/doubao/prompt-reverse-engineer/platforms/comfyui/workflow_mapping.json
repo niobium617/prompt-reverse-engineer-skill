@@ -1,0 +1,156 @@
+{
+  "schema_version": "1.0",
+  "platform": "comfyui",
+  "status": "verified",
+  "last_verified": "2026-11-17",
+  "scope": "v1 骨架：只登记统一节点到 ComfyUI 节点类别/功能的映射。具体类名随版本与本机安装变化，一律以本机节点定义（object_info）人工确认。不生成可导入工作流。",
+  "nodes": [
+    {
+      "unified": "text_prompt",
+      "platform": [
+        "CLIPTextEncode（正向）"
+      ],
+      "status": "partial",
+      "confidence": "manual",
+      "note": "文本编码节点存在属官方内置节点类别；类名需按本机确认；正向与负向分属两个节点"
+    },
+    {
+      "unified": "negative_prompt",
+      "platform": [
+        "CLIPTextEncode（负向）"
+      ],
+      "status": "partial",
+      "confidence": "manual",
+      "note": "部分工作流无独立负向输入；需按目标模型确认"
+    },
+    {
+      "unified": "model_loader",
+      "platform": [
+        "CheckpointLoaderSimple / 模型加载节点"
+      ],
+      "status": "partial",
+      "confidence": "manual",
+      "note": "加载器类别官方内置；节点名与端口随模型类型变化"
+    },
+    {
+      "unified": "lora",
+      "platform": [
+        "LoraLoader"
+      ],
+      "status": "partial",
+      "confidence": "manual",
+      "note": "需要 LoRA 文件与对应模型；权重为节点输入"
+    },
+    {
+      "unified": "controlnet",
+      "platform": [
+        "ControlNet 应用节点 + 预处理节点"
+      ],
+      "status": "partial",
+      "confidence": "manual",
+      "note": "控制类型（姿态/深度/边缘等）决定预处理与模型，需人工确认"
+    },
+    {
+      "unified": "image_asset",
+      "platform": [
+        "LoadImage"
+      ],
+      "status": "partial",
+      "confidence": "manual",
+      "note": "参考图/底图/蒙版分别进入不同加载与预处理链路"
+    },
+    {
+      "unified": "resolution",
+      "platform": [
+        "空 latent / 图像尺寸节点"
+      ],
+      "status": "partial",
+      "confidence": "manual",
+      "note": "宽高像素由节点输入决定，不接受比例标记"
+    },
+    {
+      "unified": "sampler",
+      "platform": [
+        "KSampler / 采样器节点"
+      ],
+      "status": "partial",
+      "confidence": "manual",
+      "note": "步数/CFG/种子/采样器/调度器均为采样节点输入"
+    },
+    {
+      "unified": "decode",
+      "platform": [
+        "VAEDecode"
+      ],
+      "status": "partial",
+      "confidence": "manual",
+      "note": "需要与模型匹配的 VAE"
+    },
+    {
+      "unified": "image_output",
+      "platform": [
+        "SaveImage / 预览节点"
+      ],
+      "status": "partial",
+      "confidence": "manual",
+      "note": "输出为图片文件；元数据可能内嵌工作流，需注意分享边界"
+    },
+    {
+      "unified": "video_output",
+      "platform": [
+        "视频合成/保存节点（可能来自自定义节点）"
+      ],
+      "status": "unknown",
+      "confidence": "unverified",
+      "note": "具体节点取决于视频模型与自定义节点包，未核验"
+    },
+    {
+      "unified": "audio",
+      "platform": [],
+      "status": "unknown",
+      "confidence": "unverified",
+      "note": "音频链路未核验；本 Skill 不提供音频工作流映射"
+    }
+  ],
+  "category_aliases": {},
+  "edges": [
+    {
+      "from": "text_prompt",
+      "to": "sampler",
+      "status": "observed",
+      "confidence": "verified",
+      "note": "文本编码结果作为采样器的条件输入，属通用扩散工作流结构"
+    },
+    {
+      "from": "model_loader",
+      "to": "sampler",
+      "status": "observed",
+      "confidence": "verified",
+      "note": "模型输出接入采样器"
+    },
+    {
+      "from": "sampler",
+      "to": "decode",
+      "status": "observed",
+      "confidence": "verified",
+      "note": "采样得到 latent，再解码为图像"
+    },
+    {
+      "from": "decode",
+      "to": "image_output",
+      "status": "observed",
+      "confidence": "verified",
+      "note": "解码结果写入输出节点"
+    }
+  ],
+  "unmapped": [
+    "自定义节点之间的私有端口语义",
+    "视频模型特有的时长/帧率/首尾帧端口",
+    "音频与 3D 链路",
+    "工作流子图（subgraph）与节点展开细节"
+  ],
+  "notes": [
+    "本文件是映射资料，不是工作流文件；不得据此生成可导入 JSON",
+    "工作流只读解析与兼容性报告由 analyze_workflow.py 与 prompt_compiler.py workflow 提供；仍不生成、不导入可导入工作流"
+  ]
+}

@@ -1,0 +1,128 @@
+{
+  "platform": "comfyui",
+  "display_name": "ComfyUI",
+  "status": "verified",
+  "version_verified": "2026-11-17",
+  "capability_level": "L2",
+  "modalities": [
+    "image",
+    "video",
+    "workflow"
+  ],
+  "workflow_formats": [
+    "ui_json",
+    "api_json"
+  ],
+  "import_export": {
+    "import": true,
+    "export": true
+  },
+  "api": {
+    "local": true,
+    "cloud": "unknown"
+  },
+  "automation": {
+    "platform_level": "L4",
+    "supported_by_skill": false
+  },
+  "models": [],
+  "features": [
+    {
+      "name": "节点式画布与有向图工作流",
+      "confidence": "verified",
+      "note": "官方 Workflow JSON 规范以 nodes/links/groups 描述图结构"
+    },
+    {
+      "name": "UI 保存格式（version 1.0，兼容旧版 0.4）",
+      "confidence": "verified",
+      "note": "官方规范当前版为 1.0（Latest），并保留 0.4"
+    },
+    {
+      "name": "API 格式工作流（节点 ID → class_type/inputs）",
+      "confidence": "verified",
+      "note": "官方 Workflow API Format 文档；API 格式省略位置/颜色/分组等 UI 元数据"
+    },
+    {
+      "name": "File → Export Workflow (API) 导出 API 格式",
+      "confidence": "verified",
+      "note": "官方文档给出的导出入口"
+    },
+    {
+      "name": "自定义节点扩展",
+      "confidence": "verified",
+      "note": "官方提供自定义节点开发与安装文档；具体节点包不在本 Skill 核验范围"
+    },
+    {
+      "name": "官方内置节点类名（如 CLIPTextEncode / KSampler）",
+      "confidence": "manual",
+      "note": "类名随版本与本机安装变化，必须以本机节点定义（object_info）确认"
+    },
+    {
+      "name": "工作流只读解析与兼容性报告",
+      "confidence": "verified",
+      "note": "analyze_workflow.py 解析 API/UI JSON，prompt_compiler.py workflow 输出兼容性报告；不生成、不导入可导入工作流，类名与端口仍需本机 object_info 确认"
+    }
+  ],
+  "incompatible": [
+    "闭源工程文件（.blend / .psd / .prproj / .aep 等）",
+    "未安装的自定义节点",
+    "缺失的模型权重 / LoRA / ControlNet",
+    "只有成品图或视频、没有工作流文件时，无法确定性还原制作过程"
+  ],
+  "degrade": [
+    "缺少节点或模型：映射标 unknown，并给出人工补装方向，不自动下载",
+    "无法读取工作流：只给人工搭建说明与通用 Prompt",
+    "安装态找不到 platforms/：只输出通用 Prompt，并说明未加载平台资料",
+    "工作流无效（悬空连线/成环/结构非法）：退出码 4，不输出解析结论",
+    "兼容性报告只做只读结论：不生成、不导入、不导出可导入工作流，不调用平台 API"
+  ],
+  "dependencies": {
+    "custom_nodes": [],
+    "version": "unknown",
+    "notes": [
+      "自定义节点与模型权重按具体工作流逐个登记；本文件不维护全量清单"
+    ]
+  },
+  "sources": [
+    {
+      "title": "Workflow JSON - ComfyUI",
+      "url": "https://docs.comfy.org/specs/workflow_json",
+      "accessed": "2026-11-17",
+      "official": true,
+      "verified": true,
+      "note": "读取到 version/nodes/links/groups 与 1.0/0.4 版本说明"
+    },
+    {
+      "title": "Workflow API Format - ComfyUI",
+      "url": "https://docs.comfy.org/development/api-development/workflow-api-format",
+      "accessed": "2026-11-17",
+      "official": true,
+      "verified": true,
+      "note": "读取到 Save vs API、class_type/inputs、Export Workflow (API)、API 省略 UI 元数据"
+    },
+    {
+      "title": "Workflow JSON 0.4 - ComfyUI",
+      "url": "https://docs.comfy.org/specs/workflow_json_0.4",
+      "accessed": "2026-11-17",
+      "official": true,
+      "verified": false,
+      "note": "官方索引收录；本次未逐页读取正文"
+    },
+    {
+      "title": "Node Definition JSON - ComfyUI",
+      "url": "https://docs.comfy.org/specs/nodedef_json",
+      "accessed": "2026-11-17",
+      "official": true,
+      "verified": false,
+      "note": "官方索引收录；节点定义字段未逐项核验"
+    },
+    {
+      "title": "ComfyUI Workflow Metadata in Output Files",
+      "url": "https://docs.comfy.org/development/api-development/workflow-metadata",
+      "accessed": "2026-11-17",
+      "official": true,
+      "verified": false,
+      "note": "官方索引收录；本次未读取正文"
+    }
+  ]
+}
