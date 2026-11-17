@@ -15,6 +15,9 @@ tools/.tmp_verify/
 # Codex 插件 skills junction（由 tools/install.py 物化，不提交链接）
 platform-adapters/codex/prompt-reverse-engineer/skills/
 
+# 技能本体的平台资料 junction（由 tools/install.py 物化，不提交链接）
+prompt-reverse-engineer-skill/platforms
+
 # 编辑器 / 系统
 .vscode/
 .idea/

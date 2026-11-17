@@ -10,6 +10,9 @@
     追加本地 marketplace 注册块（幂等，标记注释包裹）
   - doubao：确定性生成扁平化指令文本 platform-adapters/doubao/doubao_instruction.md
     （豆包不支持目录安装，需在「设置→技能中心→新建Skill」粘贴该文件内容）
+  - 平台资料物化：junction 模式在技能本体下建 platforms -> creative-platforms 链接；
+    copy 模式与豆包包把 creative-platforms/ 复制到技能实例的 platforms/；
+    源目录缺失或链接失败时只告警，安装态降级为仅通用 Prompt
 
 幂等性：junction 同源 → SKIP；异源 → 重建；config.toml 标记块已存在 → SKIP。
 退出码：0 成功（含全部优雅跳过）；2 参数错误。
@@ -34,6 +37,7 @@ MARKER_END = "# <<< prompt-reverse-engineer <<<"
 SKILL_NAME = "prompt-reverse-engineer"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILL_SRC = REPO_ROOT / "prompt-reverse-engineer-skill"
+CREATIVE_PLATFORMS = REPO_ROOT / "creative-platforms"
 ADAPTER_ROOT = REPO_ROOT / "platform-adapters"
 CODEX_MARKET = ADAPTER_ROOT / "codex"
 CODEX_PLUGIN = CODEX_MARKET / "prompt-reverse-engineer"
@@ -82,17 +86,28 @@ def is_junction(path: Path) -> bool:
 
 
 def junction_target(path: Path):
-    """读取链接目标：Windows 解析 junction reparse point；POSIX 直接 readlink。"""
+    """读取链接目标：优先 os.readlink（Python 3.8+ 支持 Windows junction）。
+
+    旧实现用 `dir <junction>` 找 `<JUNCTION>` 标记，但 Windows 对 junction 本身
+    会跟随并列出目标目录内容，拿不到标记；这里改为 readlink，失败再退回列父目录。
+    """
     try:
-        if os.name != "nt":
-            return Path(os.readlink(str(path)))
+        raw = os.readlink(str(path))
+        if raw.startswith("\\\\?\\"):
+            raw = raw[4:]
+        return Path(raw)
+    except (OSError, NotImplementedError):
+        pass
+    if os.name != "nt":
+        return None
+    try:
         out = subprocess.run(
-            ["cmd", "/c", "dir", str(path)], capture_output=True, text=True, timeout=30
+            ["cmd", "/c", "dir", "/AL", str(path.parent)],
+            capture_output=True, text=True, timeout=30,
         ).stdout
         for line in out.splitlines():
-            if "<JUNCTION>" in line and "[" in line:
-                target = line.split("[")[1].split("]")[0]
-                return Path(target)
+            if "<JUNCTION>" in line and path.name in line and "[" in line:
+                return Path(line.split("[")[1].split("]")[0])
     except Exception:
         pass
     return None
@@ -104,6 +119,14 @@ def remove_link(path: Path):
         path.unlink()
     else:
         os.rmdir(str(path))
+
+
+def clear_dir(path: Path):
+    """清空目标目录；若本身是链接/junction，只删链接，绝不跟随删除实体。"""
+    if is_junction(path):
+        remove_link(path)
+    else:
+        shutil.rmtree(str(path))
 
 
 def make_junction(link: Path, source: Path, dry_run: bool, actions: list):
@@ -126,6 +149,60 @@ def make_junction(link: Path, source: Path, dry_run: bool, actions: list):
         capture_output=True, text=True, timeout=60,
     )
     return result.returncode == 0
+
+
+PLATFORM_COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
+
+
+def ensure_platform_link(dry_run, actions):
+    """junction 模式：在技能本体下建 platforms -> creative-platforms 链接。
+
+    宿主装的是指向 SKILL_SRC 的 junction，所以这里建好子链接后，各宿主安装态
+    都能读到 `<技能目录>/platforms/`。失败不阻断安装，只降级并提示。
+    """
+    if not CREATIVE_PLATFORMS.is_dir():
+        actions.append(("warn", "platforms",
+                        "creative-platforms/ 缺失：安装态降级为仅通用 Prompt"))
+        return
+    link = SKILL_SRC / "platforms"
+    if is_junction(link):
+        target = junction_target(link)
+        if target and Path(target).resolve() == CREATIVE_PLATFORMS.resolve():
+            actions.append(("skip", "platforms", f"{link} 已指向 creative-platforms，跳过"))
+            return
+        actions.append(("rebuild", "platforms", "platforms 链接指向异源，重建"))
+        if not dry_run:
+            try:
+                remove_link(link)
+            except OSError as exc:
+                actions.append(("warn", "platforms",
+                                f"移除旧链接失败：{exc}；安装态降级为仅通用 Prompt"))
+                return
+    elif link.exists():
+        actions.append(("warn", "platforms",
+                        f"{link} 已存在且不是链接，未改动；安装态降级为仅通用 Prompt"))
+        return
+    if make_junction(link, CREATIVE_PLATFORMS, dry_run, actions):
+        actions.append(("ok", "platforms", f"junction {link} -> {CREATIVE_PLATFORMS}"))
+    else:
+        actions.append(("warn", "platforms",
+                        "platforms 链接创建失败；安装态降级为仅通用 Prompt"))
+
+
+def copy_platforms(dest_skill: Path, dry_run, actions, label):
+    """copy 模式：把 creative-platforms 物理复制到技能实例的 platforms/。"""
+    if not CREATIVE_PLATFORMS.is_dir():
+        actions.append(("warn", label,
+                        "creative-platforms/ 缺失：安装态降级为仅通用 Prompt"))
+        return
+    target = dest_skill / "platforms"
+    if dry_run:
+        actions.append(("ok", label, f"将复制 {CREATIVE_PLATFORMS} -> {target}"))
+        return
+    if target.exists():
+        clear_dir(target)
+    shutil.copytree(str(CREATIVE_PLATFORMS), str(target), ignore=PLATFORM_COPY_IGNORE)
+    actions.append(("ok", label, f"copytree {CREATIVE_PLATFORMS} -> {target}"))
 
 
 def install_dir_platform(platform, mode, target_root, dry_run, force, actions):
@@ -167,13 +244,15 @@ def install_dir_platform(platform, mode, target_root, dry_run, force, actions):
             if force:
                 actions.append(("rebuild", platform, f"强制覆盖 {dest}"))
                 if not dry_run:
-                    shutil.rmtree(str(dest))
+                    clear_dir(dest)
             else:
                 actions.append(("skip", platform, f"{dest} 已存在，跳过（--force 可覆盖）"))
                 return
         if not dry_run:
-            shutil.copytree(str(SKILL_SRC), str(dest))
+            shutil.copytree(str(SKILL_SRC), str(dest),
+                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "platforms"))
         actions.append(("ok", platform, f"copytree {SKILL_SRC} -> {dest}"))
+        copy_platforms(dest, dry_run, actions, platform)
 
 
 def install_codex(mode, target_root, dry_run, force, actions):
@@ -209,13 +288,15 @@ def install_codex(mode, target_root, dry_run, force, actions):
         if plugin_skills.exists():
             if force:
                 if not dry_run:
-                    shutil.rmtree(str(plugin_skills))
+                    clear_dir(plugin_skills)
             else:
                 actions.append(("skip", "codex", f"{plugin_skills} 已存在，跳过"))
                 return
         if not dry_run:
-            shutil.copytree(str(SKILL_SRC), str(plugin_skills))
+            shutil.copytree(str(SKILL_SRC), str(plugin_skills),
+                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "platforms"))
         actions.append(("ok", "codex", f"copytree {SKILL_SRC} -> {plugin_skills}"))
+        copy_platforms(plugin_skills, dry_run, actions, "codex")
 
     # 2) config.toml 注册
     config_path = root / "config.toml"
@@ -361,10 +442,21 @@ def build_doubao_instruction(dry_run, actions):
     for sub in ("scripts", "references", "assets"):
         dest = pkg_dir / sub
         if dest.exists():
-            shutil.rmtree(str(dest))
+            clear_dir(dest)
         shutil.copytree(str(SKILL_SRC / sub), str(dest),
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         normalize_tree(dest)
+    # 平台资料：豆包是上传包，必须物理带上 creative-platforms/
+    platforms_dest = pkg_dir / "platforms"
+    if platforms_dest.exists():
+        clear_dir(platforms_dest)
+    if CREATIVE_PLATFORMS.is_dir():
+        shutil.copytree(str(CREATIVE_PLATFORMS), str(platforms_dest),
+                        ignore=PLATFORM_COPY_IGNORE)
+        normalize_tree(platforms_dest)
+    else:
+        actions.append(("warn", "doubao",
+                        "creative-platforms/ 缺失：豆包包不含平台资料，降级为仅通用 Prompt"))
     # 打包 zip（豆包上传用）：固定时间戳保证可复现
     import zipfile
     zip_path = DOUBAO_DIR / "prompt-reverse-engineer.zip"
@@ -404,6 +496,8 @@ def main():
         sys.exit(2)
 
     actions = []
+    if args.mode == "junction" and set(platforms) & {"claude", "cursor", "codex", "deepseek"}:
+        ensure_platform_link(args.dry_run, actions)
     for platform in platforms:
         if platform in ("claude", "cursor", "deepseek"):
             install_dir_platform(platform, args.mode, args.target_root,

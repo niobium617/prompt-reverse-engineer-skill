@@ -98,8 +98,29 @@
 
 > 方案：[`docs/2026-11-15-跨平台工作流升级方案.md`](../docs/2026-11-15-跨平台工作流升级方案.md)（2026-11-15 冻结）。实施时按文档 §0.1 开工检查单执行。
 
-- [ ] 甲：IR 契约、三注册表、置信度推广
-- [ ] 乙：`creative-platforms/` 首批三平台（ComfyUI / Runway / LibTV）
-- [ ] 丙：ComfyUI 工作流只读解析与兼容性校验
+- [x] 甲：IR 契约、三注册表、置信度推广（v2.5.0）
+  - [x] `references/ir_spec.md`：11 模块字段契约、校验规则、退出码 4、变更控制
+  - [x] `prompt_compiler.py ir validate`：可选 IR 层，旧 JSON 无 IR 字段直接通过；版本/资产 sha256/绝对路径/nodes/置信度/深度 5 六类错误退出 4
+  - [x] `tools/gen_registry.py`：三份注册表确定性生成，`--check` 逐字节比对；L2 由 `default_params` 是否非空推导（12 模型：1 个 L1、11 个 L2）
+  - [x] `config/model_registry.json`、`platform_registry.json`、`capability_registry.json` 生成并入库
+  - [x] `verify.py` 新增 4 项（IR 契约、注册表可复现、能力声明、IR 文档），共 62 项
+  - [x] `SKILL.md` / README 1.5、4.3、4.4、验证表同步；VERSION 与 plugin.json 升至 2.5.0；豆包产物重新生成
+- [x] 乙：`creative-platforms/` 首批三平台（ComfyUI / Runway / LibTV）（v2.6.0）
+  - [x] 根目录 `creative-platforms/README.md`：与 `platform-adapters/` 的命名区分、状态表、L1-L4 边界、消费路径、来源闸门与更新流程
+  - [x] ComfyUI 五件套（L2）：Workflow JSON 1.0/0.4 + API 格式官方规范已读；节点类名标「需人工确认」；不解析工作流（留到丙）
+  - [x] Runway 五件套（L1）：Workflows 官方页已读；节点类别/单端点/Recipes 已验证，参数与文件格式标 unknown
+  - [x] LibTV 五件套（L1）：官网/落地页/插件页已读；节点图、项目文件、公开 REST API 明确 unknown；Plugin 自动化不计入本 Skill
+  - [x] 来源闸门：`verified` 需至少 1 条 `official: true` 且 `verified: true`（已实际读取）的来源；`draft` 不进注册表；`gen_registry.py` 校验 schema 与置信度枚举
+  - [x] 安装物化：junction 模式建 `platforms -> creative-platforms` 子链接；copy 模式与豆包包复制到 `platforms/`；缺失/失败只告警并降级为通用 Prompt
+  - [x] 修复 `junction_target`：改用 `os.readlink`（原 `dir <junction>` 会跟随目标，取不到标记）
+  - [x] `verify.py` 新增 3 项（五件套/注册表闸门/安装物化），共 65 项
+  - [x] SKILL.md / README / VERSION / plugin.json / 豆包产物同步（2.6.0）
+- [x] 丙：ComfyUI 工作流只读解析与兼容性校验（v3.0.0）
+  - [x] `scripts/analyze_workflow.py`：ComfyUI API/UI JSON 只读解析；悬空连线/成环/结构非法退出 4；未知节点只警告；输出 IR 1.0 信封（仅文件名、无绝对路径）
+  - [x] `prompt_compiler.py workflow`：按目标平台输出 `compatible/degraded/incompatible`、文件迁移结论与手工重建步骤；未知目标退出 1；资料缺失/draft 保守降级
+  - [x] `ir validate` 扩展 workflow 结构校验（节点/连线端点/成环/参数），旧 JSON 仍直接通过
+  - [x] 三平台 `workflow_mapping.json` 增加 `category_aliases`；ComfyUI 能力声明将工作流解析标为 verified
+  - [x] `verify.py` 新增 4 项（工作流解析/结构错误/兼容报告/文档与能力），共 69 项
+  - [x] SKILL.md / README / ir_spec.md / RELEASE / VERSION / plugin.json / 豆包产物同步（3.0.0）
 - [ ] 丁：可灵等模型模板 + `benchmarks/`
 - [ ] 戊（可选）：WAV 音频信号、专业软件 L1 说明

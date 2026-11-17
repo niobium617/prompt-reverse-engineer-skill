@@ -759,3 +759,341 @@ v2.4.0 只让四个视频模型支持逐镜渲染，单张实拍图反推仍要�
 ### 脱敏
 
 本文不含密钥与绝对用户路径。
+
+## 2026-11-17 跨平台升级甲阶段：IR 1.0 契约与三注册表（v2.5.0）
+
+### 摘要
+
+落地冻结方案《2026-11-15-跨平台工作流升级方案》甲阶段：新增可选的 IR 1.0 信封层（11 模块）与 `ir validate` 校验，新增确定性注册表生成器并产出三份 `config/*.json`，`verify.py` 增加 4 项断言（58 → 62）。旧分析 JSON 不写 IR 字段时行为与 v2.4.1 完全一致，模板渲染与 7 份金标示例逐字节未变。
+
+### 背景（基线）
+
+- 实施前：v2.4.1，`python tools/verify.py` 58/58；12 个模型模板、7 份金标示例；无 `config/` 目录、无 IR 契约。
+- 方案冻结于 2026-11-15，甲阶段目标为「先定契约，再接平台」：IR 只做表达能力扩展，不做第二套评分或导入导出。
+- 版本偏差：方案 §11 建议甲阶段发 2.4.0（按当时 2.3.0/53 项估算），实际基线已是 2.4.1/58，故本阶段发 **2.5.0**，避免与已发布版本撞号。
+
+### 变更清单
+
+| 文件 | 旧值 | 新值 |
+| --- | --- | --- |
+| `prompt-reverse-engineer-skill/references/ir_spec.md` | 不存在 | 新增：IR 1.0 唯一权威。11 模块表、`project/assets/workflow/confidence` 字段契约、资产 `kind` 与 sha256、路径只允许 basename、最大嵌套深度 5、校验规则与退出码 4、置信度 `observed/inferred/unknown` 语义、最小示例、非目标与变更控制 |
+| `prompt-reverse-engineer-skill/scripts/prompt_compiler.py` | 仅 render/score/filter/scenes/shots | 新增 `IR_VERSION/IR_MODULES/IR_MAX_DEPTH/IR_ASSET_KINDS/IR_CONFIDENCE_STATUS/IR_WORKFLOW_FORMATS` 常量、`ir_depth()`、`ir_errors()` 与 `ir validate` 子命令；仅在字段存在时校验，`semantic_analysis` 仍为扁平契约 |
+| `tools/gen_registry.py` | 不存在 | 新增：从模板与 `creative-platforms/*/capability_map.json` 确定性生成注册表；键排序、LF、无时间戳/绝对路径；`--check` 逐字节比对；L2 由 `default_params` 非空推导 |
+| `config/model_registry.json` | 不存在 | 12 个模型（`gpt4_claude` 为 L1，其余 11 个 L2），含别名、模态、任务模式、默认参数、来源模板与来源文档 |
+| `config/platform_registry.json` | 不存在 | 空列表（首批平台留待乙阶段），结构已定 |
+| `config/capability_registry.json` | 不存在 | L1–L4 定义 + 12 模型能力声明；L3 统一 `readonly_only`，L4 统一 `none` |
+| `tools/verify.py` | 58 项 | 62 项：IR 契约（旧 JSON 通过 + 合法 IR 通过 + 6 类错误退出 4）、注册表可复现（`--check`、12 模型、无绝对路径）、注册表能力声明（L3 只读/L4 不支持/来源闸门）、IR 文档契约（11 模块 + SKILL/README 同步） |
+| `prompt-reverse-engineer-skill/SKILL.md` | 无 IR 说明 | 步骤 3/4、§5 错误处理、§6 脚本表与退出码、§7 参考索引补 IR 契约 |
+| `README.md` | 无 IR/注册表章节 | 新增 §1.5；目录树补 `ir_spec.md`、`config/`、`gen_registry.py`；§4.3/4.4 补契约与维护规则；验证表与断言数 62 |
+| `VERSION` / codex `plugin.json` | 2.4.1 | 2.5.0 |
+| 豆包产物 | v2.4.1 包 | 重新生成：`doubao_instruction.md`、包内 SKILL 与 `prompt_compiler.py`、新增 `references/ir_spec.md`、zip |
+
+### 生效方式
+
+随 `main` 发布，无需重装；豆包产物已重新生成（`python tools/install.py --platform doubao`）。模型或平台清单变动后运行 `python tools/gen_registry.py`，CI/验证用 `--check`。
+
+### 验证（真实输出）
+
+```text
+$ python tools/verify.py
+[PASS] 一致性/README 断言数 — README 断言数 62 与实际一致
+[PASS] 一致性/注册表可复现 — 3 份注册表与源文件逐字节一致；12 模型；无绝对路径
+[PASS] 一致性/注册表能力声明 — L3 只读/L4 不支持；12 模型均声明 L1 且不支持 L4；平台过来源闸门
+[PASS] 一致性/IR 文档契约 — ir_spec 覆盖 11 模块与校验规则；SKILL/README 已同步
+
+== 验证汇总 ==
+通过 62 / 62
+全部通过 ✔
+```
+
+```text
+$ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py ir validate --analysis tools/fixtures/semantic_image.json
+{"command": "ir validate", "errors": [], "ir_version": "1.0", "modules": ["project", "subject", "scene", "visual", "shot", "prompt", "reference", "model", "parameters", "workflow", "assets"], "schema_version": "1.0", "tool": "prompt_compiler.py", "valid": true}
+退出码 0
+```
+
+```text
+$ python tools/gen_registry.py --check
+注册表一致：3 份，模型 12 / 平台 0
+退出码 0
+```
+
+`python tools/gen_examples.py --check` 7 项全 PASS（四模态 + Muse/Seedance + 剧本 + 镜头反推输出未变）。IR 反例由 `verify.py` 覆盖：`ir_version` 非 1.0、非空 `workflow` 缺 `nodes`、资产缺 64 位 sha256、资产路径含 `C:/`、置信度状态非法、嵌套深度 > 5，均退出码 4 且报错含对应关键词。
+
+### 偏差
+
+- 版本号由方案建议的 2.4.0 改为 2.5.0（基线已 2.4.1）。
+- 新增 4 项断言（方案允许 4–6），覆盖契约、可复现、能力声明、文档同步四个面，未再拆分。
+- `platform_registry.json` 暂为空：乙阶段才引入首批三平台；生成器与来源闸门已就位，届时只加 `capability_map.json`，不改代码。
+- L2 判定取模板 `default_params` 是否非空；`gpt4_claude` 为纯文本模型，按 L1 处理。
+
+### 回滚
+
+`git revert` 本次提交；删除 `config/` 三份注册表与 `tools/gen_registry.py`，移除 `ir_spec.md` 与 `prompt_compiler.py` 的 IR 常量/子命令，`verify.py` 删除 4 项断言并恢复 58，版本回到 2.4.1，重跑 `python tools/install.py --platform doubao`。旧分析 JSON 与模板未改，无数据迁移；已写 IR 字段的 JSON 在旧版会被当作未知顶层字段忽略。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径。
+
+## 2026-11-17 跨平台升级乙阶段：creative-platforms 三平台与安装物化（v2.6.0）
+
+### 摘要
+
+落地冻结方案乙阶段：新增根目录 `creative-platforms/`，为 ComfyUI / Runway / LibTV 建立五件套（平台规则、能力声明、Prompt 映射、节点映射、官方来源）；`gen_registry.py` 加严来源闸门并校验 schema，`platform_registry.json` 由空变为 3 个 `verified` 平台；`install.py` 把平台资料物化到技能实例的 `platforms/`（junction 子链接 / copy 复制 / 豆包包内物理复制），缺失或失败只告警并降级为通用 Prompt。`verify.py` 新增 3 项平台断言（62 → 65），全部离线通过。
+
+### 背景（基线）
+
+- 实施前：v2.5.0，`python tools/verify.py` 62/62；`config/platform_registry.json` 为空列表；仓库无 `creative-platforms/`，只有 Agent 宿主适配层 `platform-adapters/`。
+- 方案 2026-11-15 冻结，乙阶段范围：三平台五件套、`capability_map.json` schema、来源闸门、安装物化；不做 L4、不解析闭源工程、不做工作流导入导出（丙阶段）。
+- 版本偏差：方案按甲阶段可能发 2.4.0 估算乙为 2.5；实际甲已发 2.5.0，故乙发 **2.6.0**。
+
+### 变更清单
+
+| 文件/目录 | 旧值 | 新值 |
+| --- | --- | --- |
+| `creative-platforms/README.md` | 不存在 | 新增：与 `platform-adapters/` 的命名区分、目录树、状态表、L1–L4 边界、Agent 消费路径、来源闸门与更新流程 |
+| `creative-platforms/comfyui/` | 不存在 | 五件套，L2：官方 Workflow JSON 1.0/0.4 与 API 格式已读；UI JSON / API JSON / Export Workflow (API) 已验证；节点类名标 `manual`；工作流解析标 `unverified`（留丙） |
+| `creative-platforms/runway/` | 不存在 | 五件套，L1：Workflows 定义、Input/Media Model/LLM 节点类别、单端点、Recipes、计费已验证；工作流文件格式、节点参数、音频链标 unknown |
+| `creative-platforms/libtv/` | 不存在 | 五件套，L1：画布 / Agent BETA / 3D-BOX、五类生成能力、6 大场景模板、TV Director、Plugin 安装方式已验证；节点结构、项目文件、公开 REST API 明确 unknown |
+| `tools/gen_registry.py` | 仅要求 verified 有非空 sources | 新增 `check_sources` / `check_tagged_list`：来源条目必须含 title/url/accessed/official/verified；`verified` 至少 1 条 `official` 且 `verified`（已读正文）；`features`/`models` 的 `confidence` 限 `verified/unverified/manual`；校验目录名与 platform 一致、日期格式、`import_export`/`api`/`dependencies` 为对象 |
+| `config/platform_registry.json` | 空列表 | 3 个平台，含能力等级、置信度条目、官方来源与 `source_path` |
+| `config/capability_registry.json` | 仅模型 | 新增 3 平台能力声明（L2 含配置适配；L1 仅 Prompt），统一 `unsupported: L3_workflow_generation / L4_automation` |
+| `tools/install.py` | 不处理平台资料 | 新增 `ensure_platform_link` / `copy_platforms`：junction 模式建 `SKILL_SRC/platforms -> creative-platforms`；copy 模式复制到实例 `platforms/`；豆包包始终复制；源缺失/创建失败记 `[WARN]` 并降级。修复 `junction_target`：`dir <junction>` 会跟随目标目录而取不到标记，改用 `os.readlink`（兼容 `\\?\` 前缀），失败再列父目录。新增 `clear_dir`：清理目标是 junction 时只删链接，避免 `shutil.rmtree` 跟随删除实体（`--force` 与豆包重新生成共用） |
+| `.gitignore` | 无 | 新增 `prompt-reverse-engineer-skill/platforms`（安装物化链接不入库） |
+| `tools/verify.py` | 62 项 | 65 项：`平台层/五件套与能力声明`、`平台层/注册表闸门`、`安装层/平台资料物化`（junction + copy + 豆包 zip 三路） |
+| `prompt-reverse-engineer-skill/SKILL.md` | 无平台分支 | §1 补 ComfyUI/Runway/LibTV 自然语言触发；§4 补平台映射输出六项；§5 补 `platforms/` 不可读、要求自动执行、节点/字段未公开三行处理；§7 补 `platforms/<平台 ID>/` 索引 |
+| `README.md` | 无平台章节 | §1.5 补创作平台骨架；§2.2 补安装物化与降级；目录树补 `creative-platforms/` 与 `platforms/`；验证表新增「平台层」；断言数 65 |
+| `docs/RELEASE.md` | 58 项、历史止于 v2.4.1 | 65 项；发布前补注册表 `--check`、豆包包含 `platforms/`、五件套与来源闸门；历史补 v2.5.0 / v2.6.0 |
+| `platform-adapters/README.md` | 仅宿主说明 | 开头补与 `creative-platforms/` 的职责区分与安装物化说明 |
+| `VERSION` / codex `plugin.json` | 2.5.0 | 2.6.0；描述补三平台映射（只映射、不自动执行） |
+| 豆包产物 | v2.5.0 包 | 重新生成：包内新增 `platforms/`（16 个条目），`SKILL.md` / `zip` 同步 |
+
+### 生效方式
+
+随 `main` 发布，无需重装；junction 安装（Windows 默认）会自动出现 `platforms/`，copy 模式与豆包包需重跑 `python tools/install.py`。平台资料变更后依次跑 `gen_registry.py` 与 `verify.py --filter 平台`。
+
+### 验证（真实输出）
+
+```text
+$ python tools/verify.py --filter 平台
+[PASS] 平台层/五件套与能力声明 — 三平台五件套齐全；schema/置信度/官方来源闸门通过
+[PASS] 平台层/注册表闸门 — 3 平台过闸门进入注册表；L1-L3；均声明不支持生成/L4；无绝对路径
+[PASS] 安装层/平台资料物化 — junction/copy/豆包包均物化 platforms/，三平台资料可读且幂等
+
+== 验证汇总 ==
+通过 3 / 3
+全部通过 ✔
+```
+
+```text
+$ python tools/verify.py
+...
+[PASS] 一致性/README 断言数 — README 断言数 65 与实际一致
+[PASS] 一致性/注册表可复现 — 3 份注册表与源文件逐字节一致；12 模型；无绝对路径
+[PASS] 一致性/注册表能力声明 — L3 只读/L4 不支持；12 模型均声明 L1 且不支持 L4；平台过来源闸门
+[PASS] 平台层/五件套与能力声明 — 三平台五件套齐全；schema/置信度/官方来源闸门通过
+[PASS] 平台层/注册表闸门 — 3 平台过闸门进入注册表；L1-L3；均声明不支持生成/L4；无绝对路径
+[PASS] 安装层/平台资料物化 — junction/copy/豆包包均物化 platforms/，三平台资料可读且幂等
+
+== 验证汇总 ==
+通过 65 / 65
+全部通过 ✔
+```
+
+```text
+$ python tools/gen_registry.py --check
+注册表一致：3 份，模型 12 / 平台 3
+退出码 0
+```
+
+安装冒烟（临时根目录）实际输出：
+
+```text
+[OK] platforms: junction ...\prompt-reverse-engineer-skill\platforms -> ...\creative-platforms
+[OK] claude: junction ...\.claude\skills\prompt-reverse-engineer -> ...\prompt-reverse-engineer-skill
+[SKIP] platforms: ... 已指向 creative-platforms，跳过
+[OK] claude: copytree ...\creative-platforms -> ...\skills\prompt-reverse-engineer\platforms
+```
+
+豆包包实测：zip 共 57 个条目，其中 `prompt-reverse-engineer/platforms/` 16 个条目（README + 三平台各五件套）。
+
+### 偏差
+
+- LibTV 判为 `verified`：官网首页、AI 视频落地页、插件页均已实际读取；但画布节点、项目文件格式、公开 REST API 官方未公开，`capability_map.json` 中逐项标 `unknown`，不据此推断。官方飞书使用指南客户端渲染、抓取为空，未作为依据。
+- Runway 帮助中心自动化访问 403，未读取正文；只采用 `dev.runway.com/workflows` 与 `runwayml.com/workflows` 两个已读官方页面。
+- ComfyUI 只完成 L2 与格式核验，工作流只读解析按方案留到丙阶段，`features` 中明确标 `unverified`。
+- 修复了既有 `junction_target` 的缺陷（Windows 下 `dir <junction>` 跟随目标导致无法识别同源）；此前安装冒烟只断言链接存在与「出现过 SKIP」，未暴露该问题。修复后二次安装才真正逐项 SKIP。
+- copy 模式的 codex 分支未单测：仓库内 `skills/` 是既有 junction，copy 模式按既有逻辑跳过；claude copy 分支已覆盖平台资料复制。
+
+### 回滚
+
+`git revert` 本次提交；删除 `creative-platforms/` 与 `config/` 三份注册表（回到 empty 需同时回滚 `gen_registry.py` 闸门改动），移除 `install.py` 的平台物化与 `junction_target` 修复，`verify.py` 删除 3 项并恢复 62，版本回到 2.5.0，重跑 `python tools/install.py --platform doubao`。已物化的 `prompt-reverse-engineer-skill/platforms` 链接需手动删除（`rmdir`，不跟随目标）。无数据迁移。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径；验证输出中的安装路径以 `...` 省略。
+
+## 2026-11-17 跨平台升级丙阶段：ComfyUI 工作流只读解析与兼容报告（v3.0.0）
+
+### 摘要
+
+落地冻结方案丙阶段「工作流最小闭环」：新增 `analyze_workflow.py`，只读解析 ComfyUI **API JSON** 与 **UI JSON**，输出 IR 兼容的 `workflow` 模块（节点、连线、模型、素材、参数、自定义节点依赖、问题、置信度）；`prompt_compiler.py` 新增 `workflow` 子命令，按目标平台输出 `compatible / degraded / incompatible` 逐节点结论、文件迁移结论与手工重建步骤，固定 `importable_output: false`；`ir validate` 扩展校验工作流载荷。`verify.py` 新增 4 项断言（65 → 69），全部离线通过。版本升至 **3.0.0**（新增输入模态，属能力级变更）。
+
+### 背景（基线）
+
+- 实施前：v2.6.0，`python tools/verify.py` 65/65；`creative-platforms/` 三平台五件套已就绪，但 ComfyUI 工作流只读解析标 `unverified`，无工作流脚本、无兼容性报告。
+- 方案 2026-11-15 冻结，丙阶段范围：ComfyUI API/UI JSON 只读解析、工作流 IR 校验、跨平台兼容报告；不做 L4、不解析闭源工程、不生成/导入/导出可导入工作流。
+- 验收基线：合法 JSON 可解析；悬空连线/成环退出码 4；未知节点只警告不阻断；输出逐字节幂等；不产出可导入工作流。
+
+### 变更清单
+
+| 文件/目录 | 旧值 | 新值 |
+| --- | --- | --- |
+| `prompt-reverse-engineer-skill/scripts/analyze_workflow.py` | 不存在 | 新增：只读解析 ComfyUI API JSON / UI JSON；输出 `schema_version/tool/modality/ir_version/input/project/assets/workflow/confidence`；节点上限 5000、连线上限 20000；悬空连线/成环/结构非法退出码 4；未知节点记入 `issues` 并警告，不阻断 |
+| `tools/fixtures/workflow_api.json` | 不存在 | 新增中性样例：11 节点 / 15 连线；KSampler、Checkpoint、EmptyLatent、正负 CLIP、VAEDecode、SaveImage、LoRA、LoadImage、ControlNet 加载与应用 |
+| `tools/fixtures/workflow_ui.json` | 不存在 | 新增中性样例：10 节点 / 10 连线，`version: 0.4`；含已知自定义节点 `ImageResizeKJ` 与未知节点 `MysteryNodeXP` |
+| `prompt-reverse-engineer-skill/scripts/prompt_compiler.py` | 仅 `compile / score / ir validate` 等 | 新增 `workflow --report --target [--platforms-dir] [--format json|text|md] [-o]`；新增工作流 IR 校验（节点 ID 重复、端点不存在、连线成环、`parameters[].node` 无效、`from_output/to_slot` 非负整数均退出码 4）；未知目标退出码 1，报告不可读退出码 2 |
+| `creative-platforms/{comfyui,runway,libtv}/workflow_mapping.json` | 仅 `nodes[].unified` 等 | 新增 `category_aliases`：`negative_prompt → text_prompt`；`model_loader/sampler/decode/resolution → image_model/video_model`（按模态优先）；Runway 输出类 → `output`；LibTV 输出类 → `image_asset / video_model / editing`；LoRA/ControlNet/放大/条件控制不设等价项 |
+| `creative-platforms/comfyui/capability_map.json` | 工作流解析 `unverified` | 改为 `verified`，注明只读解析与兼容报告；降级项补「无效工作流退出码 4」「不生成/不导入/不导出可导入工作流，不调用平台 API」 |
+| `creative-platforms/comfyui/platform_rules.md` | 声明「v1 不解析工作流文件」 | 改为自 3.0.0 起提供 L3 只读分析；补非法工作流与跨平台迁移的处理规则；安全边界保持不执行、不安装、不下载 |
+| `creative-platforms/README.md` | L3 标为未提供 | L3 行改为 3.0.0 起由 `analyze_workflow.py` / `prompt_compiler.py workflow` 提供，仍不生成/导入/导出 |
+| `prompt-reverse-engineer-skill/references/ir_spec.md` | 仅甲阶段 IR 契约 | §4.3 补全 `workflow` 字段表与校验规则；新增 §4.3.1 命令、格式边界、兼容报告、`category_aliases` 与平台资料查找顺序；退出码表补工作流项 |
+| `prompt-reverse-engineer-skill/SKILL.md` | 无工作流分支 | 新增「工作流分支」触发与边界（拆解 ComfyUI 工作流、迁移到 Runway 要改什么、列出缺失自定义节点与模型）；脚本表补 `analyze_workflow.py`；退出码 4 补工作流结构错误 |
+| `README.md` | 无工作流输入 | 输入表补 ComfyUI 工作流；架构与 §1.5 补只读解析与兼容报告；目录树补脚本与 fixtures；断言数 69 |
+| `tools/verify.py` | 65 项 | 69 项：`工作流层/只读解析与 IR`、`负向层/工作流结构错误`、`工作流层/跨平台兼容报告`、`一致性/工作流文档与能力声明`；平台骨架校验 `category_aliases` 目标存在 |
+| `docs/RELEASE.md` | 65 项、历史止于 v2.6.0 | 69 项；历史补 v3.0.0 |
+| `tasks/todo.md` | 丙未开始 | 丙勾选：解析器、编译器、IR 校验、别名与能力、4 项断言/69 总数、文档与豆包 |
+| `VERSION` / codex `plugin.json` | 2.6.0 | 3.0.0；描述补 ComfyUI API/UI 只读解析与兼容报告，不生成可导入工作流、不自动执行 |
+| 豆包产物 | v2.6.0 包 | 重新生成：`scripts/` 增至 7 个（含 `analyze_workflow.py`），`SKILL.md`、`references/ir_spec.md`、`platforms/` 与 zip 同步 |
+
+### 生效方式
+
+随 `main` 发布，无需重装。CLI 直接可用：
+
+```bash
+python prompt-reverse-engineer-skill/scripts/analyze_workflow.py workflow.json -o wf.json
+python prompt-reverse-engineer-skill/scripts/prompt_compiler.py workflow --report wf.json --target runway --format md
+python prompt-reverse-engineer-skill/scripts/prompt_compiler.py ir validate --analysis wf.json
+```
+
+平台资料按 `--platforms-dir` → 安装态 `platforms/` → 仓库 `creative-platforms/` 查找；缺失或 `draft` 时整体保守降级。
+
+### 验证（真实输出）
+
+工作流断言：
+
+```text
+$ python tools/verify.py --filter 工作流
+[PASS] 工作流层/只读解析与 IR — API 11 节点/15 连线/3 模型；UI 10/10/2 自定义+1 未知警告；IR 通过；输出幂等；仅文件名
+[PASS] 负向层/工作流结构错误 — 悬空连线/成环/UI 断链/坏 JSON 均退出码 4；IR 重复 ID/环/端点错误退出码 4
+[PASS] 工作流层/跨平台兼容报告 — comfyui 原生 11/11；UI 2 降级；runway 3 不兼容 + 手工步骤；libtv 全降级；未知目标退出 1；幂等；无绝对路径；draft 保守
+[PASS] 一致性/工作流文档与能力声明 — IR 规范/SKILL/README 同步；ComfyUI 能力已 verified；三平台别名表齐全
+
+== 验证汇总 ==
+通过 4 / 4
+全部通过 ✔
+```
+
+解析实测（API 样例）：
+
+```json
+{
+  "format": "comfyui_api",
+  "nodes": 11,
+  "links": 15,
+  "models": 3,
+  "assets": 1,
+  "custom_nodes": 0,
+  "stats": {
+    "node_count": 11, "link_count": 15, "model_count": 3,
+    "asset_count": 1, "custom_node_count": 0, "unknown_node_count": 0
+  },
+  "issues": [],
+  "confidence": {
+    "workflow": {"status": "observed", "basis": "只读解析文件结构；节点与连线计数来自文件本身"},
+    "assets": {"status": "observed", "basis": "从加载节点参数提取文件名；文件内容与可读性未校验"},
+    "model": {"status": "inferred", "basis": "按加载节点参数名推断模型文件；本机可用性需人工确认"},
+    "parameters": {"status": "observed", "basis": "读取节点输入或 widgets_values；未执行连线求值"}
+  }
+}
+```
+
+解析实测（UI 样例）：
+
+```json
+{
+  "format": "comfyui_ui",
+  "version": "0.4",
+  "nodes": 10,
+  "links": 10,
+  "custom_nodes": [
+    {"class_type": "ImageResizeKJ", "category": "upscale", "nodes": ["7"]},
+    {"class_type": "MysteryNodeXP", "category": "unknown", "nodes": ["10"]}
+  ],
+  "stats": {"custom_node_count": 2, "unknown_node_count": 1},
+  "issues": ["未识别节点类型：MysteryNodeXP（节点 10）；已按自定义节点记入依赖，不阻断解析"]
+}
+```
+
+兼容报告实测：
+
+```text
+API  → runway：总体 incompatible；compatible 1 / degraded 7 / incompatible 3
+API  → comfyui：总体 compatible；11 / 0 / 0
+UI   → comfyui：总体 degraded；8 / 2 / 0
+UI   → runway：总体 incompatible；1 / 8 / 1
+UI   → libtv：总体 degraded；1 / 9 / 0
+未知目标 nosuch：退出码 1
+```
+
+Runway Markdown 报告首段实际输出：
+
+```text
+- 目标平台：`runway`（Runway Workflows）
+- 源格式：`comfyui_api`
+- 总体结论：**不可直接迁移（incompatible）**
+- 节点统计：compatible 1 / degraded 7 / incompatible 3
+- 文件迁移：**部分降级（degraded）** — 目标平台未公开/未验证该格式导入；需人工重建；本报告不生成可导入文件
+- 可导入产物：不生成（`importable_output=false`）
+```
+
+全量回归：
+
+```text
+$ python tools/verify.py
+通过 69 / 69
+全部通过 ✔
+
+$ python tools/gen_registry.py --check
+注册表一致：3 份，模型 12 / 平台 3
+退出码 0
+
+$ python tools/gen_examples.py --check
+[PASS] text_example/output.md 与生成结果一致
+[PASS] image_example/output.md 与生成结果一致
+[PASS] muse_image_example/output.md 与生成结果一致
+[PASS] video_example/output.md 与生成结果一致
+[PASS] seedance_example/output.md 与生成结果一致
+[PASS] story_example/output.md 与生成结果一致
+[PASS] shot_reverse_example/output.md 与生成结果一致
+退出码 0
+```
+
+豆包产物重新生成后，脚本清单断言为 7 个脚本且与 `scripts/*.py` 一致；两次生成哈希一致（固定时间戳），产物为 LF。
+
+### 偏差
+
+- 统一类别到平台并非一对一：`sampler` 需按图片/视频落到 `image_model` 或 `video_model`，故在 `workflow_mapping.json` 增加一对多 `category_aliases`，而不是简单改名替换。
+- LoRA/ControlNet 在 Runway 与 LibTV 无等价节点，报告判 `incompatible`；即使总体结论为「不可直接迁移」，仍逐节点给出可迁移项与手工重建步骤，不因整体失败而省略细节。
+- API 样例含 LoRA/ControlNet，LibTV 结论为 incompatible 3；UI 样例不含这两类，LibTV 为 degraded 1/9/0。两者是样例差异，不是规则不一致。
+- 未知节点只进入 `custom_nodes` 与 `issues`，按自定义依赖提示人工安装，不阻断解析；未知目标平台不是「降级」，而是用法错误（退出码 1）。
+- 兼容报告只读：不调用 ComfyUI `/prompt`、不调用任何平台 API、不生成/导入/导出工作流文件；`importable_output` 固定 `false`。
+- 仍只支持 ComfyUI API/UI JSON，不解析 `.blend/.psd/.prproj/.aep` 或剪映工程。
+
+### 回滚
+
+`git revert` 本次提交。若需单独回退丙阶段：删除 `analyze_workflow.py` 与两个 workflow fixtures；移除 `prompt_compiler.py` 的 `workflow` 子命令及工作流 IR 校验；恢复 `ir_spec.md`、三平台 `workflow_mapping.json`、ComfyUI `capability_map.json` / `platform_rules.md`、`creative-platforms/README.md`、`SKILL.md`、`README.md`、`RELEASE.md`；`verify.py` 删除 4 项并恢复 65；`VERSION` 与 codex 清单回到 2.6.0；重跑 `python tools/install.py --platform doubao`。无数据迁移。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径；验证输出只使用仓库内中性 fixtures，路径以 `...` 省略。

@@ -9,6 +9,8 @@
   all      compile + filter + score 串联
   scenes   叙事文本逐场景编译（image + video）
   shots    实拍镜头反推：逐镜头卡 → 各模型独立 Prompt（shot_style 模板）
+  workflow 工作流跨平台兼容性报告（只读；不生成/不导入可导入工作流）
+  ir validate  校验分析 JSON 是否符合 IR 1.0（references/ir_spec.md）
   validate-templates  校验模板元数据/占位符/用途契约（全部错误一次列出）
 
 任务模式：semantic_analysis.task_type（八枚举：前五通用 + 后三 Muse 扩展）经
@@ -249,6 +251,27 @@ UNCERTAINTY_ITEM_RE = re.compile(r"^(observed|inferred|unknown)\s*[:：]\s*(.+)$
 MODALITY_NAMES = {"text", "image", "video"}
 KIND_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
+# --- IR v1 契约（references/ir_spec.md，甲阶段） ---
+IR_VERSION = "1.0"
+IR_MODULES = ("project", "subject", "scene", "visual", "shot", "prompt",
+              "reference", "model", "parameters", "workflow", "assets")
+IR_MAX_DEPTH = 5
+IR_ASSET_KINDS = ("image", "video", "audio", "text", "workflow", "other")
+IR_CONFIDENCE_STATUS = ("observed", "inferred", "unknown")
+IR_WORKFLOW_FORMATS = ("comfyui_api", "comfyui_ui")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+PATH_SEP_RE = re.compile(r"[\\/:]")
+
+# --- 工作流兼容性报告（阶段丙，只读） ---
+PLATFORM_ID_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
+WORKFLOW_STATUS_RANK = {"compatible": 0, "degraded": 1, "incompatible": 2}
+WORKFLOW_STATUS_LABEL = {
+    "compatible": "可迁移",
+    "degraded": "部分降级",
+    "incompatible": "不可直接迁移",
+}
+WORKFLOW_SOURCE_FORMAT = {"comfyui_api": "api_json", "comfyui_ui": "ui_json"}
+
 # --- 实拍镜头反推契约（与 prompt_framework.md 2.6 节、shot_reverse_rules.md 镜像） ---
 SHOT_SIZES = ("大远景", "远景", "全景", "中景", "近景", "特写", "大特写")
 CAMERA_ANGLES = ("平拍", "仰拍", "俯拍", "低机位", "过肩", "第一人称", "鸟瞰", "斜角")
@@ -411,6 +434,275 @@ def load_analysis(path):
         die("分析文件缺少有效 modality 字段（text/image/video/story）", 4)
     validate_semantic(data["semantic_analysis"])
     return data
+
+
+def ir_depth(value):
+    """IR 嵌套深度：标量 0，容器为 1+子项最大深度（根对象按第 1 层计）。"""
+    if isinstance(value, dict):
+        return 1 + max((ir_depth(item) for item in value.values()), default=0)
+    if isinstance(value, list):
+        return 1 + max((ir_depth(item) for item in value), default=0)
+    return 0
+
+
+def ir_node_id(value):
+    """节点 ID 统一为字符串；布尔/空值/其他类型返回 None。"""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+def ir_has_cycle(node_ids, edges):
+    """有向图环检测（迭代 DFS，避免深工作流触发递归上限）。"""
+    adjacency = {node_id: [] for node_id in node_ids}
+    for source, target in edges:
+        if source in adjacency and target in adjacency:
+            adjacency[source].append(target)
+    state = {node_id: 0 for node_id in node_ids}
+    for start in node_ids:
+        if state[start]:
+            continue
+        state[start] = 1
+        stack = [(start, iter(adjacency[start]))]
+        while stack:
+            current, iterator = stack[-1]
+            try:
+                nxt = next(iterator)
+            except StopIteration:
+                state[current] = 2
+                stack.pop()
+                continue
+            if state[nxt] == 1:
+                return True
+            if state[nxt] == 0:
+                state[nxt] = 1
+                stack.append((nxt, iter(adjacency[nxt])))
+    return False
+
+
+def ir_errors(data):
+    """按 references/ir_spec.md 校验 IR v1，返回错误列表（空列表=通过）。"""
+    errors = []
+    if not isinstance(data, dict):
+        return ["分析文件顶层必须是对象"]
+
+    version = data.get("ir_version", IR_VERSION)
+    if version != IR_VERSION:
+        errors.append(f'ir_version 必须是 "{IR_VERSION}"，当前：{version!r}')
+
+    project = data.get("project")
+    if project is not None:
+        if not isinstance(project, dict):
+            errors.append("project 必须是对象")
+        else:
+            for key, value in project.items():
+                if not isinstance(value, str):
+                    errors.append(f"project.{key} 必须是字符串")
+
+    assets = data.get("assets")
+    if assets is not None:
+        if not isinstance(assets, list):
+            errors.append("assets 必须是数组")
+        else:
+            for index, item in enumerate(assets):
+                where = f"assets[{index}]"
+                if not isinstance(item, dict):
+                    errors.append(f"{where} 必须是对象")
+                    continue
+                kind = item.get("kind")
+                if kind not in IR_ASSET_KINDS:
+                    errors.append(f"{where}.kind 必须是 "
+                                  f"{'/'.join(IR_ASSET_KINDS)} 之一，当前：{kind!r}")
+                sha = item.get("sha256")
+                if not isinstance(sha, str) or not SHA256_RE.match(sha):
+                    errors.append(f"{where}.sha256 必须是 64 位小写十六进制摘要")
+                path = item.get("path")
+                if path is not None:
+                    if not isinstance(path, str) or not path.strip():
+                        errors.append(f"{where}.path 必须是非空字符串")
+                    elif PATH_SEP_RE.search(path):
+                        errors.append(f"{where}.path 只能是文件名"
+                                      f"（不得含目录分隔符或盘符）：{path}")
+                for key in ("role", "relation"):
+                    if key in item and not isinstance(item[key], str):
+                        errors.append(f"{where}.{key} 必须是字符串")
+
+    workflow = data.get("workflow")
+    if workflow is not None:
+        if not isinstance(workflow, dict):
+            errors.append("workflow 必须是对象或 null")
+        else:
+            node_ids = set()
+            nodes = workflow.get("nodes")
+            if not isinstance(nodes, list):
+                errors.append("workflow.nodes 是必填数组")
+            elif not nodes:
+                errors.append("workflow.nodes 不能为空数组（工作流至少一个节点）")
+            else:
+                for index, node in enumerate(nodes):
+                    if not isinstance(node, dict):
+                        errors.append(f"workflow.nodes[{index}] 必须是对象")
+                        continue
+                    node_id = ir_node_id(node.get("id"))
+                    if node_id is None:
+                        errors.append(f"workflow.nodes[{index}].id 必须是非空字符串或整数")
+                    elif node_id in node_ids:
+                        errors.append(f"workflow.nodes[{index}].id 重复：{node_id}")
+                    else:
+                        node_ids.add(node_id)
+                    class_type = node.get("class_type")
+                    if not isinstance(class_type, str) or not class_type.strip():
+                        errors.append(f"workflow.nodes[{index}] 缺少 class_type")
+                    if "category" in node and not isinstance(node["category"], str):
+                        errors.append(f"workflow.nodes[{index}].category 必须是字符串")
+            for key in ("links", "models", "custom_nodes", "issues"):
+                if key in workflow and not isinstance(workflow[key], list):
+                    errors.append(f"workflow.{key} 必须是数组")
+            fmt = workflow.get("format")
+            if fmt is not None and fmt not in IR_WORKFLOW_FORMATS:
+                errors.append(f"workflow.format 必须是 "
+                              f"{'/'.join(IR_WORKFLOW_FORMATS)} 之一，当前：{fmt!r}")
+            version = workflow.get("version")
+            if version is not None and not isinstance(version, str):
+                errors.append("workflow.version 必须是字符串（如 \"0.4\" / \"1.0\"）")
+
+            links = workflow.get("links")
+            edges = []
+            if isinstance(links, list):
+                for index, link in enumerate(links):
+                    where = f"workflow.links[{index}]"
+                    if not isinstance(link, dict):
+                        errors.append(f"{where} 必须是对象")
+                        continue
+                    source = link.get("from")
+                    target = link.get("to")
+                    source_ok = isinstance(source, str) and bool(source.strip())
+                    target_ok = isinstance(target, str) and bool(target.strip())
+                    if not source_ok:
+                        errors.append(f"{where}.from 必须是非空字符串")
+                    elif node_ids and source not in node_ids:
+                        errors.append(f"{where}.from 指向不存在的节点：{source}")
+                    if not target_ok:
+                        errors.append(f"{where}.to 必须是非空字符串")
+                    elif node_ids and target not in node_ids:
+                        errors.append(f"{where}.to 指向不存在的节点：{target}")
+                    if source_ok and target_ok:
+                        edges.append((source, target))
+                    if "to_input" in link and not isinstance(link["to_input"], str):
+                        errors.append(f"{where}.to_input 必须是字符串")
+                    for key in ("from_output", "to_slot"):
+                        if key in link and (not isinstance(link[key], int)
+                                            or isinstance(link[key], bool)
+                                            or link[key] < 0):
+                            errors.append(f"{where}.{key} 必须是非负整数")
+                if edges and ir_has_cycle(sorted(node_ids), edges):
+                    errors.append("workflow.links 存在环（循环依赖），不符合 IR 工作流契约")
+
+            for key in ("models", "custom_nodes", "issues"):
+                items = workflow.get(key)
+                if not isinstance(items, list):
+                    continue
+                for index, item in enumerate(items):
+                    where = f"workflow.{key}[{index}]"
+                    if key == "issues":
+                        if not isinstance(item, str):
+                            errors.append(f"{where} 必须是字符串")
+                    elif key == "models":
+                        if isinstance(item, str):
+                            continue
+                        if not isinstance(item, dict):
+                            errors.append(f"{where} 必须是字符串或对象")
+                        elif "name" in item and not isinstance(item["name"], str):
+                            errors.append(f"{where}.name 必须是字符串")
+                    else:
+                        if isinstance(item, str):
+                            continue
+                        if not isinstance(item, dict):
+                            errors.append(f"{where} 必须是字符串或对象")
+                        elif not isinstance(item.get("class_type"), str) \
+                                or not item["class_type"].strip():
+                            errors.append(f"{where} 缺少 class_type")
+
+            workflow_assets = workflow.get("assets")
+            if workflow_assets is not None:
+                if not isinstance(workflow_assets, list):
+                    errors.append("workflow.assets 必须是数组")
+                else:
+                    for index, item in enumerate(workflow_assets):
+                        where = f"workflow.assets[{index}]"
+                        if not isinstance(item, dict):
+                            errors.append(f"{where} 必须是对象")
+                            continue
+                        if not isinstance(item.get("name"), str) \
+                                or not item["name"].strip():
+                            errors.append(f"{where}.name 必须是非空字符串")
+                        if "kind" in item and item["kind"] not in IR_ASSET_KINDS:
+                            errors.append(f"{where}.kind 必须是 "
+                                          f"{'/'.join(IR_ASSET_KINDS)} 之一，"
+                                          f"当前：{item['kind']!r}")
+
+            parameters = workflow.get("parameters")
+            if parameters is not None:
+                if not isinstance(parameters, list):
+                    errors.append("workflow.parameters 必须是数组")
+                else:
+                    for index, item in enumerate(parameters):
+                        where = f"workflow.parameters[{index}]"
+                        if not isinstance(item, dict):
+                            errors.append(f"{where} 必须是对象")
+                            continue
+                        if ir_node_id(item.get("node")) is None:
+                            errors.append(f"{where}.node 必须是非空字符串或整数")
+                        if not isinstance(item.get("values"), dict):
+                            errors.append(f"{where}.values 必须是对象")
+
+            deps = workflow.get("deps")
+            if deps is not None:
+                if not isinstance(deps, dict):
+                    errors.append("workflow.deps 必须是对象")
+                else:
+                    for key, value in deps.items():
+                        if not isinstance(value, list) or not all(
+                                isinstance(entry, str) for entry in value):
+                            errors.append(f"workflow.deps.{key} 必须是字符串数组")
+            stats = workflow.get("stats")
+            if stats is not None and not isinstance(stats, dict):
+                errors.append("workflow.stats 必须是对象")
+
+    confidence = data.get("confidence")
+    if confidence is not None:
+        if not isinstance(confidence, dict):
+            errors.append("confidence 必须是对象")
+        else:
+            for module, entry in confidence.items():
+                where = f"confidence.{module}"
+                if module not in IR_MODULES:
+                    errors.append(f"{where} 不是 IR 模块名"
+                                  f"（允许：{'/'.join(IR_MODULES)}）")
+                if not isinstance(entry, dict):
+                    errors.append(f"{where} 必须是对象")
+                    continue
+                status = entry.get("status")
+                if status not in IR_CONFIDENCE_STATUS:
+                    errors.append(f"{where}.status 必须是 "
+                                  f"{'/'.join(IR_CONFIDENCE_STATUS)} 之一，"
+                                  f"当前：{status!r}")
+                basis = entry.get("basis")
+                if not isinstance(basis, str) or not basis.strip():
+                    errors.append(f"{where}.basis 必须是非空字符串")
+                if "evidence" in entry and not isinstance(entry["evidence"], (str, list)):
+                    errors.append(f"{where}.evidence 必须是字符串或数组")
+
+    for key in ("project", "assets", "workflow", "confidence"):
+        if key in data:
+            depth = ir_depth(data[key])
+            if depth > IR_MAX_DEPTH:
+                errors.append(f"{key} 嵌套深度 {depth} 超过上限 {IR_MAX_DEPTH}")
+    return errors
 
 
 def template_errors(filename, t):
@@ -2356,6 +2648,530 @@ def emit_shots_text(result, output):
 # ---------------------------------------------------------------------------
 # validate-templates
 # ---------------------------------------------------------------------------
+def cmd_ir(args):
+    """IR v1 契约校验：只在传入 IR 字段时生效，旧 JSON 直接通过。"""
+    data = load_json(args.analysis, "分析文件")
+    if not isinstance(data, dict):
+        die("分析文件顶层必须是对象", 4)
+    semantic = data.get("semantic_analysis")
+    if semantic is not None:
+        validate_semantic(semantic)
+    modality = data.get("modality")
+    if modality is not None and modality not in (
+            "text", "image", "video", "story", "workflow"):
+        die("分析文件 modality 必须是 text/image/video/story/workflow 之一", 4)
+
+    errors = ir_errors(data)
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "tool": TOOL,
+        "command": "ir validate",
+        "ir_version": IR_VERSION,
+        "valid": not errors,
+        "modules": list(IR_MODULES),
+        "errors": errors,
+    }
+    emit(report, args.output)
+    if errors:
+        print(f"IR 校验失败：{len(errors)} 项错误", file=sys.stderr)
+        sys.exit(4)
+
+
+def workflow_wf_node_key(node_id):
+    text = str(node_id)
+    if text.isdigit():
+        return (0, int(text), "")
+    return (1, 0, text)
+
+
+def workflow_platforms_dir(override):
+    """定位平台资料：显式参数 > 安装态 platforms/ > 仓库 creative-platforms/。"""
+    if override:
+        path = Path(override).expanduser().resolve()
+        if not path.is_dir():
+            die(f"平台资料目录不存在：{override}", 2)
+        return path
+    skill_root = Path(__file__).resolve().parent.parent
+    installed = skill_root / "platforms"
+    if installed.is_dir():
+        return installed
+    repo = skill_root.parent / "creative-platforms"
+    if repo.is_dir():
+        return repo
+    return None
+
+
+def load_workflow_platform(pid, base):
+    """读取目标平台 capability_map/workflow_mapping；缺失时返回降级所需信息。"""
+    warnings = []
+    if base is None:
+        return None, None, ["未找到平台资料目录（platforms/ 或 creative-platforms/）；"
+                            "兼容性结论按保守降级处理"]
+    folder = base / pid
+    if not folder.is_dir():
+        die(f"未知目标平台：{pid}（{base} 下无该平台资料）", 1)
+    cap_path = folder / "capability_map.json"
+    map_path = folder / "workflow_mapping.json"
+    cap = mapping = None
+    if cap_path.is_file():
+        cap = load_json(cap_path, f"平台能力声明 {pid}")
+        if not isinstance(cap, dict):
+            die(f"平台能力声明 {pid} 顶层必须是对象", 4)
+        if cap.get("platform") != pid:
+            warnings.append(f"capability_map.json 的 platform 字段与目录名 {pid} 不一致")
+    else:
+        warnings.append(f"缺少 {pid}/capability_map.json；只给保守降级结论")
+    if map_path.is_file():
+        mapping = load_json(map_path, f"工作流映射 {pid}")
+        if not isinstance(mapping, dict):
+            die(f"工作流映射 {pid} 顶层必须是对象", 4)
+        if mapping.get("platform") != pid:
+            warnings.append(f"workflow_mapping.json 的 platform 字段与目录名 {pid} 不一致")
+    else:
+        warnings.append(f"缺少 {pid}/workflow_mapping.json；不输出确定性节点映射")
+    return cap, mapping, warnings
+
+
+def load_workflow_report(path):
+    """读取 analyze_workflow.py 输出（或 IR JSON），校验后返回归一化节点。"""
+    data = load_json(path, "工作流报告")
+    if not isinstance(data, dict):
+        die("工作流报告顶层必须是对象", 4)
+    errors = ir_errors(data)
+    if errors:
+        die("工作流报告不符合 IR 1.0：" + "；".join(errors[:5]), 4)
+    workflow = data.get("workflow")
+    if not isinstance(workflow, dict):
+        die("工作流报告缺少 workflow 对象（请先用 analyze_workflow.py 解析）", 4)
+    fmt = workflow.get("format")
+    if fmt not in IR_WORKFLOW_FORMATS:
+        die("工作流报告 workflow.format 必须是 "
+            f"{'/'.join(IR_WORKFLOW_FORMATS)} 之一", 4)
+    nodes = []
+    for index, node in enumerate(workflow["nodes"]):
+        if not isinstance(node, dict):
+            die(f"workflow.nodes[{index}] 必须是对象", 4)
+        node_id = ir_node_id(node.get("id"))
+        class_type = node.get("class_type")
+        if node_id is None or not isinstance(class_type, str) or not class_type.strip():
+            die(f"workflow.nodes[{index}] 缺少有效 id/class_type", 4)
+        category = node.get("category")
+        if not isinstance(category, str) or not category.strip():
+            category = "unknown"
+        nodes.append({"id": node_id, "class_type": class_type.strip(),
+                      "category": category, "custom": False})
+    if not nodes:
+        die("workflow.nodes 不能为空", 4)
+    return data, workflow, nodes
+
+
+def workflow_custom_types(workflow):
+    custom = set()
+    for item in workflow.get("custom_nodes") or []:
+        if isinstance(item, str):
+            custom.add(item)
+        elif isinstance(item, dict) and isinstance(item.get("class_type"), str):
+            custom.add(item["class_type"])
+    deps = workflow.get("deps")
+    if isinstance(deps, dict):
+        for item in deps.get("custom_node_types") or []:
+            if isinstance(item, str):
+                custom.add(item)
+    return custom
+
+
+def workflow_custom_nodes(workflow):
+    raw = workflow.get("custom_nodes") or []
+    grouped = {}
+    for item in raw:
+        if isinstance(item, str):
+            class_type, category, nodes = item, "unknown", []
+        elif isinstance(item, dict):
+            class_type = item.get("class_type")
+            if not isinstance(class_type, str):
+                continue
+            category = item.get("category") if isinstance(item.get("category"), str) else "unknown"
+            nodes = [str(node) for node in item.get("nodes") or []
+                     if isinstance(node, (str, int)) and not isinstance(node, bool)]
+        else:
+            continue
+        entry = grouped.setdefault(class_type, {"class_type": class_type,
+                                                "category": category,
+                                                "nodes": set()})
+        entry["nodes"].update(nodes)
+    result = []
+    for class_type in sorted(grouped):
+        entry = grouped[class_type]
+        result.append({
+            "class_type": class_type,
+            "category": entry["category"],
+            "nodes": sorted(entry["nodes"], key=workflow_wf_node_key),
+        })
+    return result
+
+
+def workflow_modality(nodes):
+    categories = {node["category"] for node in nodes}
+    if categories & {"video_output", "video_asset"}:
+        return "video"
+    if categories & {"image_output", "image_asset"}:
+        return "image"
+    return "unknown"
+
+
+def workflow_mapping_entry(category, mapping, modality):
+    """按统一类别查目标映射；支持 category_aliases 的一对多别名。"""
+    entries = {}
+    for item in mapping.get("nodes") or []:
+        if isinstance(item, dict) and isinstance(item.get("unified"), str):
+            entries[item["unified"]] = item
+    if category in entries:
+        return category, entries[category]
+    aliases = mapping.get("category_aliases") or {}
+    keys = aliases.get(category) if isinstance(aliases, dict) else None
+    if not isinstance(keys, list):
+        return None, None
+    preferred = {"image": "image_model", "video": "video_model"}.get(modality)
+    ordered = ([preferred] if preferred in keys else []) + [
+        key for key in keys if key != preferred]
+    for key in ordered:
+        if isinstance(key, str) and key in entries:
+            return key, entries[key]
+    return None, None
+
+
+def workflow_item_status(category, target, modality, mapping, custom,
+                         usable, availability):
+    """返回 (status, reason, mapping_key, confidence)。"""
+    mapped_key = entry = None
+    if usable and mapping is not None:
+        mapped_key, entry = workflow_mapping_entry(category, mapping, modality)
+    confidence = "unverified"
+    if isinstance(entry, dict) and entry.get("confidence") in (
+            "verified", "manual", "unverified"):
+        confidence = entry["confidence"]
+    if not usable:
+        return "degraded", availability, mapped_key, confidence
+    if target == "comfyui":
+        if category == "unknown":
+            return ("degraded", "本机未识别该节点类型；需在 ComfyUI 节点定义"
+                    "（object_info）中确认", mapped_key, "manual")
+        if custom:
+            return ("degraded", "自定义节点可运行但需安装对应节点包与模型；"
+                    "版本与端口需人工确认", mapped_key, "manual")
+        return ("compatible", "同一平台，内置节点原生可用；具体端口以本机定义为准",
+                mapped_key, "manual")
+    if category == "unknown":
+        if target == "runway":
+            return ("incompatible", "目标平台不支持任意自定义节点；需人工重建该步骤",
+                    mapped_key, "unverified")
+        return ("degraded", "节点语义未公开；需人工重建该步骤",
+                mapped_key, "unverified")
+    if category in ("lora", "controlnet"):
+        return ("incompatible", "目标平台未提供等价 LoRA/ControlNet 节点；"
+                "需改用内置风格、参考图或首帧近似", mapped_key, confidence)
+    if category in ("text_prompt", "negative_prompt"):
+        return ("degraded", "文本可迁移，但语法与长度限制需重写；"
+                "不直接粘贴 ComfyUI 权重语法", mapped_key, confidence)
+    if category in ("image_asset", "video_asset"):
+        if isinstance(entry, dict) and entry.get("status") in ("mapped", "partial") \
+                and entry.get("confidence") == "verified":
+            return ("compatible", "可作为输入素材上传；具体接入方式需人工确认",
+                    mapped_key, confidence)
+        return ("degraded", "素材可人工上传；目标平台接入方式未完全验证",
+                mapped_key, "unverified")
+    if category in ("model_loader", "sampler", "decode", "resolution"):
+        return ("degraded", "由目标平台内部媒体模型处理；参数不可完全等价迁移",
+                mapped_key, confidence)
+    if category == "upscale":
+        return ("degraded", "目标平台未公开等价放大节点；改用平台内置放大或后期",
+                mapped_key, "unverified")
+    if category == "conditioning":
+        return ("degraded", "条件组合由目标平台内部处理；无法逐端口迁移",
+                mapped_key, "unverified")
+    if category == "audio":
+        return ("degraded", "音频链路需人工重建；参数与接口未核验",
+                mapped_key, confidence)
+    if category in ("image_output", "video_output"):
+        return ("degraded", "输出由目标平台重新生成；文件名与格式不保留",
+                mapped_key, confidence)
+    if category in ("reroute", "ui_only"):
+        return ("degraded", "UI 辅助节点，迁移时忽略", mapped_key, "manual")
+    return ("degraded", "未定义映射；需人工确认该步骤", mapped_key, "unverified")
+
+
+def workflow_file_transfer(target, source_format, cap, usable, availability):
+    if not usable:
+        return {"status": "degraded", "reason": availability,
+                "importable_output": False, "source_format": source_format,
+                "target_formats": []}
+    target_formats = cap.get("workflow_formats") or []
+    source_platform_format = WORKFLOW_SOURCE_FORMAT[source_format]
+    import_flag = (cap.get("import_export") or {}).get("import")
+    if source_platform_format in target_formats:
+        status = "compatible"
+        reason = "目标平台声明支持对应工作流格式；导入方式需人工确认；本报告不生成文件"
+    elif import_flag is False:
+        status = "incompatible"
+        reason = "目标平台声明不支持工作流导入；只能人工重建"
+    else:
+        status = "degraded"
+        reason = "目标平台未公开/未验证该格式导入；需人工重建；本报告不生成可导入文件"
+    return {"status": status, "reason": reason, "importable_output": False,
+            "source_format": source_format, "target_formats": target_formats}
+
+
+def workflow_node_ids(ids):
+    ordered = sorted({str(node) for node in ids}, key=workflow_wf_node_key)
+    return "、".join(ordered)
+
+
+def workflow_manual_steps(target, display, items, workflow, usable):
+    steps = []
+    if not usable:
+        steps.append("目标平台资料不可用或未过来源闸门；以下仅为保守建议，"
+                     "需人工确认后再迁移。")
+    by_category = {}
+    for item in items:
+        by_category.setdefault(item["category"], []).append(item["node"])
+    custom_nodes = workflow_custom_nodes(workflow)
+    if target == "comfyui":
+        steps.append("原文件属于 ComfyUI 工作流，可在原环境继续使用；"
+                     "本报告不生成新文件。")
+        if custom_nodes:
+            names = "、".join(entry["class_type"] for entry in custom_nodes)
+            steps.append(f"安装并确认自定义节点：{names}；版本与端口以本机为准。")
+        unknown = [item for item in items if item["category"] == "unknown"]
+        if unknown:
+            steps.append("在本机 object_info 中确认未知节点："
+                         + "、".join(f"{item['class_type']}（节点 {item['node']}）"
+                                    for item in unknown) + "。")
+        steps.append("节点类名与端口以本机节点定义（object_info）为准；"
+                     "采样参数需在界面复核。")
+        return steps
+    steps.append(f"在 {display} 中新建工作流/项目，按下面顺序手工重建。")
+    if by_category.get("text_prompt") or by_category.get("negative_prompt"):
+        parts = []
+        if by_category.get("text_prompt"):
+            parts.append(f"正向文本（节点 {workflow_node_ids(by_category['text_prompt'])}）")
+        if by_category.get("negative_prompt"):
+            parts.append(f"负向约束（节点 {workflow_node_ids(by_category['negative_prompt'])}）")
+        steps.append("重建" + "、".join(parts) + "：按目标平台语法重写，"
+                     "不要直接粘贴 ComfyUI 权重语法。")
+    deps = workflow.get("deps") if isinstance(workflow.get("deps"), dict) else {}
+    asset_names = deps.get("input_assets") or []
+    if by_category.get("image_asset") or by_category.get("video_asset") or asset_names:
+        names = "、".join(asset_names) if asset_names else "原输入素材"
+        steps.append(f"上传输入素材：{names}；确认目标平台的尺寸/时长限制。")
+    if by_category.get("model_loader"):
+        steps.append(f"用目标平台媒体模型节点替换加载器（节点 "
+                     f"{workflow_node_ids(by_category['model_loader'])}）；"
+                     "不按文件名替换模型，选择账号内可用模型。")
+    model_files = deps.get("model_files") or []
+    if model_files:
+        steps.append("模型文件：" + "、".join(model_files)
+                     + "；只能在目标平台账号内选等价模型，不按文件名自动替换。")
+    if by_category.get("lora"):
+        steps.append(f"移除 LoRA（节点 {workflow_node_ids(by_category['lora'])}）；"
+                     "改用内置风格或参考图近似，权重无法等价迁移。")
+    if by_category.get("controlnet"):
+        steps.append(f"移除 ControlNet（节点 {workflow_node_ids(by_category['controlnet'])}）；"
+                     "改用参考图、首帧或文字结构约束近似。")
+    if by_category.get("sampler") or by_category.get("decode") or by_category.get("resolution"):
+        ids = (by_category.get("sampler", []) + by_category.get("decode", [])
+               + by_category.get("resolution", []))
+        steps.append(f"在目标平台参数面板复核步数/CFG/种子/分辨率（节点 "
+                     f"{workflow_node_ids(ids)}）；不可控项按平台默认值执行。")
+    if by_category.get("upscale"):
+        steps.append(f"放大/尺寸节点（节点 {workflow_node_ids(by_category['upscale'])}）"
+                     "改用目标平台内置放大或后期。")
+    if by_category.get("audio"):
+        steps.append(f"音频链路（节点 {workflow_node_ids(by_category['audio'])}）"
+                     "需人工重建；参数未核验。")
+    if by_category.get("image_output") or by_category.get("video_output"):
+        ids = (by_category.get("image_output", []) + by_category.get("video_output", []))
+        steps.append(f"输出节点（节点 {workflow_node_ids(ids)}）不迁移；"
+                     "在目标平台重新选择输出格式并保存。")
+    if by_category.get("reroute") or by_category.get("ui_only"):
+        ids = by_category.get("reroute", []) + by_category.get("ui_only", [])
+        steps.append(f"忽略 UI 辅助节点（节点 {workflow_node_ids(ids)}）。")
+    unknown = [item for item in items if item["category"] == "unknown"]
+    if unknown:
+        steps.append("人工确认未知节点的作用："
+                     + "、".join(f"{item['class_type']}（节点 {item['node']}）"
+                                for item in unknown)
+                     + "；无法确认时按缺失处理，不臆测参数。")
+    if custom_nodes:
+        names = "、".join(entry["class_type"] for entry in custom_nodes)
+        steps.append(f"以下自定义节点需确认目标平台等价能力：{names}。")
+    steps.append("完成后在目标平台内手动保存；本 Skill 不生成、不导入、"
+                 "不导出工作流文件。")
+    return steps
+
+
+def workflow_md_cell(text):
+    return str(text).replace("|", "\\|").replace("\n", " ").strip()
+
+
+def workflow_report_markdown(report):
+    overall = report["overall"]
+    lines = [
+        "# 工作流跨平台兼容报告",
+        "",
+        f"- 目标平台：`{report['target']}`（{report['platform']['display_name']}）",
+        f"- 源格式：`{report['source_format']}`",
+        f"- 总体结论：**{WORKFLOW_STATUS_LABEL[overall]}（{overall}）**",
+        "- 节点统计：compatible {compatible} / degraded {degraded} / "
+        "incompatible {incompatible}".format(**report["counts"]),
+        f"- 文件迁移：**{WORKFLOW_STATUS_LABEL[report['file_transfer']['status']]}"
+        f"（{report['file_transfer']['status']}）** — "
+        f"{workflow_md_cell(report['file_transfer']['reason'])}",
+        "- 可导入产物：不生成（`importable_output=false`）",
+        "",
+        "## 节点兼容性",
+        "",
+        "| 节点 | 类型 | 统一类别 | 结论 | 映射 | 依据 |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in report["items"]:
+        lines.append("| {node} | {class_type} | {category} | {status} | {mapping} | {reason} |".format(
+            node=workflow_md_cell(item["node"]),
+            class_type=workflow_md_cell(item["class_type"]),
+            category=workflow_md_cell(item["category"]),
+            status=item["status"],
+            mapping=workflow_md_cell("、".join(item["mapping"]) or "—"),
+            reason=workflow_md_cell(item["reason"]),
+        ))
+    lines += ["", "## 手工重建步骤", ""]
+    lines += [f"{index}. {step}" for index, step in enumerate(report["manual_steps"], 1)]
+    deps = report["deps"]
+    lines += ["", "## 依赖", ""]
+    custom = "、".join(
+        f"{entry['class_type']}（{entry['category']}；节点 "
+        f"{workflow_node_ids(entry['nodes'])}）" for entry in deps["custom_nodes"])
+    lines.append(f"- 自定义节点：{custom or '无'}")
+    lines.append(f"- 模型文件：{'、'.join(deps['model_files']) or '无'}")
+    lines.append(f"- 输入素材：{'、'.join(deps['input_assets']) or '无'}")
+    lines += ["", "## 问题", ""]
+    lines += [f"- {issue}" for issue in report["issues"]] or ["- 无"]
+    lines += ["", "## 边界", ""]
+    lines += [f"- {item}" for item in report["boundary"]]
+    return "\n".join(lines) + "\n"
+
+
+def emit_workflow_text(report, output):
+    text = workflow_report_markdown(report)
+    if output:
+        with open(output, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+    else:
+        print(text, end="")
+
+
+def cmd_workflow(args):
+    """只读工作流兼容性报告：不生成、不导入、不导出任何工作流文件。"""
+    target = args.target.strip()
+    if not PLATFORM_ID_RE.match(target):
+        die(f"目标平台 ID 非法：{args.target!r}（小写字母开头，仅含 a-z0-9_-）", 1)
+    data, workflow, nodes = load_workflow_report(args.report)
+    base = workflow_platforms_dir(args.platforms_dir)
+    cap, mapping, warnings = load_workflow_platform(target, base)
+    draft = isinstance(cap, dict) and cap.get("status") == "draft"
+    usable = cap is not None and mapping is not None and not draft
+    if draft:
+        availability = "平台资料未过来源闸门（draft）；只给保守降级结论"
+    elif cap is None or mapping is None:
+        availability = "平台资料缺失；只给保守降级结论"
+    else:
+        availability = "平台资料不可用；只给保守降级结论"
+
+    custom_types = workflow_custom_types(workflow)
+    for node in nodes:
+        node["custom"] = node["class_type"] in custom_types
+    modality = workflow_modality(nodes)
+    items = []
+    for node in sorted(nodes, key=lambda item: workflow_wf_node_key(item["id"])):
+        status, reason, mapped_key, confidence = workflow_item_status(
+            node["category"], target, modality, mapping, node["custom"],
+            usable, availability)
+        items.append({
+            "node": node["id"],
+            "class_type": node["class_type"],
+            "category": node["category"],
+            "custom": node["custom"],
+            "status": status,
+            "reason": reason,
+            "mapping": [mapped_key] if mapped_key else [],
+            "confidence": confidence,
+        })
+    file_transfer = workflow_file_transfer(
+        target, workflow["format"], cap, usable, availability)
+    statuses = [item["status"] for item in items] + [file_transfer["status"]]
+    overall = max(statuses, key=lambda value: WORKFLOW_STATUS_RANK[value])
+    counts = {status: sum(1 for item in items if item["status"] == status)
+              for status in ("compatible", "degraded", "incompatible")}
+
+    display = cap.get("display_name") if isinstance(cap, dict) else target
+    deps_raw = workflow.get("deps") if isinstance(workflow.get("deps"), dict) else {}
+    model_files = deps_raw.get("model_files") or []
+    if not model_files:
+        model_files = sorted({item.get("name") for item in workflow.get("models") or []
+                              if isinstance(item, dict) and isinstance(item.get("name"), str)})
+    input_assets = deps_raw.get("input_assets") or []
+    if not input_assets:
+        input_assets = sorted({item.get("name") for item in workflow.get("assets") or []
+                               if isinstance(item, dict) and isinstance(item.get("name"), str)})
+    report_issues = [str(item) for item in workflow.get("issues") or []]
+    for warning in warnings:
+        if warning not in report_issues:
+            report_issues.append(warning)
+    if draft and "平台资料为 draft：不用于确定性结论，只作人工参考" not in report_issues:
+        report_issues.append("平台资料为 draft：不用于确定性结论，只作人工参考")
+    if not usable and base is not None and cap is not None \
+            and mapping is None and "缺少 workflow_mapping.json；不输出确定性节点映射" not in report_issues:
+        report_issues.append("缺少 workflow_mapping.json；不输出确定性节点映射")
+
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "tool": TOOL,
+        "command": "workflow",
+        "target": target,
+        "source_format": workflow["format"],
+        "modality": modality,
+        "platform": {
+            "id": target,
+            "display_name": display,
+            "status": cap.get("status") if isinstance(cap, dict) else "missing",
+            "capability_level": cap.get("capability_level") if isinstance(cap, dict) else "unknown",
+            "loaded": usable,
+            "draft": draft,
+            "mapping_loaded": mapping is not None,
+            "target_formats": cap.get("workflow_formats") if isinstance(cap, dict) else [],
+        },
+        "overall": overall,
+        "counts": counts,
+        "file_transfer": file_transfer,
+        "items": items,
+        "deps": {
+            "custom_nodes": workflow_custom_nodes(workflow),
+            "model_files": sorted(set(model_files)),
+            "input_assets": sorted(set(input_assets)),
+        },
+        "manual_steps": workflow_manual_steps(target, display, items, workflow, usable),
+        "issues": report_issues,
+        "boundary": [
+            "只读解析 ComfyUI 公开 API/UI JSON；不解析闭源工程文件。",
+            "不执行工作流，不生成、不导入、不导出可导入工作流，不调用平台 API（无 L4）。",
+            "兼容结论基于 creative-platforms 映射与置信度；未公开参数一律需人工确认。",
+            "unknown 结论不进入 Prompt 正文。",
+        ],
+    }
+    if args.format in ("md", "markdown", "text"):
+        emit_workflow_text(report, args.output)
+    else:
+        emit(report, args.output)
+
+
 def cmd_validate_templates(args):
     """一次性校验目录内全部模板，输出全部错误而非首个错误。"""
     registry, errors, skipped = scan_templates(args.template_dir)
@@ -2457,6 +3273,26 @@ def main():
     p_shots.add_argument("--template-dir", default=str(DEFAULT_TEMPLATE_DIR))
     p_shots.add_argument("-o", "--output")
 
+    p_workflow = sub.add_parser(
+        "workflow", help="工作流跨平台兼容性报告（只读，不生成可导入文件）")
+    p_workflow.add_argument("--report", required=True,
+                            help="analyze_workflow.py 输出（含 workflow.nodes/format）")
+    p_workflow.add_argument("--target", required=True,
+                            help="目标平台 ID（如 comfyui/runway/libtv）")
+    p_workflow.add_argument("--platforms-dir",
+                            help="平台资料目录（默认安装态 platforms/，仓库用 creative-platforms/）")
+    p_workflow.add_argument("--format", default="md",
+                            choices=["json", "text", "md", "markdown"],
+                            help="md/text 输出兼容性表格，json 输出结构化报告")
+    p_workflow.add_argument("-o", "--output")
+
+    p_ir = sub.add_parser("ir", help="IR v1 契约校验（references/ir_spec.md）")
+    ir_sub = p_ir.add_subparsers(dest="ir_command", required=True)
+    p_ir_validate = ir_sub.add_parser("validate", help="校验分析 JSON 是否符合 IR 1.0")
+    p_ir_validate.add_argument("--analysis", required=True,
+                               help="分析 JSON（可含 semantic_analysis；旧 JSON 无 IR 字段直接通过）")
+    p_ir_validate.add_argument("-o", "--output")
+
     p_validate = sub.add_parser("validate-templates",
                                 help="校验模板元数据/占位符/用途契约")
     p_validate.add_argument("--template-dir", default=str(DEFAULT_TEMPLATE_DIR))
@@ -2475,6 +3311,10 @@ def main():
         cmd_scenes(args)
     elif args.command == "shots":
         cmd_shots(args)
+    elif args.command == "workflow":
+        cmd_workflow(args)
+    elif args.command == "ir":
+        cmd_ir(args)
     elif args.command == "validate-templates":
         cmd_validate_templates(args)
 

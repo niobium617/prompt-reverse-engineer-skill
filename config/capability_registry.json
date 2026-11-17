@@ -1,0 +1,253 @@
+{
+  "capability_levels": {
+    "L1": {
+      "scope": "生成目标平台提示词",
+      "skill_support": "full",
+      "title": "Prompt 适配"
+    },
+    "L2": {
+      "scope": "映射参数、参考素材与模型选项",
+      "skill_support": "full",
+      "title": "配置适配"
+    },
+    "L3": {
+      "scope": "可只读解析并输出报告；不生成、不导入、不导出工作流",
+      "skill_support": "readonly_only",
+      "title": "工作流适配"
+    },
+    "L4": {
+      "scope": "平台原生能力照实声明，本 Skill 不调用生成 API",
+      "skill_support": "none",
+      "title": "自动化执行"
+    }
+  },
+  "generated_by": "tools/gen_registry.py",
+  "models": [
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "deepseek",
+      "last_verified": "2026-11-05",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "flux2",
+      "last_verified": "2026-11-05",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L1",
+      "degrade": "无默认参数映射；只输出 Prompt，参数由用户按目标平台填写",
+      "id": "gpt4_claude",
+      "last_verified": "2026-11-05",
+      "supported": [
+        "L1_prompt"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "gpt_image",
+      "last_verified": "2026-11-05",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "midjourney",
+      "last_verified": "2026-11-05",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "muse_image",
+      "last_verified": "2026-11-15",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "nano_banana",
+      "last_verified": "2026-11-05",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "runway",
+      "last_verified": "2026-11-05",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "seedance",
+      "last_verified": "2026-11-15",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "sora2",
+      "last_verified": "2026-11-05",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "stable_diffusion",
+      "last_verified": "2026-11-05",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "veo3",
+      "last_verified": "2026-11-05",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    }
+  ],
+  "platforms": [
+    {
+      "capability_level": "L2",
+      "degrade": [
+        "缺少节点或模型：映射标 unknown，并给出人工补装方向，不自动下载",
+        "无法读取工作流：只给人工搭建说明与通用 Prompt",
+        "安装态找不到 platforms/：只输出通用 Prompt，并说明未加载平台资料",
+        "工作流无效（悬空连线/成环/结构非法）：退出码 4，不输出解析结论",
+        "兼容性报告只做只读结论：不生成、不导入、不导出可导入工作流，不调用平台 API"
+      ],
+      "id": "comfyui",
+      "last_verified": "2026-11-17",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L1",
+      "degrade": [
+        "分镜字段/节点结构未知：只给剧本、分镜内容与逐镜 Prompt，由用户手动填入",
+        "账号或 Plugin 不可用：按手动创作流程给步骤，不承诺自动执行",
+        "模型可用性未知：列候选模型，提示以账号内列表为准",
+        "安装态找不到 platforms/：只输出通用 Prompt，并说明未加载平台资料"
+      ],
+      "id": "libtv",
+      "last_verified": "2026-11-17",
+      "supported": [
+        "L1_prompt"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L1",
+      "degrade": [
+        "节点参数未确认：只给步骤级映射，参数标「需人工确认」",
+        "无 API Key 或账号不可用：不执行，仅给人工搭建步骤",
+        "无法确认模型可用性：给候选模型并提示以账号内列表为准",
+        "安装态找不到 platforms/：只输出通用 Prompt，并说明未加载平台资料"
+      ],
+      "id": "runway",
+      "last_verified": "2026-11-17",
+      "supported": [
+        "L1_prompt"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    }
+  ],
+  "schema_version": "1.0"
+}

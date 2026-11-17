@@ -1,0 +1,142 @@
+{
+  "platform": "runway",
+  "display_name": "Runway Workflows",
+  "status": "verified",
+  "version_verified": "2026-11-17",
+  "capability_level": "L1",
+  "modalities": [
+    "image",
+    "video",
+    "text"
+  ],
+  "workflow_formats": [],
+  "import_export": {
+    "import": "unknown",
+    "export": "unknown"
+  },
+  "api": {
+    "local": false,
+    "cloud": true
+  },
+  "automation": {
+    "platform_level": "L4",
+    "supported_by_skill": false
+  },
+  "models": [
+    {
+      "name": "Gen-4.5",
+      "confidence": "verified",
+      "note": "开发者 Workflows 页面展示 Gen-4.5 节点"
+    },
+    {
+      "name": "Gen-4",
+      "confidence": "verified",
+      "note": "产品页 Media Model Nodes 可用模型列表"
+    },
+    {
+      "name": "Gen-4 Turbo",
+      "confidence": "verified",
+      "note": "产品页 Media Model Nodes 可用模型列表"
+    },
+    {
+      "name": "Flash 2.5",
+      "confidence": "verified",
+      "note": "产品页 Media Model Nodes 可用模型列表"
+    },
+    {
+      "name": "Veo 3.1",
+      "confidence": "verified",
+      "note": "产品页 Media Model Nodes 可用模型列表；第三方模型"
+    },
+    {
+      "name": "其他实验室精选模型",
+      "confidence": "verified",
+      "note": "官方 FAQ 明确 Workflows 可组合其他实验室模型；具体清单随上线变化，需人工确认"
+    }
+  ],
+  "features": [
+    {
+      "name": "可视化多步骤工作流",
+      "confidence": "verified",
+      "note": "官方定义：连接模型、Prompt 与媒体操作的视觉化流水线"
+    },
+    {
+      "name": "一个工作流发布为一个 API 端点",
+      "confidence": "verified",
+      "note": "开发者页明确；端点不随内部编辑改变"
+    },
+    {
+      "name": "输入节点（图片/视频/文本）",
+      "confidence": "verified",
+      "note": "产品页 Input Nodes 说明"
+    },
+    {
+      "name": "媒体模型节点（图片/视频生成）",
+      "confidence": "verified",
+      "note": "产品页 Media Model Nodes 说明"
+    },
+    {
+      "name": "LLM 节点（扩写/分析/统一风格）",
+      "confidence": "verified",
+      "note": "产品页 LLM Nodes 说明"
+    },
+    {
+      "name": "预置 Recipes（广告本地化/产品广告/多镜头视频等）",
+      "confidence": "verified",
+      "note": "开发者页 Recipes 列表"
+    },
+    {
+      "name": "按模型与处理步骤计费",
+      "confidence": "verified",
+      "note": "开发者页 FAQ"
+    },
+    {
+      "name": "工作流文件导入/导出格式",
+      "confidence": "unverified",
+      "note": "官方页面未公开文件格式；不假设存在"
+    },
+    {
+      "name": "节点参数名与默认值",
+      "confidence": "unverified",
+      "note": "本次核验页面未逐项列出；需在账号界面人工确认"
+    }
+  ],
+  "incompatible": [
+    "本地执行（Runway Workflows 是云端产品）",
+    "任意自定义节点 / 第三方节点包",
+    "未公开的工作流文件导入导出",
+    "由本 Skill 直接调用 API 或发布端点（L4 不做）"
+  ],
+  "degrade": [
+    "节点参数未确认：只给步骤级映射，参数标「需人工确认」",
+    "无 API Key 或账号不可用：不执行，仅给人工搭建步骤",
+    "无法确认模型可用性：给候选模型并提示以账号内列表为准",
+    "安装态找不到 platforms/：只输出通用 Prompt，并说明未加载平台资料"
+  ],
+  "dependencies": {
+    "runtime": "cloud",
+    "version": "unknown",
+    "notes": [
+      "依赖 Runway 账号与 Runway Dev API Key，但本 Skill 不读取、不调用",
+      "模型上线状态与参数以账号内 Workflows 界面为准"
+    ]
+  },
+  "sources": [
+    {
+      "title": "Workflows: AI Media Pipelines as One API Endpoint | Runway",
+      "url": "https://dev.runway.com/workflows",
+      "accessed": "2026-11-17",
+      "official": true,
+      "verified": true,
+      "note": "读取到工作流定义、单端点、节点类别、Recipes、计费与发布说明"
+    },
+    {
+      "title": "Runway Workflows | Runway AI",
+      "url": "https://runwayml.com/workflows",
+      "accessed": "2026-11-17",
+      "official": true,
+      "verified": true,
+      "note": "读取到 Input/Media Model/LLM 节点说明与可用模型列表"
+    }
+  ]
+}
