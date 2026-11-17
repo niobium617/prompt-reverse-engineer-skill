@@ -1,0 +1,81 @@
+{
+  "model": "jimeng",
+  "display_name": "即梦 5.0（Seedream 5.0）",
+  "vendor": "ByteDance",
+  "version": "5.0",
+  "last_verified": "2026-11-18",
+  "notes": "即梦 5.0（Seedream 5.0）图像生成/编辑：提示词按「主体 + 行为 + 环境 + 材质 + 光影 + 构图 + 风格」组织，先写画面里有什么，再写怎么拍；支持文生图、图生图复刻、编辑、多参考图与多图融合。画面文字用引号写出并要求逐字准确；分辨率、画幅、水印等只放 params 块。公开资料对 API 模型 ID 与分辨率档位存在版本差异，具体以控制台为准，见 jimeng_sources.md 的待确认项。",
+  "alias": [
+    "jimeng",
+    "jimeng-5",
+    "jimeng-5.0",
+    "seedream",
+    "seedream-5",
+    "seedream-5.0",
+    "doubao-seedream",
+    "即梦"
+  ],
+  "default_params": {
+    "model_id": "seedream-5.0",
+    "resolution": "2K",
+    "aspect_ratio": "16:9",
+    "watermark": "false"
+  },
+  "optional_fields": [
+    "subject",
+    "scene",
+    "subject_position",
+    "subject_scale",
+    "spatial",
+    "spatial_relationships",
+    "composition",
+    "shot_type",
+    "camera_angle",
+    "material",
+    "lighting",
+    "color",
+    "style",
+    "target_style",
+    "text_content",
+    "reference_note",
+    "negative_words",
+    "reference_images",
+    "reference_usage",
+    "feature_transfer",
+    "feature_exclusion",
+    "preserve_constraints",
+    "forbidden_changes",
+    "modification_scope",
+    "target_changes"
+  ],
+  "clean_empty_label_lines": true,
+  "kind_requires": {
+    "recreate": [
+      "subject_position",
+      "spatial"
+    ],
+    "edit": [
+      "modification_scope",
+      "preserve_constraints",
+      "forbidden_changes"
+    ],
+    "reference_guided": [
+      "reference_images",
+      "spatial"
+    ],
+    "compose": [
+      "reference_images",
+      "spatial"
+    ]
+  },
+  "modalities": {
+    "image": {
+      "prompt": "主体：{subject}\n行为与环境：{scene}\n位置：{subject_position}\n主体比例：{subject_scale}\n空间关系：{spatial}\n补充空间关系：{spatial_relationships}\n构图：{composition}\n景别：{shot_type}\n机位：{camera_angle}\n材质：{material}\n光影：{lighting}\n色彩：{color}\n风格：{style}\n目标风格：{target_style}\n画面文字（逐字准确，不增删）：{text_content}\n参考：{reference_note}\n避免：{negative_words}",
+      "recreate": "复刻参考图，保持主体身份、构图、透视、光影方向与色彩关系。\n主体：{subject}\n位置：{subject_position}\n主体比例：{subject_scale}\n空间关系：{spatial}\n补充空间关系：{spatial_relationships}\n构图：{composition}\n景别：{shot_type}\n机位：{camera_angle}\n材质：{material}\n光影：{lighting}\n色彩：{color}\n风格：{style}\n保留不变：{preserve_constraints}\n禁止改动：{forbidden_changes}\n避免：{negative_words}",
+      "edit": "编辑图1，只执行指定修改，其余画面保持不变。\n修改目标：{target_changes}\n修改范围：{modification_scope}\n保留不变：{preserve_constraints}\n禁止改动：{forbidden_changes}\n补充要求：{target_style}\n避免：{negative_words}",
+      "reference_guided": "参考图角色（每张图只承担写明的用途）：\n{reference_images}\n使用策略：{reference_usage}\n允许迁移：{feature_transfer}\n禁止迁移：{feature_exclusion}\n主体：{subject}\n行为与环境：{scene}\n位置：{subject_position}\n主体比例：{subject_scale}\n空间关系：{spatial}\n构图：{composition}\n景别：{shot_type}\n机位：{camera_angle}\n材质：{material}\n光影：{lighting}\n色彩：{color}\n风格：{style}\n画面文字（逐字准确，不增删）：{text_content}\n避免：{negative_words}",
+      "compose": "多图融合为一张完整画面，每张参考图只提供指定元素。\n参考图来源：\n{reference_images}\n使用策略：{reference_usage}\n允许迁移：{feature_transfer}\n禁止迁移：{feature_exclusion}\n主体：{subject}\n位置：{subject_position}\n主体比例：{subject_scale}\n空间关系：{spatial}\n构图：{composition}\n材质：{material}\n光影：{lighting}\n色彩：{color}\n风格：{style}\n避免：{negative_words}",
+      "params": "model: {model_id}\nresolution: {resolution}\naspect_ratio: {aspect_ratio}\nwatermark: {watermark}"
+    }
+  }
+}

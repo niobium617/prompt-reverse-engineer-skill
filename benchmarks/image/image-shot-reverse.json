@@ -1,0 +1,42 @@
+{
+  "id": "image-shot-reverse",
+  "suite": "image",
+  "title": "图片逆向：单帧镜头反推六模型分镜提示词",
+  "input": {
+    "fixture": "tools/fixtures/semantic_shot_reverse_image.json",
+    "steps": [
+      {
+        "script": "prompt_compiler.py",
+        "args": ["shots", "--analysis", "{fixture}"],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "models": ["midjourney", "stable_diffusion", "flux2", "gpt_image", "muse_image", "nano_banana"],
+    "shots": {
+      "count": 1,
+      "models": ["midjourney", "stable_diffusion", "flux2", "gpt_image", "muse_image", "nano_banana"],
+      "prompts_per_shot": 6,
+      "checklist_min": 6,
+      "skipped": 0
+    },
+    "json_equals": {
+      "shots.0.card.shot_size": "特写",
+      "shots.0.card.camera_angle": "平拍",
+      "shots.0.card.duration_s": 3
+    },
+    "text_forbidden": ["{", "}", "uncertainty"]
+  },
+  "semantic": {
+    "gold": "image-shot-reverse.gold.md",
+    "criteria": [
+      "镜头卡是否区分 observed（EXIF / 画面可见）与 inferred（景深、光源方向）",
+      "六模型是否共享同一镜头事实，仅按平台语法改写，未各自发明不同景别",
+      "浅景深、85mm、f/1.8 等参数是否与画面证据一致，未夸大为官方元数据",
+      "审查清单是否覆盖主体、构图、光影、文字、参考图与置信度",
+      "是否未把单帧推断成完整运镜序列"
+    ],
+    "max_score": 10
+  }
+}

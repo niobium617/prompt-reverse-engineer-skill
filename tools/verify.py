@@ -307,7 +307,8 @@ def main():
                         "gpt4_claude.json", "deepseek.json", "sora2.json",
                         "runway.json", "veo3.json", "flux2.json",
                         "gpt_image.json", "muse_image.json", "seedance.json",
-                        "nano_banana.json", "score_report.json"):
+                        "nano_banana.json", "kling.json", "hailuo.json",
+                        "vidu.json", "jimeng.json", "score_report.json"):
                 assert f"prompt-reverse-engineer/assets/templates/{tpl}" in names, \
                     f"zip 内缺少模板：{tpl}"
             for ex in ("story_example/input.md", "story_example/output.md"):
@@ -549,9 +550,9 @@ def main():
             for key in meta_required:
                 assert key in t, f"{p.name} 缺少元数据 {key}"
             models[t["model"]] = t
-        assert len(models) == 12, f"模型模板数 {len(models)} != 12"
-        assert "muse_image" in models, "缺少 Muse Image 模板"
-        assert "seedance" in models, "缺少 Seedance 模板"
+        assert len(models) == 16, f"模型模板数 {len(models)} != 16"
+        for model in ("muse_image", "seedance", "kling", "hailuo", "vidu", "jimeng"):
+            assert model in models, f"缺少 {model} 模板"
 
         # 2) 图像模板：FLUX.2 无 negative、GPT Image / Nano Banana 分段标签、清理空槽
         rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
@@ -618,7 +619,7 @@ def main():
                           "--models", "mj", "--template-dir", dup_dir])
         assert rc == 4, f"别名冲突应退出码 4，实际 {rc}"
         assert "别名冲突" in decode(err), "未提示别名冲突"
-        return True, ("12 个模型模板元数据齐全；FLUX.2 无负向/参数行/替代文字水印约束；"
+        return True, ("16 个模型模板元数据齐全；FLUX.2 无负向/参数行/替代文字水印约束；"
                       "GPT Image/Muse/Seedance/Nano Banana/Veo/Runway/Sora 结构正确；"
                       "Markdown 排版与别名冲突检测通过")
 
@@ -1835,7 +1836,7 @@ def main():
         rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py",
                             "validate-templates"])
         data = stdout_json(rc, out, err)
-        assert data["valid"] is True and data["model_count"] == 12, \
+        assert data["valid"] is True and data["model_count"] == 16, \
             f"模板校验未通过：{data.get('errors')}"
         assert "score_report.json" in data["skipped"], "非模型模板未跳过"
 
@@ -1873,7 +1874,7 @@ def main():
                           "--analysis", FIXTURES / "semantic_text.json",
                           "--template-dir", broken_dir])
         assert rc == 4, f"compile 遇坏模板应退出码 4，实际 {rc}"
-        return True, f"12 模型模板全量通过；5 类坏模板均报错并阻断 compile"
+        return True, f"16 模型模板全量通过；5 类坏模板均报错并阻断 compile"
 
     # ---------------- 11. URL 下载防护 ----------------
     def net_guard():
@@ -1935,15 +1936,16 @@ def main():
         plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
         models = ("Midjourney", "Stable Diffusion", "FLUX.2", "GPT Image",
                   "Muse Image", "Seedance", "Nano Banana", "GPT-5.5", "DeepSeek",
-                  "Sora 2", "Runway", "Veo 3.1")
+                  "Sora 2", "Runway", "Veo 3.1", "Kling", "Hailuo", "Vidu", "即梦")
         for name in models:
             assert name in plugin["description"], f"plugin.json description 缺 {name}"
             assert name in plugin["interface"]["longDescription"], \
                 f"plugin.json longDescription 缺 {name}"
-        assert "deepseek" in plugin["keywords"], "plugin.json 关键词缺 deepseek"
-        assert "muse" in plugin["keywords"], "plugin.json 关键词缺 muse"
-        assert "seedance" in plugin["keywords"], "plugin.json 关键词缺 seedance"
-        return True, "codex 清单描述含十二模型与 DeepSeek/Muse/Seedance 关键词"
+        for keyword in ("deepseek", "muse", "seedance",
+                        "kling", "hailuo", "vidu", "jimeng"):
+            assert keyword in plugin["keywords"], \
+                f"plugin.json 关键词缺 {keyword}"
+        return True, "codex 清单描述含十六模型与 DeepSeek/Muse/Seedance/可灵/海螺/Vidu/即梦关键词"
 
     def doubao_script_inventory():
         scripts = sorted(p.name for p in (SKILL / "scripts").glob("*.py"))
@@ -2035,13 +2037,13 @@ def main():
             json.loads(path.read_text(encoding="utf-8"))
         model_data = json.loads(
             (REPO / "config" / "model_registry.json").read_text(encoding="utf-8"))
-        assert len(model_data["models"]) == 12, \
-            f"模型注册表应为 12 个，实际 {len(model_data['models'])}"
+        assert len(model_data["models"]) == 16, \
+            f"模型注册表应为 16 个，实际 {len(model_data['models'])}"
         text = "\n".join(
             (REPO / "config" / name).read_text(encoding="utf-8") for name in names)
         assert str(REPO.resolve()) not in text and "C:\\" not in text \
             and "F:\\" not in text, "注册表含绝对路径"
-        return True, "3 份注册表与源文件逐字节一致；12 模型；无绝对路径"
+        return True, "3 份注册表与源文件逐字节一致；16 模型；无绝对路径"
 
     def registry_capability_claims():
         names = ("model_registry.json", "platform_registry.json",
@@ -2052,6 +2054,8 @@ def main():
         levels = capability["capability_levels"]
         assert levels["L3"]["skill_support"] == "readonly_only", "L3 声明不符"
         assert levels["L4"]["skill_support"] == "none", "L4 不得声明支持"
+        assert len(capability["models"]) == 16, \
+            f"能力声明模型数 {len(capability['models'])} != 16"
         for model in capability["models"]:
             assert model["capability_level"] in ("L1", "L2"), \
                 f"{model['id']} 能力等级异常：{model['capability_level']}"
@@ -2064,7 +2068,7 @@ def main():
         for item in platform["platforms"]:
             assert item["status"] == "verified" and item["sources"], \
                 f"{item.get('platform')} 未通过来源闸门"
-        return True, "L3 只读/L4 不支持；12 模型均声明 L1 且不支持 L4；平台过来源闸门"
+        return True, "L3 只读/L4 不支持；16 模型均声明 L1 且不支持 L4；平台过来源闸门"
 
     def platform_skeleton():
         assert PLATFORMS_DIR.is_dir(), "缺少 creative-platforms/"
@@ -2298,9 +2302,11 @@ def main():
         cases = (
             ("semantic_text.json", "text", ("gpt4_claude", "deepseek")),
             ("semantic_image.json", "image", ("midjourney", "stable_diffusion",
-                                              "flux2", "gpt_image", "nano_banana")),
+                                              "flux2", "gpt_image", "nano_banana",
+                                              "jimeng")),
             ("semantic_muse_image.json", "image", ("muse_image",)),
-            ("semantic_video.json", "video", ("sora2", "runway", "veo3")),
+            ("semantic_video.json", "video", ("sora2", "runway", "veo3",
+                                              "kling", "hailuo", "vidu")),
             ("semantic_seedance.json", "video", ("seedance",)),
         )
         rendered_models, total = set(), 0
@@ -2315,8 +2321,124 @@ def main():
             assert all(p["text"].strip() for p in data["prompts"]), "存在空 Prompt"
             rendered_models |= rendered
             total += len(data["prompts"])
-        assert len(rendered_models) == 12, f"渲染模型数 {len(rendered_models)} != 12"
-        return True, f"12 个模型模板均渲染出非空 Prompt（共 {total} 条）"
+        assert len(rendered_models) == 16, f"渲染模型数 {len(rendered_models)} != 16"
+        return True, f"16 个模型模板均渲染出非空 Prompt（共 {total} 条）"
+
+    def new_video_templates_contract():
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                            "--analysis", FIXTURES / "semantic_video.json",
+                            "--models", "kling,hailuo,vidu"])
+        data = stdout_json(rc, out, err)
+        assert set(data["models"]) == {"kling", "hailuo", "vidu"}, \
+            f"新视频模型集合错误：{data['models']}"
+        kinds = {}
+        for prompt in data["prompts"]:
+            kinds.setdefault(prompt["model"], set()).add(prompt["kind"])
+        for model in ("kling", "hailuo", "vidu"):
+            assert kinds.get(model) == {"storyboard", "params"}, \
+                f"{model} 用途错误：{sorted(kinds.get(model, set()))}"
+            text = next(p["text"] for p in data["prompts"]
+                        if p["model"] == model and p["kind"] == "storyboard")
+            assert "{" not in text and "}" not in text, f"{model} 残留占位符"
+            assert "。。" not in text, f"{model} 出现连续中文句号"
+        kling = next(p["text"] for p in data["prompts"]
+                     if p["model"] == "kling" and p["kind"] == "storyboard")
+        assert "【整体设定】" in kling and "【主体与动作】" in kling, \
+            "可灵缺少核心标签"
+        assert "model: kling-4.0" in next(
+            p["text"] for p in data["prompts"]
+            if p["model"] == "kling" and p["kind"] == "params"), "可灵参数缺模型 ID"
+        hailuo = next(p["text"] for p in data["prompts"]
+                      if p["model"] == "hailuo" and p["kind"] == "storyboard")
+        for label in ("integrated_multimodal_description:",
+                      "overall_soundscape:", "non_diegetic_music: 无额外配乐"):
+            assert label in hailuo, f"海螺缺少 {label}"
+        vidu = next(p["text"] for p in data["prompts"]
+                    if p["model"] == "vidu" and p["kind"] == "storyboard")
+        for label in ("主体：", "动作与情节：", "参考主体："):
+            assert label in vidu, f"Vidu 缺少 {label}"
+        # 中文/别名解析到同一模板，且不混入默认集合
+        for alias, model in (("可灵", "kling"), ("hailuo-3", "hailuo"),
+                             ("vidu-q3", "vidu")):
+            rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                                "--analysis", FIXTURES / "semantic_video.json",
+                                "--models", alias])
+            data_alias = stdout_json(rc, out, err)
+            assert data_alias["prompts"] and all(
+                p["model"] == model for p in data_alias["prompts"]), \
+                f"别名 {alias} 未解析到 {model}"
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                            "--analysis", FIXTURES / "semantic_video.json"])
+        defaults = stdout_json(rc, out, err)
+        assert not any(p["model"] in {"kling", "hailuo", "vidu"}
+                       for p in defaults["prompts"]), "新视频模型不应混入默认集合"
+        return True, ("可灵/海螺/Vidu 模板自动注册；三平台标签与 params 正确；"
+                      "别名可灵/hailuo-3/vidu-q3 解析一致；未混入默认集合")
+
+    def jimeng_template_contract():
+        rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                            "--analysis", FIXTURES / "semantic_image.json",
+                            "--models", "jimeng"])
+        data = stdout_json(rc, out, err)
+        assert data["models"] == ["jimeng"], f"即梦模型集合错误：{data['models']}"
+        kinds = {p["kind"] for p in data["prompts"]}
+        assert kinds == {"prompt", "params"}, f"即梦用途错误：{sorted(kinds)}"
+        text = next(p["text"] for p in data["prompts"] if p["kind"] == "prompt")
+        for label in ("主体：", "目标风格：",
+                      "画面文字（逐字准确，不增删）：", "避免："):
+            assert label in text, f"即梦 Prompt 缺少 {label}"
+        assert "APS 2077" in text, "即梦 Prompt 缺少画内文字"
+        assert "{" not in text and "}" not in text, "即梦 Prompt 残留占位符"
+        params = next(p["text"] for p in data["prompts"] if p["kind"] == "params")
+        assert "model: seedream-5.0" in params and "watermark: false" in params, \
+            "即梦 params 块不完整"
+        for alias, model in (("即梦", "jimeng"), ("seedream-5", "jimeng")):
+            rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "compile",
+                                "--analysis", FIXTURES / "semantic_image.json",
+                                "--models", alias])
+            alias_data = stdout_json(rc, out, err)
+            assert alias_data["prompts"] and all(
+                p["model"] == model for p in alias_data["prompts"]), \
+                f"别名 {alias} 未解析到 {model}"
+        return True, ("即梦模板自动注册；prompt/params 用途与中文标签正确；"
+                      "别名即梦/seedream-5 解析一致")
+
+    def benchmark_cases_contract():
+        for name in ("README.md", "rubric.md"):
+            assert (REPO / "benchmarks" / name).is_file(), f"缺少 benchmarks/{name}"
+        counts = {}
+        for suite in ("image", "video", "workflow", "platform"):
+            directory = REPO / "benchmarks" / suite
+            cases = sorted(directory.glob("*.json"))
+            counts[suite] = len(cases)
+            assert cases, f"{suite} 套件为空"
+            for case in cases:
+                data = json.loads(case.read_text(encoding="utf-8"))
+                assert data["suite"] == suite, f"{case.name} suite 与目录不一致"
+                gold = case.parent / data["semantic"]["gold"]
+                assert gold.is_file(), f"{case.name} 缺少语义金标"
+                assert len(data["semantic"]["criteria"]) >= 3, \
+                    f"{case.name} 语义标准少于 3 条"
+        assert counts == {"image": 3, "video": 3, "workflow": 2, "platform": 2}, \
+            f"基准用例数量错误：{counts}"
+        rc, out, err = run([PYTHON, REPO / "tools" / "benchmarks.py",
+                            "--schema-only"])
+        assert rc == 0, f"基准契约校验失败：{decode(out)}{decode(err)}"
+        assert "10 例" in decode(out), f"契约输出未报告 10 例：{decode(out)}"
+        return True, "10 例基准契约合法（图片 3/视频 3/工作流 2/平台 2），均含金标与语义标准"
+
+    def benchmark_structural():
+        rc, out, err = run([PYTHON, REPO / "tools" / "benchmarks.py", "--check"])
+        text = decode(out) + decode(err)
+        assert rc == 0, f"基准结构层失败：{text[:800]}"
+        assert "结构层通过 10 / 10" in text, f"结构层未全部通过：{text[-500:]}"
+        assert text.count("[PASS]") == 10, "结构层 PASS 数不是 10"
+        assert "[MANUAL]" in text, "未提示语义层需人工评分"
+        rc, out, err = run([PYTHON, REPO / "tools" / "benchmarks.py",
+                            "--suite", "image", "--check"])
+        assert rc == 0 and decode(out).count("[PASS]") == 3, \
+            "图片套件结构层未通过 3 例"
+        return True, "10 例结构层全部通过；语义层标记为人工评分；图片套件 3 例通过"
 
     checks = [
         ("单元层/analyze_text", unit_text),
@@ -2367,7 +2489,11 @@ def main():
         ("镜头反推/图片六模型渲染", shots_image_render),
         ("契约层/镜头卡字段与安全", shots_contracts),
         ("模板层/uncertainty 不入正文", uncertainty_template_ban),
-        ("模板层/十二模型全量渲染", all_templates_render),
+        ("模板层/可灵/海螺/Vidu 模板", new_video_templates_contract),
+        ("模板层/即梦模板", jimeng_template_contract),
+        ("基准层/用例契约", benchmark_cases_contract),
+        ("基准层/结构层断言", benchmark_structural),
+        ("模板层/十六模型全量渲染", all_templates_render),
         ("安全层/归一化绕过", security_normalization),
         ("安全层/注入标记", injection_flags),
         ("安全层/模板 schema", template_schema),

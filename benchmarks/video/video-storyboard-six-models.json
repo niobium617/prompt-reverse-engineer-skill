@@ -1,0 +1,57 @@
+{
+  "id": "video-storyboard-six-models",
+  "suite": "video",
+  "title": "视频逆向：三镜故事板编译到六个视频模型",
+  "input": {
+    "fixture": "tools/fixtures/semantic_video.json",
+    "steps": [
+      {
+        "script": "prompt_compiler.py",
+        "args": [
+          "compile", "--analysis", "{fixture}",
+          "--models", "sora2,runway,veo3,kling,hailuo,vidu"
+        ],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "models": ["sora2", "runway", "veo3", "kling", "hailuo", "vidu"],
+    "kinds": {
+      "sora2": ["storyboard", "replicate", "params"],
+      "runway": ["storyboard", "replicate", "params"],
+      "veo3": ["storyboard", "negative", "params"],
+      "kling": ["storyboard", "params"],
+      "hailuo": ["storyboard", "params"],
+      "vidu": ["storyboard", "params"]
+    },
+    "prompt_count": 15,
+    "text_contains": {
+      "sora2/storyboard": ["镜头1：", "旁白：", "声音："],
+      "runway/storyboard": ["镜头风格：", "视觉风格：", "声音："],
+      "veo3/storyboard": ["电影摄影：", "音频：", "旁白："],
+      "kling/storyboard": ["【整体设定】", "【主体与动作】", "【光影】"],
+      "hailuo/storyboard": [
+        "integrated_multimodal_description:",
+        "overall_soundscape:",
+        "non_diegetic_music: 无额外配乐"
+      ],
+      "vidu/storyboard": ["主体：", "动作与情节：", "参考主体："],
+      "kling/params": ["model: kling-4.0", "generate_audio: true"],
+      "hailuo/params": ["model: MiniMax-H3", "generate_audio: true"],
+      "vidu/params": ["model: viduq3-pro", "generate_audio: true"]
+    },
+    "text_forbidden": ["{", "}", "uncertainty", "。。"]
+  },
+  "semantic": {
+    "gold": "video-storyboard-six-models.gold.md",
+    "criteria": [
+      "三镜的景别、运镜、时长、画面内容是否与原分析一致，未在平台改写中漂移",
+      "六个模型是否共享同一故事事实，仅按各自标签体系重组",
+      "海螺四段式（integrated / shot / soundscape / music）是否完整且无配乐不虚构",
+      "可灵与 Vidu 的注释性标签是否用于组织信息，而非伪装成官方逐字模板",
+      "负向词、音频开关、模型 ID 是否只出现在参数或负向段，未污染画面正文"
+    ],
+    "max_score": 10
+  }
+}

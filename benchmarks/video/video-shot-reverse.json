@@ -1,0 +1,44 @@
+{
+  "id": "video-shot-reverse",
+  "suite": "video",
+  "title": "视频逆向：三镜实拍片段反推四模型逐镜提示词",
+  "input": {
+    "fixture": "tools/fixtures/semantic_shot_reverse.json",
+    "steps": [
+      {
+        "script": "prompt_compiler.py",
+        "args": ["shots", "--analysis", "{fixture}"],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "models": ["sora2", "runway", "veo3", "seedance"],
+    "shots": {
+      "count": 3,
+      "models": ["sora2", "runway", "veo3", "seedance"],
+      "prompts_per_shot": 4,
+      "checklist_min": 6,
+      "skipped": 0
+    },
+    "json_equals": {
+      "shots.0.card.shot_no": 1,
+      "shots.0.card.shot_size": "远景",
+      "shots.1.card.shot_size": "中景",
+      "shots.2.card.shot_size": "特写",
+      "shots.2.card.duration_s": 3
+    },
+    "text_forbidden": ["{", "}", "uncertainty"]
+  },
+  "semantic": {
+    "gold": "video-shot-reverse.gold.md",
+    "criteria": [
+      "三镜是否逐镜保留景别、机位、运镜、时长、主体动作、环境、光影、色彩、声音与衔接",
+      "镜头间连续性（服装、伞、霓虹位置）是否一致，未出现跳变",
+      "四个模型是否共享同一镜头卡，仅按平台语法改写",
+      "负向词是否只放在负向段，未混入正向画面描述",
+      "是否把推断的光源或地点写成 observed 事实"
+    ],
+    "max_score": 10
+  }
+}

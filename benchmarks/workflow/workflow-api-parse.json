@@ -1,0 +1,43 @@
+{
+  "id": "workflow-api-parse",
+  "suite": "workflow",
+  "title": "工作流解析：ComfyUI API 格式只读统计",
+  "input": {
+    "fixture": "tools/fixtures/workflow_api.json",
+    "steps": [
+      {
+        "script": "analyze_workflow.py",
+        "args": ["{fixture}"],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "json_equals": {
+      "ir_version": "1.0",
+      "modality": "workflow",
+      "project.type": "comfyui_workflow",
+      "workflow.format": "comfyui_api",
+      "workflow.stats.unknown_node_count": 0
+    },
+    "json_lengths": {
+      "workflow.nodes": 11,
+      "workflow.links": 15,
+      "workflow.models": 3,
+      "workflow.custom_nodes": 0,
+      "workflow.issues": 0,
+      "workflow.assets": 1
+    }
+  },
+  "semantic": {
+    "gold": "workflow-api-parse.gold.md",
+    "criteria": [
+      "节点、连线、模型、自定义节点、素材五类统计是否与文件结构一致",
+      "是否只读解析，不执行工作流、不推断未连线的中间结果",
+      "模型文件是否按加载节点参数推断，并标注需人工确认可用性",
+      "参数是否来自节点输入或 widgets_values，未做连线求值",
+      "未知节点是否进入依赖清单而非被静默丢弃"
+    ],
+    "max_score": 10
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "model": "vidu",
+  "display_name": "Vidu Q3",
+  "vendor": "Shengshu",
+  "version": "Q3",
+  "last_verified": "2026-11-18",
+  "notes": "Vidu Q3 视频生成：以「主体 + 动作 + 场景 + 镜头语言 + 光影色彩 + 氛围」的短段落描述为主，支持文生视频、首帧、首尾帧与多参考主体；参考主体在官方写法中用 [@名称] 指代，本 Skill 由 reference_note 承载名称与用途。公开资料常见 1-16 秒、540p/720p/1080p，声音默认开启；具体时长与分辨率档位以控制台为准，参数只放 params 块。",
+  "alias": [
+    "vidu",
+    "vidu-q3",
+    "viduq3",
+    "vidu-q3-pro",
+    "生数"
+  ],
+  "default_params": {
+    "model_id": "viduq3-pro",
+    "duration": "8",
+    "resolution": "1080p",
+    "aspect_ratio": "16:9",
+    "generate_audio": "true"
+  },
+  "optional_fields": [
+    "story",
+    "storyboard",
+    "character",
+    "camera",
+    "atmosphere",
+    "lighting",
+    "color",
+    "style",
+    "audio",
+    "narration",
+    "dialogue",
+    "reference_note",
+    "negative_words",
+    "first_frame",
+    "last_frame",
+    "video_references",
+    "reference_usage",
+    "feature_exclusion"
+  ],
+  "clean_empty_label_lines": true,
+  "shot_style": {
+    "shot_prefix": "【主体与镜头】{shot_size}，{camera_angle}，运镜 {camera_move}；时长 {duration_s} 秒，画幅 {aspect_ratio}。",
+    "shot": "【动作】{subject_action}\n【视觉锚点】{anchors}\n【场景】{environment}\n【光影色彩】{lighting}；{color}\n【风格】{style}\n【声音】{sound}\n【衔接】{continuity}",
+    "shot_suffix": "【焦段】{lens}；焦点 {focus}\n【首帧】{first_frame}\n【转场】{transition}\n【避免】{negative_words}"
+  },
+  "kind_requires": {
+    "storyboard": [
+      "story"
+    ],
+    "image_to_video": [
+      "first_frame",
+      "story"
+    ],
+    "first_last_frame": [
+      "first_frame",
+      "last_frame",
+      "story"
+    ],
+    "reference_to_video": [
+      "video_references",
+      "story"
+    ]
+  },
+  "modalities": {
+    "video": {
+      "storyboard": "主体：{character}\n动作与情节：{story}\n场景：{atmosphere}\n分段事件：\n{storyboard}\n镜头语言：{camera}\n光影：{lighting}\n色彩：{color}\n风格：{style}\n参考主体：{reference_note}\n声音：{audio}\n对白：{dialogue}\n画外音：{narration}\n避免：{negative_words}",
+      "image_to_video": "首帧：图1 作为首帧，保持构图、主体形象与光线。{first_frame}\n主体：{character}\n动作与情节：{story}\n后续镜头：\n{storyboard}\n镜头语言：{camera}\n光影：{lighting}\n色彩：{color}\n风格：{style}\n声音：{audio}\n对白：{dialogue}\n画外音：{narration}\n避免：{negative_words}",
+      "first_last_frame": "首帧：图1。{first_frame}\n尾帧：图2。{last_frame}\n主体：{character}\n过渡动作：{story}\n镜头语言：{camera}\n光影：{lighting}\n色彩：{color}\n风格：{style}\n声音：{audio}\n对白：{dialogue}\n画外音：{narration}\n避免：{negative_words}",
+      "reference_to_video": "参考主体：\n{video_references}\n主体：{character}\n动作与情节：{story}\n分段事件：\n{storyboard}\n使用策略：{reference_usage}\n禁止迁移：{feature_exclusion}\n镜头语言：{camera}\n光影：{lighting}\n色彩：{color}\n风格：{style}\n声音：{audio}\n对白：{dialogue}\n画外音：{narration}\n避免：{negative_words}",
+      "params": "model: {model_id}\nduration: {duration}s\nresolution: {resolution}\naspect_ratio: {aspect_ratio}\ngenerate_audio: {generate_audio}"
+    }
+  }
+}

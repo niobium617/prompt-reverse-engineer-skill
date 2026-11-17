@@ -1,0 +1,56 @@
+{
+  "id": "platform-comfy-to-runway",
+  "suite": "platform",
+  "title": "跨平台迁移：ComfyUI API 工作流 → Runway 兼容报告",
+  "input": {
+    "fixture": "tools/fixtures/workflow_api.json",
+    "steps": [
+      {
+        "script": "analyze_workflow.py",
+        "args": ["{fixture}"],
+        "exit_code": 0,
+        "save": "workflow"
+      },
+      {
+        "script": "prompt_compiler.py",
+        "args": [
+          "workflow", "--report", "{workflow}",
+          "--target", "runway", "--format", "json"
+        ],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "json_equals": {
+      "source_format": "comfyui_api",
+      "target": "runway",
+      "platform.id": "runway",
+      "platform.status": "verified",
+      "overall": "incompatible",
+      "counts.compatible": 1,
+      "counts.degraded": 7,
+      "counts.incompatible": 3,
+      "file_transfer.status": "degraded",
+      "file_transfer.importable_output": false
+    },
+    "json_lengths": {
+      "items": 11,
+      "manual_steps": 10,
+      "deps": 3,
+      "boundary": 4,
+      "issues": 0
+    }
+  },
+  "semantic": {
+    "gold": "platform-comfy-to-runway.gold.md",
+    "criteria": [
+      "11 个节点的兼容结论是否逐项给出，且 compatible / degraded / incompatible 计数自洽",
+      "是否明确说明不生成、不导入可执行工作流，目标是人工重建",
+      "降级与不兼容项是否给出可执行的人工步骤，而非笼统建议",
+      "平台能力结论是否标注置信度与待人工确认项",
+      "是否未把网页端功能等同于开放 API，未声称导入后可直接运行"
+    ],
+    "max_score": 10
+  }
+}

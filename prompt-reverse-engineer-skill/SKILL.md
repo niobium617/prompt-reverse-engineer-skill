@@ -1,6 +1,6 @@
 ---
 name: prompt-reverse-engineer
-description: "多模态 Prompt 逆向工程技能。当用户提供一段文本、一张图片或一个视频，并要求逆向/复刻/拆解其创作逻辑、还原为可复用 Prompt 时激活。触发词（中英双语）：逆向 prompt、反向生成、复刻这个文案/风格/图片/视频、把这段文字/这张图/这个视频变成 prompt、拆解文案/镜头/分镜、反推镜头/运镜、实拍素材拆镜、prompt 优化；prompt reverse engineering、reverse engineer this text/image/video/shot、recreate this camera move as a prompt。输出适配 Midjourney V8.2 / Stable Diffusion 3.5 / FLUX.2 / GPT Image 2.5 / Muse Image 1.0 / Seedance 2.5 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1 多模型格式，附百分制质量评分。"
+description: "多模态 Prompt 逆向工程技能。当用户提供一段文本、一张图片或一个视频，并要求逆向/复刻/拆解其创作逻辑、还原为可复用 Prompt 时激活。触发词（中英双语）：逆向 prompt、反向生成、复刻这个文案/风格/图片/视频、把这段文字/这张图/这个视频变成 prompt、拆解文案/镜头/分镜、反推镜头/运镜、实拍素材拆镜、prompt 优化；prompt reverse engineering、reverse engineer this text/image/video/shot、recreate this camera move as a prompt。输出适配 Midjourney V8.2 / Stable Diffusion 3.5 / FLUX.2 / GPT Image 2.5 / Muse Image 1.0 / 即梦 5.0（Seedream 5.0）/ Seedance 2.5 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1 / Kling 4.0 / Hailuo 3 / Vidu Q3 多模型格式，附百分制质量评分。"
 ---
 
 # Prompt 逆向工程多模态生成 Skill
@@ -42,7 +42,7 @@ description: "多模态 Prompt 逆向工程技能。当用户提供一段文本�
 
 1. **元信息卡**：一行表格列出模态、来源、目标模型（含版本号）、宿主能力（原生视觉 / 长上下文 / 脚本可执行）；并附一行 `IR 1.0 · 能力等级 L1/L2`（有参数映射记 L2，仅 Prompt 记 L1）。
 2. **分析摘要**：特征要点 3-8 条（引用脚本数据与关键帧观察）。
-3. **Prompt 列表**：每个目标模型一条——小标题 `模型展示名（版本） · 用途` + 代码块包裹完整 Prompt。MJ 输出 `/imagine` 原样可粘贴（negative 版整段带 `--no`）；SD 正负分离并附参数行；FLUX.2 无负向、按自然语言长句；GPT Image 用分段标签，按 `task_type` 出五种任务模式之一（文生图 / 复刻 / 编辑 / 参考生成 / 融合）；Muse Image 用自然语言完整句，按 `task_type` 出八种模式之一（前五种 + Anchor 系列 / 多轮修改 / 文字版式）；Seedance 用自然语言分镜，按 `task_type` 出六种模式之一（文生视频 / 首帧 / 首尾帧 / 全模态参考 / 视频编辑 / 视频延长），参数另附 `params` 块；Nano Banana 用分段标签；文本模型用 Markdown 六要素，DeepSeek 版额外带首行模型快照/思考档与独立「推理要求」段。未指定模型时输出 Midjourney V8.2 + GPT-5.5/Claude 5.5 两版本。
+3. **Prompt 列表**：每个目标模型一条——小标题 `模型展示名（版本） · 用途` + 代码块包裹完整 Prompt。MJ 输出 `/imagine` 原样可粘贴（negative 版整段带 `--no`）；SD 正负分离并附参数行；FLUX.2 无负向、按自然语言长句；GPT Image 用分段标签，按 `task_type` 出五种任务模式之一（文生图 / 复刻 / 编辑 / 参考生成 / 融合）；Muse Image 用自然语言完整句，按 `task_type` 出八种模式之一（前五种 + Anchor 系列 / 多轮修改 / 文字版式）；Seedance 用自然语言分镜，按 `task_type` 出六种模式之一（文生视频 / 首帧 / 首尾帧 / 全模态参考 / 视频编辑 / 视频延长），参数另附 `params` 块；Nano Banana 用分段标签；即梦 5.0 用中文标签分节（主体 / 行为与环境 / 位置 / 空间关系 / 构图 / 光影 / 风格 / 画面文字）并附 `params` 块；Kling / Hailuo / Vidu 用中文分节（Hailuo 以 `integrated_multimodal_description:` 开头）并附 `params` 块；文本模型用 Markdown 六要素，DeepSeek 版额外带首行模型快照/思考档与独立「推理要求」段。未指定模型时输出 Midjourney V8.2 + GPT-5.5/Claude 5.5 两版本。
 4. **评分报告**：Markdown 表格（维度 / 权重 / 得分 / 依据）+ 总分与等级 + 1-2 条优化建议。`prompt_compiler.py all --format md` 可直接产出该排版。目标模型含 GPT Image 时末尾附六项审查清单（`prompt_framework.md` 3.1）；含 Muse Image 时另附独立的六项 Muse 清单（3.2）；含 Seedance 时另附独立的六项 Seedance 清单（3.3）；实拍镜头反推另附六项镜头审查清单（3.4）；四者都不参与总分。「待复核」项要在使用提示中说明处理方式。
 5. **使用提示**：说明哪些占位需替换、如何微调（换风格词、换比例参数）；负向词不被某模型支持时（如 FLUX.2）明确告知；有参考图时说明每张图的角色。
 
@@ -143,9 +143,10 @@ IR 校验：`python <技能目录>/scripts/prompt_compiler.py ir validate --anal
 - `references/muse_image_sources.md` —— Muse Image 官方资料索引与「官方能力 vs 本 Skill 设计」边界
 - `references/seedance_rules.md` —— Seedance 2.5 独立编译规则：视频逆向维度、六种任务模式、素材角色、分镜写法、编辑/延长、参数边界、评分与限制（Seedance 必读）
 - `references/seedance_sources.md` —— Seedance 官方资料索引与「官方能力 vs 本 Skill 设计」边界
+- `references/jimeng_sources.md` / `kling_sources.md` / `hailuo_sources.md` / `vidu_sources.md` —— 即梦 5.0、Kling 4.0、Hailuo 3、Vidu Q3 官方资料索引、待人工确认项与设计边界
 - `references/video_rules.md` —— 景别/运镜/叙事/分镜规范
 - `references/shot_reverse_rules.md` —— 实拍镜头反推规则：两层工作流、镜头卡 12 维、运镜轴表、证据分级、跨镜一致性、图片单帧反推、逐模型写法、自检与常见错误、设计来源边界（**镜头反推必读**）
-- `references/model_mappings.md` —— 十二模型格式映射表（MJ V8.2 / SD 3.5 / FLUX.2 / GPT Image 2.5 / Muse Image 1.0 / Seedance 2.5 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1）+ 场景化默认模型 + DeepSeek 思考档位 + 版本迁移注记
+- `references/model_mappings.md` —— 十六模型格式映射表（MJ V8.2 / SD 3.5 / FLUX.2 / GPT Image 2.5 / Muse Image 1.0 / 即梦 5.0 / Seedance 2.5 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1 / Kling 4.0 / Hailuo 3 / Vidu Q3）+ 场景化默认模型 + DeepSeek 思考档位 + 版本迁移注记
 - `assets/templates/*.json` —— 机器渲染模板（新增模型=新增模板文件，自动注册）
 - `assets/examples/<模态>_example/output.md` —— 四模态金标输出样例；`story_example` 为剧本→逐场景提示词金标；`muse_image_example` 为 Muse 多参考图融合与空间关系金标；`seedance_example` 为 Seedance 全模态参考与素材角色金标；`shot_reverse_example` 为实拍视频逐镜反推金标
 - `tools/fixtures/semantic_*.json` —— semantic_analysis 字段填写范例（semantic_story.json 为场景化范例，semantic_muse_image.json 为 Muse 范例，semantic_seedance.json 为 Seedance 范例，semantic_shot_reverse.json 为实拍镜头反推范例）
