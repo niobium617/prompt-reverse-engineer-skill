@@ -1,0 +1,43 @@
+{
+  "id": "video-reference-to-video",
+  "suite": "video",
+  "title": "视频逆向：参考图 / 参考视频 / 参考音频驱动 Seedance",
+  "input": {
+    "fixture": "tools/fixtures/semantic_seedance.json",
+    "steps": [
+      {
+        "script": "prompt_compiler.py",
+        "args": ["compile", "--analysis", "{fixture}", "--models", "seedance"],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "models": ["seedance"],
+    "kinds": {
+      "seedance": ["reference_to_video"]
+    },
+    "prompt_count": 1,
+    "text_contains": {
+      "seedance/reference_to_video": [
+        "reference_image",
+        "reference_video",
+        "reference_audio",
+        "使用策略：",
+        "禁止迁移："
+      ]
+    },
+    "text_forbidden": ["{", "}", "uncertainty", "。。"]
+  },
+  "semantic": {
+    "gold": "video-reference-to-video.gold.md",
+    "criteria": [
+      "三类参考素材是否逐一写明编号、类型、用途、保留项、禁止迁移项与优先级",
+      "参考素材职责是否与故事板分工一致，未让同一素材承担冲突职责",
+      "使用策略是否说明各素材如何参与生成，而非简单罗列",
+      "是否明确禁止迁移原片水印、字幕、品牌与无关风格",
+      "是否未把参考素材的推断属性写成已核验事实"
+    ],
+    "max_score": 10
+  }
+}

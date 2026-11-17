@@ -81,6 +81,48 @@
     {
       "capability_level": "L2",
       "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "hailuo",
+      "last_verified": "2026-11-18",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "jimeng",
+      "last_verified": "2026-11-18",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "kling",
+      "last_verified": "2026-11-18",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
       "id": "midjourney",
       "last_verified": "2026-11-05",
       "supported": [
@@ -181,6 +223,20 @@
       "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
       "id": "veo3",
       "last_verified": "2026-11-05",
+      "supported": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "unsupported": [
+        "L3_workflow_generation",
+        "L4_automation"
+      ]
+    },
+    {
+      "capability_level": "L2",
+      "degrade": "参数映射以模板 default_params 为准；平台未核验的参数需人工确认",
+      "id": "vidu",
+      "last_verified": "2026-11-18",
       "supported": [
         "L1_prompt",
         "L2_config"

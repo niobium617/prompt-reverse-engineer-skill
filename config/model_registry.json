@@ -174,6 +174,140 @@
     },
     {
       "aliases": [
+        "hailuo",
+        "hailuo-3",
+        "hailuo3",
+        "minimax",
+        "minimax-h3",
+        "海螺"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9",
+        "duration": "10",
+        "generate_audio": "true",
+        "model_id": "MiniMax-H3",
+        "resolution": "1080P"
+      },
+      "display_name": "Hailuo 3（MiniMax H3）",
+      "id": "hailuo",
+      "last_verified": "2026-11-18",
+      "modalities": [
+        "video"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md",
+        "prompt-reverse-engineer-skill/references/hailuo_sources.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/hailuo.json",
+      "task_modes": {
+        "video": [
+          "first_last_frame",
+          "image_to_video",
+          "params",
+          "reference_to_video",
+          "storyboard"
+        ]
+      },
+      "vendor": "MiniMax",
+      "version": "3"
+    },
+    {
+      "aliases": [
+        "doubao-seedream",
+        "jimeng",
+        "jimeng-5",
+        "jimeng-5.0",
+        "seedream",
+        "seedream-5",
+        "seedream-5.0",
+        "即梦"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9",
+        "model_id": "seedream-5.0",
+        "resolution": "2K",
+        "watermark": "false"
+      },
+      "display_name": "即梦 5.0（Seedream 5.0）",
+      "id": "jimeng",
+      "last_verified": "2026-11-18",
+      "modalities": [
+        "image"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md",
+        "prompt-reverse-engineer-skill/references/jimeng_sources.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/jimeng.json",
+      "task_modes": {
+        "image": [
+          "compose",
+          "edit",
+          "params",
+          "prompt",
+          "recreate",
+          "reference_guided"
+        ]
+      },
+      "vendor": "ByteDance",
+      "version": "5.0"
+    },
+    {
+      "aliases": [
+        "kling",
+        "kling-4",
+        "kling-4.0",
+        "kling-ai",
+        "kling4",
+        "可灵"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9",
+        "duration": "10",
+        "generate_audio": "true",
+        "model_id": "kling-4.0",
+        "resolution": "1080p"
+      },
+      "display_name": "Kling 4.0",
+      "id": "kling",
+      "last_verified": "2026-11-18",
+      "modalities": [
+        "video"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md",
+        "prompt-reverse-engineer-skill/references/kling_sources.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/kling.json",
+      "task_modes": {
+        "video": [
+          "first_last_frame",
+          "image_to_video",
+          "params",
+          "reference_to_video",
+          "storyboard"
+        ]
+      },
+      "vendor": "Kuaishou",
+      "version": "4.0"
+    },
+    {
+      "aliases": [
         "mid-journey",
         "midjourney",
         "mj"
@@ -487,6 +621,49 @@
       },
       "vendor": "Google",
       "version": "3.1"
+    },
+    {
+      "aliases": [
+        "vidu",
+        "vidu-q3",
+        "vidu-q3-pro",
+        "viduq3",
+        "生数"
+      ],
+      "capability_level": "L2",
+      "capability_scope": [
+        "L1_prompt",
+        "L2_config"
+      ],
+      "default_params": {
+        "aspect_ratio": "16:9",
+        "duration": "8",
+        "generate_audio": "true",
+        "model_id": "viduq3-pro",
+        "resolution": "1080p"
+      },
+      "display_name": "Vidu Q3",
+      "id": "vidu",
+      "last_verified": "2026-11-18",
+      "modalities": [
+        "video"
+      ],
+      "source_docs": [
+        "prompt-reverse-engineer-skill/references/model_mappings.md",
+        "prompt-reverse-engineer-skill/references/vidu_sources.md"
+      ],
+      "source_template": "prompt-reverse-engineer-skill/assets/templates/vidu.json",
+      "task_modes": {
+        "video": [
+          "first_last_frame",
+          "image_to_video",
+          "params",
+          "reference_to_video",
+          "storyboard"
+        ]
+      },
+      "vendor": "Shengshu",
+      "version": "Q3"
     }
   ],
   "schema_version": "1.0"

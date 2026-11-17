@@ -1097,3 +1097,136 @@ $ python tools/gen_examples.py --check
 ### 脱敏
 
 本文不含密钥与绝对用户路径；验证输出只使用仓库内中性 fixtures，路径以 `...` 省略。
+
+## 2026-11-18 跨平台升级丁阶段：新增四模型模板与离线基准（v3.1.0）
+
+### 摘要
+
+在甲/乙/丙三阶段之上完成丁阶段：以「新模型 = 新模板」零代码路径新增 Kling 4.0、Hailuo 3、Vidu Q3、即梦 5.0（Seedream 5.0）四个独立模板与四份官方资料索引；新增 `benchmarks/` 10 例离线基准与 `tools/benchmarks.py`，把结构层自动断言与语义层人工评分彻底分开。编译器未改一行代码，模型注册与渲染全部由模板自动发现。
+
+### 背景（基线）
+
+- v3.0.0：12 个模型模板、69 项断言、无基准目录；模型覆盖 MJ V8.2 / SD 3.5 / FLUX.2 / GPT Image 2.5 / Muse Image 1.0 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Sora 2 / Runway Gen-4.5 / Veo 3.1 / Seedance 2.5。
+- 用户与方案要求：补齐可灵（P0）与即梦 / 海螺 / Vidu（P1）；每模型附来源索引与 `last_verified`；基准 7–10 例（图像 2–3、视频 2–3、工作流 2、平台 2），每例有输入、金标、rubric，结构断言与语义评分分离；支持 `--suite image --check`；保持 69 项断言全绿且只增不减。
+- 约束：离线确定性，不调 API、不联网、不执行工作流；不得把推断出的模型/参数/工作流写成已知事实。
+
+### 变更清单（旧值 → 新值）
+
+| 项目 | 旧值 | 新值 |
+|---|---|---|
+| 版本 | `3.0.0` | `3.1.0` |
+| 模型模板 | 12 | 16（+`kling` / `hailuo` / `vidu` / `jimeng`） |
+| 渲染格式 | 12 种 | 16 种（全量渲染 38 条 Prompt） |
+| 官方资料索引 | 原有 Muse / Seedance | +`kling_sources.md` / `hailuo_sources.md` / `vidu_sources.md` / `jimeng_sources.md`，均标「待人工确认」 |
+| 基准用例 | 0 | 10（图像 3 / 视频 3 / 工作流 2 / 平台 2） |
+| 基准执行器 | 无 | `tools/benchmarks.py`（`--check` / `--suite` / `--schema-only` / `--list`） |
+| 断言数 | 69 | 73（新增新视频模板、即梦模板、基准契约、基准结构层） |
+| 注册表模型数 | 12 | 16（`gen_registry.py --check` 一致） |
+
+新增模板要点：
+
+- `kling.json`：`storyboard` / `image_to_video` / `first_last_frame` / `reference_to_video` / `params`；中文分节；官方不主推负向，只渲染显式 `negative_words`；默认 10s / 1080p / 16:9 / 声音开。
+- `hailuo.json`：以 `integrated_multimodal_description:` 开头，`[Shot N]` 分镜；声音拆 `overall_soundscape` 与 `non_diegetic_music`（后者固定「无额外配乐」，无对应字段时如实说明）；默认 10s / 1080P。
+- `vidu.json`：主体 + 动作 + 场景 + 镜头语言 + 光影色彩；多参考主体由 `reference_note` / `video_references` 承载；默认 8s / 1080p。
+- `jimeng.json`：图像六用途（`prompt` / `recreate` / `edit` / `reference_guided` / `compose` / `params`）；画面文字要求「逐字准确，不增删」；默认 2K / 16:9 / 水印关。
+- 四个视频模型均提供 `shot_style`，可在 `shots --models` 中显式点名；**默认镜头反推集合不变**（视频 sora/runway/veo/seedance，图片六款）。
+
+基准设计：
+
+- 结构层：`benchmarks.py` 校验用例契约、执行白名单脚本、断言退出码、模型/用途集合、Prompt 数、必要子串、镜头计数与 JSON 路径；全部离线、可重复。
+- 语义层：每例 `*.gold.md` 写输入、结构层金标、语义层金标（必须命中 / 允许改写 / 不允许）与 5 维评分锚点；`rubric.md` 统一 0–2 分 × 5 维；脚本只打印 `[MANUAL]`，不自动评分。
+- 用例覆盖：图像文生图、多参考融合、单图镜头反推；视频六模型分镜、参考生视频、逐镜反推；ComfyUI API/UI 解析；ComfyUI → Runway / LibTV 兼容报告。
+
+### 生效方式
+
+```bash
+python tools/verify.py
+python tools/benchmarks.py --check
+python tools/benchmarks.py --suite image --check
+python tools/gen_registry.py --check
+python tools/gen_examples.py --check
+python tools/install.py --platform doubao
+```
+
+新增模型无需改代码：在 `assets/templates/` 放入模板 JSON，编译器自动注册；别名冲突退出 4。
+
+### 验证（真实输出）
+
+```text
+$ python tools/verify.py
+...
+[PASS] 模板层/可灵/海螺/Vidu 模板 — 可灵/海螺/Vidu 模板自动注册；三平台标签与 params 正确；别名可灵/hailuo-3/vidu-q3 解析一致；未混入默认集合
+[PASS] 模板层/即梦模板 — 即梦模板自动注册；prompt/params 用途与中文标签正确；别名即梦/seedream-5 解析一致
+[PASS] 基准层/用例契约 — 10 例基准契约合法（图片 3/视频 3/工作流 2/平台 2），均含金标与语义标准
+[PASS] 基准层/结构层断言 — 10 例结构层全部通过；语义层标记为人工评分；图片套件 3 例通过
+[PASS] 模板层/十六模型全量渲染 — 16 个模型模板均渲染出非空 Prompt（共 38 条）
+
+== 验证汇总 ==
+通过 73 / 73
+全部通过 ✔
+```
+
+```text
+$ python tools/benchmarks.py --check
+[PASS] image-multi-reference-compose（结构层）
+[MANUAL] image-multi-reference-compose.gold.md：5 条语义标准，满分 10，按 benchmarks/rubric.md 评分
+...
+[PASS] platform-comfy-to-runway（结构层）
+[MANUAL] platform-comfy-to-runway.gold.md：5 条语义标准，满分 10，按 benchmarks/rubric.md 评分
+
+结构层通过 10 / 10；语义层需人工/Agent 评分
+退出码 0
+```
+
+```text
+$ python tools/benchmarks.py --suite image --check
+[PASS] image-multi-reference-compose（结构层）
+[PASS] image-shot-reverse（结构层）
+[PASS] image-text-to-image（结构层）
+
+结构层通过 3 / 3；语义层需人工/Agent 评分
+退出码 0
+```
+
+```text
+$ python tools/verify.py --filter 基准
+[PASS] 基准层/用例契约 — 10 例基准契约合法（图片 3/视频 3/工作流 2/平台 2），均含金标与语义标准
+[PASS] 基准层/结构层断言 — 10 例结构层全部通过；语义层标记为人工评分；图片套件 3 例通过
+
+== 验证汇总 ==
+通过 2 / 2
+全部通过 ✔
+```
+
+```text
+$ python tools/gen_registry.py --check
+注册表一致：3 份，模型 16 / 平台 3
+退出码 0
+
+$ python tools/gen_examples.py --check
+[PASS] text_example/output.md 与生成结果一致
+[PASS] image_example/output.md 与生成结果一致
+[PASS] muse_image_example/output.md 与生成结果一致
+[PASS] video_example/output.md 与生成结果一致
+[PASS] seedance_example/output.md 与生成结果一致
+[PASS] story_example/output.md 与生成结果一致
+[PASS] shot_reverse_example/output.md 与生成结果一致
+退出码 0
+```
+
+豆包产物重新生成后仍满足脚本清单、LF 归一化与两次生成哈希一致（固定时间戳）。
+
+### 偏差
+
+- 四个模型的官方文档未能全部直接抓取（部分页面网络不可达），模板与来源文档对「公开资料常见」的时长/分辨率档位统一标为待人工确认，不写成官方保证；`model_id` 使用公开常见值并在来源索引列出待核项。
+- 语义层未实现自动评分：避免把「像不像」伪装成确定性断言，脚本只做结构层并在每例后打印 `[MANUAL]`；这是设计取舍，不是能力缺口。
+- 新视频模型带 `shot_style` 但不进默认镜头反推集合，避免一次反推 Prompt 数量从 4×N 膨胀到 7×N；用户显式点名才输出。
+- 即梦的 API 参数在不同版本资料中存在差异，模板默认值只作渲染占位，交付时需提示以控制台为准。
+
+### 回滚
+
+`git revert` 本次提交。若需单独回退丁阶段：删除 `benchmarks/`、`tools/benchmarks.py`、四个模板与四份 `*_sources.md`；`verify.py` 删除 4 项并恢复 69；`VERSION` 与 codex 清单回到 `3.0.0`；README / SKILL.md / model_mappings / RELEASE 同步回退；重跑 `python tools/install.py --platform doubao` 与 `python tools/gen_registry.py`。无数据迁移。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径；验证输出只使用仓库内中性 fixtures，路径以 `...` 省略。

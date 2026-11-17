@@ -1,0 +1,41 @@
+{
+  "id": "image-text-to-image",
+  "suite": "image",
+  "title": "图片逆向：文生图反推 MJ / GPT Image 提示词",
+  "input": {
+    "fixture": "tools/fixtures/semantic_image.json",
+    "steps": [
+      {
+        "script": "prompt_compiler.py",
+        "args": ["compile", "--analysis", "{fixture}", "--models", "midjourney,gpt_image"],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "models": ["midjourney", "gpt_image"],
+    "kinds": {
+      "midjourney": ["positive", "negative", "style_transfer"],
+      "gpt_image": ["prompt", "params"]
+    },
+    "prompt_count": 5,
+    "text_contains": {
+      "midjourney/positive": ["/imagine prompt:", "APS 2077", "--ar 16:9"],
+      "midjourney/negative": ["--no blurry", "--ar 16:9"],
+      "gpt_image/prompt": ["Subject:", "Text in image: APS 2077", "References:"],
+      "gpt_image/params": ["quality: high", "aspect_ratio: 16:9"]
+    },
+    "text_forbidden": ["{", "}", "uncertainty", "。。"]
+  },
+  "semantic": {
+    "gold": "image-text-to-image.gold.md",
+    "criteria": [
+      "主体、场景、构图、光影、色彩、风格、镜头参数七类信息是否完整且可追溯",
+      "画内文字 APS 2077 是否作为逐字渲染要求保留，未扩写、未翻译",
+      "Midjourney 正向/负向/风格迁移三条输出是否职责清晰，负向词未混入正向正文",
+      "GPT Image 是否使用结构化标签，约束段是否明确禁止额外文字与水印",
+      "是否未把推测内容写成事实，未伪造不存在的官方参数"
+    ],
+    "max_score": 10
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "model": "hailuo",
+  "display_name": "Hailuo 3（MiniMax H3）",
+  "vendor": "MiniMax",
+  "version": "3",
+  "last_verified": "2026-11-18",
+  "notes": "海螺 3（MiniMax H3）视频生成：官方多模态描述以 integrated_multimodal_description 开头，镜头按 [Shot N] 标记，声音分 overall_soundscape（环境声/动作声）与 non_diegetic_music（配乐）两段。单段时长与分辨率以控制台实际选项为准（公开资料常见 4-15 秒、768P/1080P）。本 Skill 没有独立配乐字段，non_diegetic_music 固定写「无额外配乐」，用户提供的音乐描述写入 audio；时长、分辨率、画幅只放 params 块。",
+  "alias": ["hailuo", "hailuo-3", "hailuo3", "minimax", "minimax-h3", "海螺"],
+  "default_params": {
+    "model_id": "MiniMax-H3",
+    "duration": "10",
+    "resolution": "1080P",
+    "aspect_ratio": "16:9",
+    "generate_audio": "true"
+  },
+  "optional_fields": [
+    "story", "storyboard", "character", "camera", "atmosphere", "lighting",
+    "color", "style", "audio", "narration", "dialogue", "reference_note",
+    "negative_words", "first_frame", "last_frame", "video_references",
+    "reference_usage", "feature_exclusion"
+  ],
+  "clean_empty_label_lines": true,
+  "shot_style": {
+    "shot_prefix": "integrated_multimodal_description:\n[Shot {shot_no}] {shot_size}，{camera_angle}，运镜 {camera_move}；时长 {duration_s} 秒，画幅 {aspect_ratio}。",
+    "shot": "主体与动作：{subject_action}\n视觉锚点：{anchors}\n环境：{environment}\n光影：{lighting}\n色彩：{color}\n视觉风格：{style}\n衔接：{continuity}\noverall_soundscape: {sound}",
+    "shot_suffix": "焦段：{lens}\n焦点：{focus}\n首帧：{first_frame}\n转场：{transition}\n避免：{negative_words}"
+  },
+  "kind_requires": {
+    "storyboard": ["story"],
+    "image_to_video": ["first_frame", "story"],
+    "first_last_frame": ["first_frame", "last_frame", "story"],
+    "reference_to_video": ["video_references", "story"]
+  },
+  "modalities": {
+    "video": {
+      "storyboard": "integrated_multimodal_description:\n整体设定：{story}\n主体与动作：{character}\n分段事件：\n{storyboard}\n镜头语言：{camera}\n环境氛围：{atmosphere}\n光影：{lighting}\n色彩：{color}\n视觉风格：{style}\n画外音：{narration}\n对白：{dialogue}\n参考：{reference_note}\n避免：{negative_words}\noverall_soundscape: {audio}\nnon_diegetic_music: 无额外配乐",
+      "image_to_video": "integrated_multimodal_description:\n[Shot 1] 以图1为首帧，保持首帧的构图、主体形象、服装与光线；镜头运动从首帧自然展开。\n首帧：{first_frame}\n整体设定：{story}\n主体与动作：{character}\n后续镜头：\n{storyboard}\n镜头语言：{camera}\n环境氛围：{atmosphere}\n光影：{lighting}\n色彩：{color}\n视觉风格：{style}\n画外音：{narration}\n对白：{dialogue}\noverall_soundscape: {audio}\nnon_diegetic_music: 无额外配乐",
+      "first_last_frame": "integrated_multimodal_description:\n[Shot 1] 以图1为首帧、图2为尾帧；保持首尾帧中的主体身份、服装、场景结构与光线一致，动作在两端之间连贯过渡。\n首帧：{first_frame}\n尾帧：{last_frame}\n整体设定：{story}\n主体与动作：{character}\n镜头语言：{camera}\n环境氛围：{atmosphere}\n光影：{lighting}\n色彩：{color}\n视觉风格：{style}\n画外音：{narration}\n对白：{dialogue}\noverall_soundscape: {audio}\nnon_diegetic_music: 无额外配乐",
+      "reference_to_video": "integrated_multimodal_description:\n参考素材：\n{video_references}\n整体设定：{story}\n主体与动作：{character}\n分段事件：\n{storyboard}\n使用策略：{reference_usage}\n禁止迁移：{feature_exclusion}\n镜头语言：{camera}\n环境氛围：{atmosphere}\n光影：{lighting}\n色彩：{color}\n视觉风格：{style}\n画外音：{narration}\n对白：{dialogue}\noverall_soundscape: {audio}\nnon_diegetic_music: 无额外配乐",
+      "params": "model: {model_id}\nduration: {duration}s\nresolution: {resolution}\naspect_ratio: {aspect_ratio}\ngenerate_audio: {generate_audio}"
+    }
+  }
+}

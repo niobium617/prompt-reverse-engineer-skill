@@ -1,0 +1,44 @@
+{
+  "id": "image-multi-reference-compose",
+  "suite": "image",
+  "title": "图片逆向：三图参考合成（角色 / 姿态 / 背景职责分离）",
+  "input": {
+    "fixture": "tools/fixtures/semantic_muse_image.json",
+    "steps": [
+      {
+        "script": "prompt_compiler.py",
+        "args": ["compile", "--analysis", "{fixture}", "--models", "muse_image", "--kind", "compose"],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "models": ["muse_image"],
+    "kinds": {
+      "muse_image": ["compose"]
+    },
+    "prompt_count": 1,
+    "text_contains": {
+      "muse_image/compose": [
+        "Compose a new image",
+        "identity_reference",
+        "pose_reference",
+        "background_reference",
+        "禁止迁移",
+        "Aspect ratio: 16:9"
+      ]
+    },
+    "text_forbidden": ["{", "}", "uncertainty", "。。"]
+  },
+  "semantic": {
+    "gold": "image-multi-reference-compose.gold.md",
+    "criteria": [
+      "三张参考图是否分别标注角色（身份 / 姿态 / 背景）且用途、保留项、禁止迁移项完整",
+      "空间关系是否逐条落到 position / direction / distance / occlusion 等维度",
+      "主体比例、构图引导线、光影方向与材质是否相互一致，未出现拼贴式描述",
+      "是否明确禁止直接粘贴参考图、要求统一透视与色温",
+      "是否未把参考图中不可见的信息写成 observed 事实"
+    ],
+    "max_score": 10
+  }
+}

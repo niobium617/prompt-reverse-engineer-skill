@@ -1,0 +1,76 @@
+{
+  "model": "kling",
+  "display_name": "Kling 4.0",
+  "vendor": "Kuaishou",
+  "version": "4.0",
+  "last_verified": "2026-11-18",
+  "notes": "可灵 4.0 视频生成：支持文生视频、首帧、首尾帧与多图参考。官方建议按「素材职责 / 整体设定 / 主体与动作 / 镜头 / 环境光影 / 分段事件 / 声音」组织提示词；公开资料常见单段 3-30 秒、输出 720p/1080p，实际档位以控制台为准。官方不主张堆叠负向词，本模板只渲染用户明确给出的 negative_words，留空则整行删除；时长、分辨率、画幅与音频开关只放 params 块。",
+  "alias": [
+    "kling",
+    "kling-4",
+    "kling-4.0",
+    "kling4",
+    "kling-ai",
+    "可灵"
+  ],
+  "default_params": {
+    "model_id": "kling-4.0",
+    "duration": "10",
+    "resolution": "1080p",
+    "aspect_ratio": "16:9",
+    "generate_audio": "true"
+  },
+  "optional_fields": [
+    "story",
+    "storyboard",
+    "character",
+    "camera",
+    "atmosphere",
+    "lighting",
+    "color",
+    "style",
+    "audio",
+    "narration",
+    "dialogue",
+    "reference_note",
+    "negative_words",
+    "first_frame",
+    "last_frame",
+    "video_references",
+    "reference_usage",
+    "feature_exclusion"
+  ],
+  "clean_empty_label_lines": true,
+  "shot_style": {
+    "shot_prefix": "【整体设定】{shot_size}，{camera_angle}，运镜 {camera_move}；时长 {duration_s} 秒，画幅 {aspect_ratio}。",
+    "shot": "【主体与动作】{subject_action}\n【视觉锚点】{anchors}\n【环境】{environment}\n【光影】{lighting}\n【色彩】{color}\n【视觉风格】{style}\n【声音】{sound}\n【衔接】{continuity}",
+    "shot_suffix": "【镜头】焦段 {lens}；焦点 {focus}\n【首帧】{first_frame}\n【转场】{transition}\n【避免】{negative_words}"
+  },
+  "kind_requires": {
+    "storyboard": [
+      "story"
+    ],
+    "image_to_video": [
+      "first_frame",
+      "story"
+    ],
+    "first_last_frame": [
+      "first_frame",
+      "last_frame",
+      "story"
+    ],
+    "reference_to_video": [
+      "video_references",
+      "story"
+    ]
+  },
+  "modalities": {
+    "video": {
+      "storyboard": "【素材职责】本片为文生视频，无需外部素材。\n【整体设定】：{story}\n【主体与动作】：{character}\n【镜头语言】：{camera}\n【环境】：{atmosphere}\n【光影】：{lighting}\n【色彩】：{color}\n【视觉风格】：{style}\n【分段事件】：\n{storyboard}\n【声音】：{audio}\n【画外音】：{narration}\n【对白】：{dialogue}\n【参考】：{reference_note}\n【避免】：{negative_words}",
+      "image_to_video": "【素材职责】图1 作为首帧，锁定构图、主体形象与光线；后续动作与运镜在此基础展开。\n【整体设定】：{story}\n【首帧描述】：{first_frame}\n【主体与动作】：{character}\n【镜头语言】：{camera}\n【环境】：{atmosphere}\n【光影】：{lighting}\n【色彩】：{color}\n【视觉风格】：{style}\n【分段事件】：\n{storyboard}\n【声音】：{audio}\n【画外音】：{narration}\n【对白】：{dialogue}\n【避免】：{negative_words}",
+      "first_last_frame": "【素材职责】图1 为首帧、图2 为尾帧；保持首尾帧中的主体身份、服装、场景结构与光线一致。\n【整体设定】：{story}\n【首帧描述】：{first_frame}\n【尾帧描述】：{last_frame}\n【主体与动作】：{character}\n【镜头语言】：{camera}\n【环境】：{atmosphere}\n【光影】：{lighting}\n【色彩】：{color}\n【视觉风格】：{style}\n【分段事件】：\n{storyboard}\n【声音】：{audio}\n【画外音】：{narration}\n【对白】：{dialogue}\n【避免】：{negative_words}",
+      "reference_to_video": "【素材职责】：\n{video_references}\n【整体设定】：{story}\n【主体与动作】：{character}\n【镜头语言】：{camera}\n【环境】：{atmosphere}\n【光影】：{lighting}\n【色彩】：{color}\n【视觉风格】：{style}\n【分段事件】：\n{storyboard}\n【使用策略】：{reference_usage}\n【禁止迁移】：{feature_exclusion}\n【声音】：{audio}\n【画外音】：{narration}\n【对白】：{dialogue}\n【避免】：{negative_words}",
+      "params": "model: {model_id}\nduration: {duration}s\nresolution: {resolution}\naspect_ratio: {aspect_ratio}\ngenerate_audio: {generate_audio}"
+    }
+  }
+}

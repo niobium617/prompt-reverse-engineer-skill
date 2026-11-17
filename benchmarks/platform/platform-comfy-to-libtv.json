@@ -1,0 +1,56 @@
+{
+  "id": "platform-comfy-to-libtv",
+  "suite": "platform",
+  "title": "跨平台迁移：ComfyUI API 工作流 → LibTV 兼容报告",
+  "input": {
+    "fixture": "tools/fixtures/workflow_api.json",
+    "steps": [
+      {
+        "script": "analyze_workflow.py",
+        "args": ["{fixture}"],
+        "exit_code": 0,
+        "save": "workflow"
+      },
+      {
+        "script": "prompt_compiler.py",
+        "args": [
+          "workflow", "--report", "{workflow}",
+          "--target", "libtv", "--format", "json"
+        ],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "json_equals": {
+      "source_format": "comfyui_api",
+      "target": "libtv",
+      "platform.id": "libtv",
+      "platform.status": "verified",
+      "overall": "incompatible",
+      "counts.compatible": 1,
+      "counts.degraded": 7,
+      "counts.incompatible": 3,
+      "file_transfer.status": "degraded",
+      "file_transfer.importable_output": false
+    },
+    "json_lengths": {
+      "items": 11,
+      "manual_steps": 10,
+      "deps": 3,
+      "boundary": 4,
+      "issues": 0
+    }
+  },
+  "semantic": {
+    "gold": "platform-comfy-to-libtv.gold.md",
+    "criteria": [
+      "同一工作流迁移到不同平台时，结论是否随目标能力变化而非机械复用",
+      "11 个节点的兼容结论与三类计数是否自洽",
+      "降级与不兼容项是否给出 LibTV 侧可执行的人工重建步骤",
+      "是否明确不生成可导入文件、不调用平台 API",
+      "是否标注平台能力证据等级与待人工确认项"
+    ],
+    "max_score": 10
+  }
+}

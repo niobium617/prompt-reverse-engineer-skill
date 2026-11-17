@@ -1,0 +1,42 @@
+{
+  "id": "workflow-ui-parse",
+  "suite": "workflow",
+  "title": "工作流解析：ComfyUI UI 格式、未知节点与非阻断问题",
+  "input": {
+    "fixture": "tools/fixtures/workflow_ui.json",
+    "steps": [
+      {
+        "script": "analyze_workflow.py",
+        "args": ["{fixture}"],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "json_equals": {
+      "workflow.format": "comfyui_ui",
+      "workflow.stats.unknown_node_count": 1,
+      "confidence.workflow.status": "observed",
+      "confidence.model.status": "inferred"
+    },
+    "json_lengths": {
+      "workflow.nodes": 10,
+      "workflow.links": 10,
+      "workflow.models": 1,
+      "workflow.custom_nodes": 2,
+      "workflow.issues": 1,
+      "workflow.assets": 1
+    }
+  },
+  "semantic": {
+    "gold": "workflow-ui-parse.gold.md",
+    "criteria": [
+      "UI 格式的节点、连线、widgets_values 解析是否与文件结构一致",
+      "两个自定义节点是否进入依赖清单，未知节点是否记录为 issue 且不阻断",
+      "模型文件是否只按加载节点参数推断，未声称本机可用",
+      "是否只读解析，不执行、不生成可导入工作流",
+      "置信度标注是否区分 observed（结构）与 inferred（模型可用性）"
+    ],
+    "max_score": 10
+  }
+}

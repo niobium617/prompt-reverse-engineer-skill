@@ -122,5 +122,12 @@
   - [x] 三平台 `workflow_mapping.json` 增加 `category_aliases`；ComfyUI 能力声明将工作流解析标为 verified
   - [x] `verify.py` 新增 4 项（工作流解析/结构错误/兼容报告/文档与能力），共 69 项
   - [x] SKILL.md / README / ir_spec.md / RELEASE / VERSION / plugin.json / 豆包产物同步（3.0.0）
-- [ ] 丁：可灵等模型模板 + `benchmarks/`
+- [x] 丁：可灵等模型模板 + `benchmarks/`（v3.1.0）
+  - [x] 新增四个图像/视频模板（零代码路径）：`kling.json`（P0）、`hailuo.json`、`vidu.json`、`jimeng.json`（P1），均含 `last_verified: 2026-11-18`
+  - [x] 四份官方资料索引：`kling_sources.md` / `hailuo_sources.md` / `vidu_sources.md` / `jimeng_sources.md`，标出「待人工确认」
+  - [x] Kling 四种视频任务（文生 / 首帧 / 首尾帧 / 多图参考）与 `params` 块；Hailuo `integrated_multimodal_description` + `[Shot N]`；Vidu「主体 + 动作 + 场景」段落；即梦六种图像任务与画面文字要求
+  - [x] `benchmarks/`：图像 3 / 视频 3 / 工作流 2 / 平台 2，共 10 例；每例含输入、结构层断言、语义层金标与 5 维 rubric
+  - [x] `tools/benchmarks.py`：`--suite image --check`、`--check`、`--schema-only`、`--list`；结构层自动断言，语义层只打印 `[MANUAL]` 不自动评分
+  - [x] `verify.py` 新增 4 项（新视频模板 / 即梦模板 / 基准用例契约 / 基准结构层），共 73 项；十六模型全量渲染
+  - [x] README / SKILL.md / model_mappings.md / RELEASE / VERSION / plugin.json / 豆包产物同步（3.1.0）
 - [ ] 戊（可选）：WAV 音频信号、专业软件 L1 说明
