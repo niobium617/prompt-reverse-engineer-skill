@@ -342,6 +342,7 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py shots \
 │   ├── 2026-11-14-项目改进方案.md     # 工程与 GPT Image 专项改进方案
 │   ├── 2026-11-15-跨平台工作流升级方案.md # IR / 平台适配 / 工作流升级（已确认）
 │   ├── 2026-11-15-实拍镜头反推方案.md  # 镜头信号 / 镜头卡 / shots 逐镜渲染（已实施）
+│   ├── 2026-11-18-v3.1.0-发布说明.md  # v3.1.0 发布说明（四模型 + 离线基准）
 │   ├── DEVLOG.md                      # 阶段开发记录（改动/验证/回滚）
 │   └── RELEASE.md                     # 发布检查表（版本源/tag/Release）
 ├── tasks/

@@ -172,10 +172,13 @@ def run_steps(case, workdir):
         env = dict(os.environ)
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONHASHSEED"] = "0"
-        proc = subprocess.run(
-            [PYTHON, str(script)] + args,
-            cwd=str(REPO), env=env, capture_output=True,
-        )
+        try:
+            proc = subprocess.run(
+                [PYTHON, str(script)] + args,
+                cwd=str(REPO), env=env, capture_output=True, timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            raise CaseError(f"步骤 {index + 1} 超过 120 秒未结束")
         if proc.returncode != step["exit_code"]:
             raise CaseError(
                 f"步骤 {index + 1} 退出码 {proc.returncode}，"

@@ -31,7 +31,7 @@ git push origin vX.Y.Z
 
 # git 协议不可达时（本机曾出现）：由 GitHub API 建 tag + Release
 gh release create vX.Y.Z --target main \
-  --title "vX.Y.Z" --notes-file docs/release-notes-vX.Y.Z.md
+  --title "vX.Y.Z" --notes-file docs/<YYYY-MM-DD>-vX.Y.Z-发布说明.md
 ```
 
 - [ ] tag 指向 `main` 的发布提交

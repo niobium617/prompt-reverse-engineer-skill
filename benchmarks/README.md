@@ -52,6 +52,8 @@ python tools/verify.py --filter 基准
 
 ## 用例契约
 
+下列示例把结构层可用键集中展示；实际用例只取所需键，不要求全部出现。
+
 ```json
 {
   "id": "image-text-to-image",
