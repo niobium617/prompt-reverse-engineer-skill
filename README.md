@@ -2,9 +2,9 @@
 
 > **把任何优秀作品 → 逆向拆解 → 还原为可复用的专业 Prompt**
 >
-> 支持 **Claude Code / Cursor / Codex / DeepSeek Harness / 豆包** 五大平台 · **文本 / 图片 / 视频 / 剧本小说 / ComfyUI 工作流** 多模态输入 · **Midjourney V8.2 / Stable Diffusion 3.5 / FLUX.2 / GPT Image 2.5 / Muse Image 1.0 / 即梦 5.0 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Seedance 2.5 / Sora 2 / Runway Gen-4.5 / Veo 3.1 / Kling 4.0 / Hailuo 3 / Vidu Q3** 多模型格式输出 · 附**百分制六维加权质量评分**（剧本可逐场景生成图片/视频提示词，实拍素材可逐镜反推镜头 Prompt，ComfyUI 工作流可只读拆解并出跨平台兼容报告）
+> 支持 **Claude Code / Cursor / Codex / DeepSeek Harness / 豆包** 五大平台 · **文本 / 图片 / 视频 / 剧本小说 / ComfyUI 工作流** 多模态输入 · **Midjourney V8.2 / Stable Diffusion 3.5 / FLUX.2 / GPT Image 2.5 / Muse Image 1.0 / 即梦 5.0 / Nano Banana Pro / GPT-5.5·Claude 5.5 / DeepSeek V4.1 Flash / Seedance 2.5 / Sora 2 / Runway Gen-4.5 / Veo 3.1 / Kling 4.0 / Hailuo 3 / Vidu Q3** 多模型格式输出 · 附**百分制六维加权质量评分**（剧本可逐场景生成图片/视频提示词，实拍素材可逐镜反推镜头 Prompt，ComfyUI 工作流可只读拆解并出跨平台兼容报告，已写好的 Prompt 可诊断、改写并给出前后评分对比）
 
-看到一篇爆款文案、一张惊艳的 AI 图片、一段电影感短视频，想知道「它是怎么被生成的」？把作品丢给本技能，它会自动拆解其主体、风格、结构与参数，反向还原出可复刻、可修改的专业 Prompt，并适配输出为各主流生成模型的格式。
+看到一篇爆款文案、一张惊艳的 AI 图片、一段电影感短视频，想知道「它是怎么被生成的」？把作品丢给本技能，它会自动拆解其主体、风格、结构与参数，反向还原出可复刻、可修改的专业 Prompt，并适配输出为各主流生成模型的格式。手上已有写好的 Prompt 但效果不稳？同一套标准会先做确定性诊断（缺字段、模糊词、冲突、参数语法），再按原意改写并重编，给出字段覆盖与前后评分对比。
 
 纯插件形态：无前端、无后端、无数据库、无 API key、无状态、幂等、零新增依赖（脚本仅用 Python 标准库 + opencv/pillow/numpy）。
 
@@ -36,6 +36,7 @@
 | **实拍图片/视频**（镜头反推） | 景别、机位、运镜轴、时长、光影、色彩、声音、跨镜一致性 | 逐镜镜头卡 + 分镜总表 + 各模型（视频四款 / 图片六款）独立 Prompt + 逐镜评分 |
 | **剧本/小说/文章**（叙事文本→场景化） | 场景切分、全局基调、逐场景七段+分镜 | 每个场景的图片 Prompt（默认 MJ+SD）+ 视频 Prompt（默认 Sora）+ 逐场景评分 |
 | **ComfyUI 工作流**（API/UI JSON，只读） | 节点/连线/模型/LoRA/ControlNet/自定义节点/参数/缺失依赖 | 逐节点 `compatible/degraded/incompatible` 兼容报告 + 手工重建步骤（**不生成可导入工作流**） |
+| **已有 Prompt**（优化/诊断） | 模态与模型语法、字段覆盖、模糊/重复/冲突、参数写法、六维评分 | 问题清单（按严重度）+ 优化后 Prompt（各目标模型）+ 字段覆盖对比 + 前后评分对比 |
 
 ### 1.2 十六种目标模型格式
 
@@ -84,11 +85,12 @@
    │
    ├── Agent 多模态本体（语义分析）──→ 主体 · 风格 · 结构 · 叙事 · 逐场景七段+分镜 · 逐镜镜头卡（按规则库）
    │
-   ├── 编译层 prompt_compiler.py ──→ 模板渲染成 16 种模型格式 + 六维评分 + 安全过滤（scenes 逐场景编译、shots 逐镜编译）
+   ├── 编译层 prompt_compiler.py ──→ 模板渲染成 16 种模型格式 + 六维评分 + 安全过滤（scenes 逐场景编译、shots 逐镜编译、optimize 诊断/重编）
    │
    └── 输出：元信息卡 + 分析摘要 + Prompt 列表 + 评分表 + 使用提示
              （场景化：总览 + 场景总表 + 逐场景 Prompt + 逐场景评分）
              （镜头反推：分镜总表 + 逐镜 Prompt + 逐镜评分 + 镜头审查清单）
+             （Prompt 优化：原稿评分 + 问题清单 + 优化后 Prompt + 字段对比 + 评分对比）
 ```
 
 **脚本只做「本地可计算」的事，语义判断归 Agent**——因此脚本不可用时（如豆包纯文本模式）技能仍可完整运行，仅缺少量化信号（降级路径已内置于 SKILL.md）。
@@ -153,9 +155,11 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 把这段实拍视频逐镜反推成提示词，Sora / Veo 各出一版：D:\videos\night_street.mp4
 
 把这部短剧按场景生成图片和视频提示词：D:\scripts\rain_umbrella.txt
+
+优化这段提示词，保留原意，补全构图、光影和摄影参数：赛博朋克城市夜景……
 ```
 
-即得完整输出：元信息卡 → 分析摘要 → Prompt 列表（可直接粘贴使用）→ 评分表 → 使用提示。
+即得完整输出：元信息卡 → 分析摘要 → Prompt 列表（可直接粘贴使用）→ 评分表 → 使用提示。优化 Prompt 时输出改为：原稿评分 → 问题清单 → 优化后 Prompt → 字段覆盖对比 → 前后评分对比。
 
 ---
 
@@ -163,7 +167,7 @@ Windows 默认使用 **junction 联接**安装（技能目录只放联接点，�
 
 ### 3.1 触发方式
 
-提供具体内容（粘贴文本 / 本地文件路径 / URL）并表达「逆向 / 复刻 / 拆解 / 变成 prompt / 优化 prompt」意图即触发；实拍图片/视频说「反推镜头 / 复刻这个运镜 / 拆成分镜」走镜头反推分支。英文触发词：`prompt reverse engineering`、`reverse engineer this text/image/video/shot`、`recreate this style as a prompt`、`recreate this camera move as a prompt`。
+提供具体内容（粘贴文本 / 本地文件路径 / URL）并表达「逆向 / 复刻 / 拆解 / 变成 prompt」意图即触发；实拍图片/视频说「反推镜头 / 复刻这个运镜 / 拆成分镜」走镜头反推分支；直接给出**已写好的 Prompt** 并说「优化 / 改写 / 诊断 / 看看哪里不好」走 Prompt 优化分支（见 3.8）。英文触发词：`prompt reverse engineering`、`reverse engineer this text/image/video/shot`、`recreate this style as a prompt`、`recreate this camera move as a prompt`、`optimize/improve/diagnose this prompt`。
 
 ### 3.2 文本模式（文章/文案/小说/脚本）
 
@@ -285,6 +289,29 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py shots \
 - 涉暴力、露骨、侵权模仿特定在世人物的内容拒绝生成
 - 脚本不做任何网络上传；唯一网络行为是按用户要求下载用户提供的 URL
 
+### 3.8 Prompt 优化模式（已有 Prompt）
+
+**输入**：一段已经写好的 Prompt（直接粘贴、`--file` 或 stdin），不是待逆向的作品。用户说「优化这段提示词 / 改写一下 / 诊断哪里不对 / 提升到能出图」时触发；若给的是文案、剧本、图片或视频，仍走对应模态的逆向分支。
+
+**四步流程**：
+
+1. **确定性诊断**：`prompt_compiler.py optimize` 自动判定模态（text/image/video）与模型语法（MJ/SD/FLUX/GPT Image/Muse/即梦/Seedance/Sora/Runway/Veo/Kling/Hailuo/Vidu/文本），逐字段检查主体、场景、构图、光影、色彩、风格、摄影参数、负向词、分镜、时长、画幅等，标出模糊词、重复、冲突和参数写法错误，并给出六维启发式评分与安全过滤结果。
+2. **问题清单**：按 `high / medium / low` 排序，每条含维度、证据与修法（复用 `prompt_framework.md` 建议库，视觉模态用专用建议）。
+3. **语义改写**：Agent 按 `references/prompt_optimize_rules.md` 用**原稿已有事实**补结构，写入 `semantic_analysis`；不编造主体/风格/参数，缺失项留空或标 `unknown:`，不跨模型混写参数。
+4. **重编与对比**：带 `--analysis` 重跑，渲染目标模型 Prompt，输出字段覆盖对比与前后六维评分；评分口径不同时明确标注，不把分差当真实提升。
+
+```bash
+# 只诊断（给出问题清单与评分，不改写）
+python prompt-reverse-engineer-skill/scripts/prompt_compiler.py optimize \
+  --file original.txt --format md
+
+# 诊断 + 用改写后的 semantic_analysis 重编并对比
+python prompt-reverse-engineer-skill/scripts/prompt_compiler.py optimize \
+  --file original.txt --analysis optimized.json --auto --format md
+```
+
+输出：元信息卡 → 原稿评分 → 问题清单 → 字段覆盖对比 → 优化后 Prompt（各目标模型）→ 评分对比 → 使用提示。未指定目标模型时按模态取默认（图片 `default`、文本 `gpt4_claude`、视频 `sora2`），也可用 `--models mj,gpt_image` 自选。安全黑名单命中退出码 5；`--sanitize` 仅用于诊断展示，不作为交付稿。示例见 `assets/examples/optimize_example/`（`input.md` 为原稿），规则见 `references/prompt_optimize_rules.md`。
+
 ---
 
 ## 四、架构与设计
@@ -302,10 +329,11 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py shots \
 │   │   ├── analyze_scenes.py          # 叙事文本场景切分信号（剧本场次标记/散文候选块）
 │   │   ├── analyze_workflow.py        # ComfyUI API/UI JSON 只读解析（节点/连线/依赖/问题）
 │   │   ├── _net.py                    # 受限 URL 下载（仅公网/逐跳复检重定向/大小上限）
-│   │   └── prompt_compiler.py         # 编译/评分/安全过滤（compile|score|filter|all|scenes|shots|workflow|validate-templates）
+│   │   └── prompt_compiler.py         # 编译/评分/安全过滤/优化诊断（compile|score|filter|optimize|all|scenes|shots|workflow|validate-templates）
 │   ├── references/                    # 规则知识库（Markdown，Agent 阅读）
 │   │   ├── ir_spec.md                 # IR 1.0 契约（11 模块/新增字段/校验规则/置信度）
-│   │   ├── prompt_framework.md        # 六要素+字段契约+评分细则+安全规则（总纲，含 2.5 节 story 契约）
+│   │   ├── prompt_framework.md        # 六要素+字段契约+评分细则+安全规则（总纲，含 2.5 story / 2.6 shots / 2.7 optimize 契约）
+│   │   ├── prompt_optimize_rules.md   # Prompt 优化规则（模态/模型判定、问题严重度、改写原则、对比口径）
 │   │   ├── image_rules.md             # 摄影/绘画/光影/色彩术语库（含七段结构）
 │   │   ├── muse_image_rules.md        # Muse Image 独立编译规则（八维/十类空间/八模式/迁移边界）
 │   │   ├── muse_image_sources.md      # Muse Image 官方资料索引与「官方能力 vs 本 Skill 设计」边界
@@ -320,7 +348,7 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py shots \
 │   │   └── model_mappings.md          # 十六模型格式映射表（含 DeepSeek 思考档位与版本迁移）
 │   └── assets/
 │       ├── templates/                 # 17 个 JSON 模板（16 模型渲染 + 1 评分报告，新模型=新文件，自动注册）
-│       └── examples/                  # 四模态示例（输入媒体+金标输出，含 story_example / muse_image_example / seedance_example / shot_reverse_example）
+│       └── examples/                  # 四模态示例（输入媒体+金标输出，含 story_example / muse_image_example / seedance_example / shot_reverse_example / optimize_example）
 ├── benchmarks/                        # 离线基准（10 例：图片3/视频3/工作流2/平台2）
 │   ├── README.md                      # 结构层自动校验 vs 语义层人工评分
 │   ├── rubric.md                      # 语义层五维 0–2 分 rubric
@@ -350,10 +378,10 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py shots \
 ├── VERSION                            # 版本单一源（codex plugin.json 与之对齐）
 └── tools/
     ├── install.py                     # 一键安装（junction/copy，幂等，--dry-run）
-    ├── gen_examples.py                # 从 fixtures 重新生成四模态 + Muse / Seedance / 镜头反推示例（确定性）
+    ├── gen_examples.py                # 从 fixtures 重新生成全部示例（四模态 + 专项 + Prompt 优化，确定性）
     ├── gen_registry.py                # 从模板与 creative-platforms 生成三份注册表（确定性，--check）
     ├── benchmarks.py                  # 基准执行器（结构层自动校验，语义层只标记人工）
-    ├── verify.py                      # 离线端到端验证（73 项断言）
+    ├── verify.py                      # 离线端到端验证（74 项断言）
     └── fixtures/                      # 金标语义分析 JSON（契约测试/字段范例）
 ```
 
@@ -397,7 +425,7 @@ python tools/benchmarks.py --check
 python tools/benchmarks.py --suite image --check
 ```
 
-73 项断言、全部离线、可重复执行；基准结构层自动校验，语义层由 Agent/人工按 `benchmarks/rubric.md` 评分：
+74 项断言、全部离线、可重复执行；基准结构层自动校验，语义层由 Agent/人工按 `benchmarks/rubric.md` 评分：
 
 | 层 | 覆盖 |
 |---|---|
@@ -411,8 +439,9 @@ python tools/benchmarks.py --suite image --check
 | 模板层 | 16 个模型模板元数据齐全且在对应模态均渲染非空 Prompt；FLUX.2 无负向、GPT Image/Muse/Seedance/Nano Banana/Veo/Runway/Sora 结构正确；可灵/海螺/Vidu 标签与 params 正确、即梦 prompt/params 与中文标签正确、三者别名解析一致且不混入默认集合；Markdown 排版；模板别名冲突→退出码 4；GPT Image 六项审查清单齐全且不参与总分；Muse、Seedance 六项审查清单各自独立且不串用；模板引用 `{uncertainty}` 被拒 |
 | 任务模式 | GPT Image 五用途、Muse 八用途、Seedance 六任务模式互斥渲染（`--kind` / `task_type` 映射）；编辑顺序 Change→Scope→Preserve→Do not change；参考图逐行带编号；Muse / Seedance 模板与其他模型独立（本模型用途齐全、无串用）；Anchor/多轮/文字版式结构正确；首帧 / 首尾帧 / 全模态参考互斥、`素材N` 角色与编号校验；嵌套对象/编号缺失重复/未知 task_type/冲突→退出码 4，无模型支持→退出码 1 |
 | 镜头反推 | 图片脚本输出 EXIF/景深/黑边镜头信号且带置信度；视频脚本输出首/中/末关键帧、运镜轴、逐镜色彩与黑边；`shots` 三镜 × 四视频模型独立 Prompt、分镜表、逐镜评分与审查清单齐全；单张图片默认 × 六图片模型（MJ `/imagine` 参数行、SD 正负向、FLUX 无负向、GPT/Muse/Nano 规格书），EXIF 焦段与景别进全部 Prompt，单帧无视频时长句式；`--dims` 人工评分与 `--format md` 排版；10 类镜头卡错误（编号/枚举/时长/运镜轴/锚点/证据标签）→退出码 4，图片多镜→退出码 4，无 `shot_style`→退出码 1，黑名单→退出码 5 且 `--sanitize` 放行 |
+| 优化层 | 弱结构图片 Prompt → 模态/模型判定、缺失构图/摄影参数/模糊词诊断；视频镜头编号+时长 → 视频模态与 Sora 2 默认；`--analysis` 重编 → 字段覆盖与六维评分提升（C→A）；黑名单退出码 5、`--sanitize` 放行；两次运行逐字节一致 |
 | 基准层 | 10 例基准契约合法（图片 3 / 视频 3 / 工作流 2 / 平台 2），每例含输入、结构层断言、`gold.md` 与至少 3 条语义标准；`benchmarks.py --check` 结构层 10/10 通过，语义层只标记人工评分不自动打分；图片套件 3 例单独通过 |
-| 一致性 | `VERSION` 与 codex 清单版本一致；清单描述含十六模型与 DeepSeek/可灵/海螺/Vidu/即梦；豆包脚本文案与 `scripts/*.py` 同步；豆包三产物两次生成哈希一致；README 依赖声明与脚本导入一致；README 断言数与实际一致；四模态 + Muse / Seedance / 镜头反推示例可由 `gen_examples.py` 逐字节复现；8 个参考图角色在 references 中齐全；unknown 项进正文会提示而不改变总分；三注册表可由 `gen_registry.py --check` 逐字节复现（16 模型、无绝对路径）；L3 仅只读 / L4 不支持、全部模型声明 L1 且不支持 L4、平台过来源闸门；IR 文档覆盖 11 模块且 SKILL/README 同步；工作流规范/能力声明/三平台别名表同步 |
+| 一致性 | `VERSION` 与 codex 清单版本一致；清单描述含十六模型与 DeepSeek/可灵/海螺/Vidu/即梦；豆包脚本文案与 `scripts/*.py` 同步；豆包三产物两次生成哈希一致；README 依赖声明与脚本导入一致；README 断言数与实际一致；四模态 + Muse / Seedance / 镜头反推 / Prompt 优化示例可由 `gen_examples.py` 逐字节复现；8 个参考图角色在 references 中齐全；unknown 项进正文会提示而不改变总分；三注册表可由 `gen_registry.py --check` 逐字节复现（16 模型、无绝对路径）；L3 仅只读 / L4 不支持、全部模型声明 L1 且不支持 L4、平台过来源闸门；IR 文档覆盖 11 模块且 SKILL/README 同步；工作流规范/能力声明/三平台别名表同步 |
 | 平台层 | 三平台五件套齐全；`capability_map.json` schema、置信度标记、官方来源闸门（`official` + 已读 `verified`）通过；`workflow_mapping.json` 节点状态合法；无「可运行 / 保证运行」表述；注册表 3 平台均为 L1-L3 且 `supported_by_skill: false`；junction / copy / 豆包包均物化 `platforms/` 且幂等 |
 | 安全加固 | 全角、词内/词间零宽、大小写西里尔同形字 5 类绕过仍阻断；纯注入措辞（`act as if`/`ignore all prior rules`）只进 `injection_flags` 不阻断；`validate-templates` 全量通过且 5 类坏模板均报错；私网/回环/凭据/非 http URL 被拒，四脚本退出码 3 |
 | 四场景 | ① 营销文案→GPT Prompt（角色/风格/结构约束）② 赛博朋克图→MJ Prompt（`/imagine`+`--no`+风格迁移）③ 10 秒视频→分镜 Prompt（镜头数=分镜段落数）④ 剧本→逐场景 Prompt（每场景 MJ/SD/Sora 2 齐全 + 逐场景评分） |

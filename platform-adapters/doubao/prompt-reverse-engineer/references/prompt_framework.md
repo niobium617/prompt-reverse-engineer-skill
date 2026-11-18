@@ -281,6 +281,39 @@ python scripts/prompt_compiler.py shots --analysis shot.json \
 
 镜头语言词表、证据规则、逐模型写法与完整示例见 `references/shot_reverse_rules.md`。
 
+### 2.7 Prompt 优化诊断契约（`optimize` 子命令）
+
+用于「用户已有 Prompt → 诊断 → 改写 → 重编对比」。输入不是作品而是 Prompt 本身；
+完整规则见 `references/prompt_optimize_rules.md`。编译命令：
+
+```bash
+python scripts/prompt_compiler.py optimize \
+  (--prompt "..." | --file original.txt | --stdin) \
+  [--modality auto|text|image|video] [--model mj|seedance|...] \
+  [--models mj,gpt_image|sora,...] [--analysis optimized.json] \
+  [--kind ...] [--baseline-dims dims.json] [--dims dims.json | --auto] \
+  [--sanitize] [--format md|json|text] [-o out.json]
+```
+
+输出 JSON 顶层契约（`schema_version` 仍为 `1.0`，`subcommand=optimize`）：
+
+| 字段 | 说明 |
+|---|---|
+| modality / modality_source | `text/image/video`；来源 `explicit` / `model` / `heuristic` / `analysis` |
+| source_model / model_source | 原稿语法检出的模型；来源 `explicit` / `detected` / `none` |
+| input | `source`（inline/file/stdin）、`chars` |
+| filter | `blocked` / `input_blocked` / `sanitized` / `matches` / `injection_flags` / `sanitized_text` |
+| audit | `features`（检查项布尔表）、`issues`、`score_report`（`approximate: true`）、`notes` |
+| target_models / prompts / skipped | 优化稿目标模型与逐模型渲染结果 |
+| optimized | 有 `--analysis` 时：`features`、`feature_compare`、`score_report`、`warnings` |
+| comparison | 有 `--analysis` 时：六维原稿/优化稿分数、总分、等级、差值 |
+| warnings | 模态回退、模型不支持、`unknown` 泄漏等提示 |
+
+`audit.issues[]` 的每项固定为 `id / dimension / severity / title / evidence / fix`，
+`severity` 取 `high|medium|low`，按 `high→low` 排序；`dimension` 必须是第三节六维之一。
+启发式分数只用于定位缺口，对外必须标注「近似」；人工复核用 `--baseline-dims` / `--dims`。
+`--sanitize` 只用于诊断展示，净化稿不作为交付稿；未加 `--sanitize` 命中黑名单退出码 5。
+
 ## 三、评分细则
 
 百分制，六维加权。权重定义于 `prompt_compiler.py`（启动时校验权重和为 100，禁止修改不一致）。

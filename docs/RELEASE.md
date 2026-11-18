@@ -7,10 +7,10 @@
 
 - [ ] `VERSION` 递增（语义化版本；当前值见 `VERSION`）
 - [ ] `plugin.json` 的 `version` 同步
-- [ ] `python tools/verify.py` 全绿（当前 73 项，无网络、无 API）
+- [ ] `python tools/verify.py` 全绿（当前 74 项，无网络、无 API）
 - [ ] `python tools/benchmarks.py --check` 结构层 10 / 10 通过，语义层输出 `[MANUAL]`（当前 10 例）
 - [ ] `python tools/benchmarks.py --suite image --check` 单套件可独立执行
-- [ ] `python tools/gen_examples.py --check` 四模态 + Muse / Seedance / 镜头反推示例逐字节一致
+- [ ] `python tools/gen_examples.py --check` 四模态 + Muse / Seedance / 镜头反推 / Prompt 优化示例逐字节一致
 - [ ] `python tools/gen_registry.py --check` 三份注册表逐字节一致（模型 16 / 平台 3）
 - [ ] `python tools/install.py --platform doubao` 重新生成豆包三产物（含 `platforms/`），`git diff` 仅出现预期变更
 - [ ] README 的断言数与 `verify.py` 实际条数一致（`一致性/README 断言数` 断言）
@@ -49,6 +49,7 @@ gh release create vX.Y.Z --target main \
 
 | 版本 | 日期 | 要点 |
 |---|---|---|
+| v3.2.0 | 2026-11-18 | 阶段己：新增 Prompt 优化分支。`prompt_compiler.py optimize` 对已有 Prompt 做确定性诊断（模态/模型语法、三模态字段体检、模糊/重复/冲突/参数写法）、问题清单与启发式评分；`--analysis` 按原意重编并输出字段覆盖与前后评分对比；黑名单退出 5、`--sanitize` 仅诊断；新增 `prompt_optimize_rules.md`、2.7 契约、`optimize_example`；74 项断言 |
 | v3.1.0 | 2026-11-18 | 阶段丁：新增 Kling 4.0 / Hailuo 3 / Vidu Q3 / 即梦 5.0（Seedream 5.0）四个独立模板（零代码注册）与官方资料索引；`benchmarks/` 10 例（图像 3 / 视频 3 / 工作流 2 / 平台 2），结构层自动断言与语义层 rubric 分离；`tools/benchmarks.py` 支持 `--suite image --check`；73 项断言 |
 | v3.0.0 | 2026-11-17 | 阶段丙：ComfyUI API/UI JSON 只读解析（`analyze_workflow.py`）；`prompt_compiler.py workflow` 跨平台兼容报告（compatible/degraded/incompatible + 手工步骤）；IR 扩展 workflow 结构/悬空连线/成环校验；三平台 `category_aliases`；固定 `importable_output: false`（不生成/不导入/不导出工作流、无 L4）；69 项断言 |
 | v2.6.0 | 2026-11-17 | `creative-platforms/` 首批三平台（ComfyUI L2 / Runway L1 / LibTV L1）五件套；来源闸门（`official` + 已读 `verified`）；注册表纳入 3 平台；安装物化 `platforms/`（junction/copy/豆包包）；修复 junction 目标读取；junction 安全清理（不跟随删除实体）；65 项断言 |

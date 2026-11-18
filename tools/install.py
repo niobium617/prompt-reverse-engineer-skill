@@ -48,6 +48,7 @@ DOUBAO_FILE = DOUBAO_DIR / "doubao_instruction.md"
 DOUBAO_SOURCES = [
     SKILL_SRC / "SKILL.md",
     SKILL_SRC / "references" / "prompt_framework.md",
+    SKILL_SRC / "references" / "prompt_optimize_rules.md",
     SKILL_SRC / "references" / "image_rules.md",
     SKILL_SRC / "references" / "muse_image_rules.md",
     SKILL_SRC / "references" / "seedance_rules.md",

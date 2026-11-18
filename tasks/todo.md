@@ -130,4 +130,12 @@
   - [x] `tools/benchmarks.py`：`--suite image --check`、`--check`、`--schema-only`、`--list`；结构层自动断言，语义层只打印 `[MANUAL]` 不自动评分
   - [x] `verify.py` 新增 4 项（新视频模板 / 即梦模板 / 基准用例契约 / 基准结构层），共 73 项；十六模型全量渲染
   - [x] README / SKILL.md / model_mappings.md / RELEASE / VERSION / plugin.json / 豆包产物同步（3.1.0）
+- [x] 己：Prompt 优化分支（v3.2.0）
+  - [x] `prompt_compiler.py optimize`：`--prompt/--file/--stdin`、模态与模型语法检测、三模态字段体检、模糊/重复/冲突/参数语法检查、问题清单与启发式评分
+  - [x] `--analysis` 重编复用 `semantic_analysis` 契约，输出字段覆盖与前后六维评分对比；`--baseline-dims` / `--dims` 支持人工评分
+  - [x] 安全：原稿或生成稿命中黑名单退出 5，`--sanitize` 仅诊断展示；输出幂等
+  - [x] `references/prompt_optimize_rules.md` + `prompt_framework.md` 2.7 契约 + SKILL.md 优化分支与输出格式
+  - [x] 新增 `prompt_optimize_baseline.txt` 与 `optimize_example`（input.md/output.md），`gen_examples.py` 支持 optimize 作业
+  - [x] `verify.py` 新增 1 项（诊断/模态判定/重编对比/安全/幂等），共 74 项
+  - [x] README / DEVLOG / VERSION / plugin.json / 豆包产物同步（3.2.0）
 - [ ] 戊（可选）：WAV 音频信号、专业软件 L1 说明

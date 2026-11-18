@@ -1230,3 +1230,77 @@ $ python tools/gen_examples.py --check
 ### 脱敏
 
 本文不含密钥与绝对用户路径；验证输出只使用仓库内中性 fixtures，路径以 `...` 省略。
+
+## 2026-11-18 阶段 己：Prompt 优化分支（v3.2.0）
+
+### 摘要
+
+为技能增加一等公民的「已有 Prompt → 诊断 → 改写 → 重编对比」分支。`prompt_compiler.py` 新增 `optimize` 子命令：自动判定模态与模型语法，逐字段体检（主体/场景/构图/光影/色彩/风格/摄影参数/负向词/分镜/时长/画幅等），标出模糊词、重复、冲突与模型参数错误，输出按严重度排序的问题清单与六维启发式评分；提供 `--analysis` 时按同一套 `semantic_analysis` 契约重编目标模型 Prompt，并给出字段覆盖与前后评分对比。实现完全复用既有标准与建议库，不新建平行评分体系。
+
+### 背景（基线）
+
+- 旧版只有 `gpt4_claude` / `deepseek` 模板里的文本 `optimize` 用途，本质是「让目标模型替你改写」的元 Prompt，不做确定性诊断，也没有字段覆盖与评分对比。
+- 用户给定一段已有 Prompt 时，技能没有对应入口，只能按作品逆向，容易改换原意或凭空补细节。
+- 基线：`VERSION=3.1.0`，73 项离线断言全部通过。
+
+### 变更清单
+
+| 文件 | 旧 | 新 |
+|---|---|---|
+| `scripts/prompt_compiler.py` | 无 `optimize` | 新增 `optimize` 子命令：`--prompt/--file/--stdin`、`--modality auto|text|image|video`、`--model`、`--models`、`--analysis`、`--baseline-dims`、`--dims`、`--auto`、`--sanitize`、`--format`；模态/模型检测、三模态特征表、模糊/重复/冲突/语法检查、启发式评分、问题清单、优化稿编译与对比 |
+| `references/prompt_optimize_rules.md` | 无 | 新增：模态/模型判定、严重度、问题类型、改写原则、视觉模态专用建议、对比口径、常见错误 |
+| `references/prompt_framework.md` | 2.6 后直接进入第三节 | 新增 2.7 optimize 诊断契约（命令、JSON 顶层字段、issue schema） |
+| `SKILL.md` | 无优化分支 | 描述与触发词补充；§1 增加判定；§2 增加优化分支；§4 增加固定输出组织；§5 增加 6 条异常；§6 增加 `optimize` 用法；§7 增加规则文档与示例索引 |
+| `tools/gen_examples.py` | 7 个示例 | 新增 `optimize_example`，支持 `source` 生成 `input.md` 与 `output.md` |
+| `tools/fixtures/prompt_optimize_baseline.txt` | 无 | 新增弱结构原稿 fixture |
+| `tools/verify.py` | 73 项 | 新增「优化层/Prompt 诊断与重编」，74 项 |
+| `README.md` | 73 项；无优化说明 | 能力表/快速开始/触发词/3.8 优化模式/架构树/验证表同步；74 项 |
+| `VERSION` / codex `plugin.json` | `3.1.0` | `3.2.0`；清单描述、关键词与默认提示补充优化能力 |
+| `tools/install.py` | 豆包源 7 份 | 增加 `prompt_optimize_rules.md`；重新生成豆包指令/SKILL/zip |
+| `assets/examples/optimize_example/` | 无 | 新增 `input.md` 与金标 `output.md` |
+
+### 生效方式
+
+脚本随技能目录使用，无需额外安装。已重新运行 `python tools/install.py --platform doubao`，豆包指令、技能包与 zip 已包含新规则文档与新子命令说明；其他平台重新执行 `python tools/install.py` 即可（junction 模式自动生效）。
+
+### 验证（真实输出）
+
+```text
+$ python tools/verify.py
+...
+[PASS] 优化层/Prompt 诊断与重编 — 图片诊断+模态判定+重编评分 62.1→92.0（C→A）+黑名单退出 5/sanitize 放行+幂等
+[PASS] 一致性/README 断言数 — README 断言数 74 与实际一致
+
+== 验证汇总 ==
+通过 74 / 74
+全部通过 ✔
+```
+
+```text
+$ python tools/gen_examples.py --check
+[PASS] optimize_example/output.md 与生成结果一致
+[PASS] optimize_example/input.md 与生成结果一致
+（其余 7 个示例同样 PASS）
+```
+
+补充验证：
+
+- `--prompt "一个女孩在城市里，很好看，霓虹灯，8k"` → 模态 `image`，问题清单含「缺少构图」「缺少摄影参数」「存在模糊修饰词 好看」。
+- `--prompt "分镜1：5秒，特写…；镜头2：3秒，中景…"` → 模态 `video`，目标模型 `sora2`。
+- `--file baseline --analysis semantic_image.json --auto` → 字段覆盖 12 项、六维评分 62.1 → 92.0（C→A）。
+- 黑名单 Prompt 未加 `--sanitize` 退出码 5；加 `--sanitize` 退出码 0 且 `filter.sanitized=true`。
+- 同一输入连续两次 `--format md` 输出逐字节一致。
+
+### 偏差
+
+- 原稿与优化稿的 `--auto` 评分都使用「字段覆盖」口径（同一 `_score_notes`），不是语义质量模型；对外必须标注「启发式近似」，最终分仍建议用 `--dims` 人工复核。
+- 模型检测只认语法特征，不把「Midjourney 风格」这类内容词当模型；未检出时按模态取默认目标模型，并在元信息卡提示 `--model`。
+- `--sanitize` 仅用于诊断展示，不作为交付稿；这一点写入规则文档与 SKILL 异常表。
+
+### 回滚
+
+`git revert` 本次提交。若需单独回退：删除 `optimize` 子命令及相关常量/函数、`references/prompt_optimize_rules.md`、`prompt_framework.md` 2.7、`optimize_example/` 与 `prompt_optimize_baseline.txt`；`verify.py` 删除 1 项并恢复 73；`VERSION` 与 codex 清单回到 `3.1.0`；README / SKILL.md 同步回退；从 `tools/install.py` 的 `DOUBAO_SOURCES` 移除新文档并重跑豆包生成。无数据迁移。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径；验证输出仅使用仓库内中性 fixtures。

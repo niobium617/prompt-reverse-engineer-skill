@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""从 tools/fixtures 重新生成示例 output.md（四模态 + Muse / Seedance 专项，确定性、离线、无 API）。
+"""从 tools/fixtures 重新生成示例 output.md（四模态 + 专项 + Prompt 优化，确定性、离线、无 API）。
 
 示例是技能的对外展示，手写副本必然与模板/编译器漂移；本脚本用金标语义
 analysis JSON 直接跑编译器，输出即示例，`verify.py` 断言两者逐字节一致。
 
 用法：
-  python tools/gen_examples.py           # 重新生成四个 output.md
+  python tools/gen_examples.py           # 重新生成全部示例 output.md（优化示例另含 input.md）
   python tools/gen_examples.py --check   # 只校验（逐字节），不一致退出 1
 退出码：0 成功/一致；1 生成失败或存在差异。
 """
@@ -66,6 +66,13 @@ JOBS = [
         "title": "实拍视频逐镜反推（10 秒 3 镜 → 四视频模型独立 Prompt）",
         "command": ["shots"],
     },
+    {
+        "dir": "optimize_example",
+        "fixture": "semantic_image.json",
+        "source": "prompt_optimize_baseline.txt",
+        "title": "Prompt 优化（弱结构原稿 → 诊断 → 改写 → 评分对比）",
+        "command": ["optimize"],
+    },
 ]
 
 HEADER = (
@@ -75,12 +82,41 @@ HEADER = (
     "`tools/fixtures/{fixture}` 生成，请勿手工编辑。\n"
     "\n"
 )
+HEADER_OPTIMIZE = (
+    "# 示例输出：{title}\n"
+    "\n"
+    "> 本文件由 `python tools/gen_examples.py` 从 "
+    "`tools/fixtures/{source}`（原稿）与 `tools/fixtures/{fixture}`（改写稿）生成，"
+    "请勿手工编辑。\n"
+    "\n"
+)
+
+
+INPUT_HEADER = (
+    "# 示例输入：{title}\n"
+    "\n"
+    "> 本文件是 `tools/fixtures/{source}` 的展示副本，"
+    "请勿手工编辑。\n"
+    "\n"
+    "```text\n"
+    "{body}\n"
+    "```\n"
+)
+
+
+def render_input(job):
+    """渲染优化示例的原稿 input.md（确定性，CRLF 归一化为 LF）。"""
+    body = (FIXTURES / job["source"]).read_text(encoding="utf-8")
+    body = body.replace("\r\n", "\n").strip("\n")
+    return INPUT_HEADER.format(title=job["title"], source=job["source"], body=body)
 
 
 def render(job):
     """调用编译器生成示例正文（CRLF 归一化为 LF，保证跨平台逐字节一致）。"""
-    cmd = [PYTHON, str(COMPILER), *job["command"],
-           "--analysis", str(FIXTURES / job["fixture"]), "--auto", "--format", "md"]
+    cmd = [PYTHON, str(COMPILER), *job["command"]]
+    if job.get("source"):
+        cmd += ["--file", str(FIXTURES / job["source"])]
+    cmd += ["--analysis", str(FIXTURES / job["fixture"]), "--auto", "--format", "md"]
     proc = subprocess.run(cmd, capture_output=True)
     if proc.returncode != 0:
         detail = proc.stderr.decode("utf-8", errors="replace")[:400]
@@ -89,32 +125,40 @@ def render(job):
     # 编译器正文自带一级标题；降为二级，让示例文件只有一个 H1
     if body.startswith("# "):
         body = "## " + body[2:]
-    header = HEADER.format(title=job["title"], fixture=job["fixture"])
+    if job.get("source"):
+        header = HEADER_OPTIMIZE.format(
+            title=job["title"], source=job["source"], fixture=job["fixture"])
+    else:
+        header = HEADER.format(title=job["title"], fixture=job["fixture"])
     return header + body + "\n"
 
 
 def main():
-    parser = argparse.ArgumentParser(description="重新生成示例 output.md（四模态 + Muse / Seedance）")
+    parser = argparse.ArgumentParser(
+        description="重新生成示例 output.md（四模态 + 专项 + Prompt 优化）")
     parser.add_argument("--check", action="store_true",
                         help="只校验仓库示例与生成结果是否逐字节一致")
     args = parser.parse_args()
 
     failed = 0
     for job in JOBS:
-        target = EXAMPLES / job["dir"] / "output.md"
-        expected = render(job)
-        if args.check:
-            actual = target.read_text(encoding="utf-8") if target.exists() else None
-            if actual == expected:
-                print(f"[PASS] {job['dir']}/output.md 与生成结果一致")
+        artifacts = [("output.md", render(job))]
+        if job.get("source"):
+            artifacts.append(("input.md", render_input(job)))
+        for name, expected in artifacts:
+            target = EXAMPLES / job["dir"] / name
+            if args.check:
+                actual = target.read_text(encoding="utf-8") if target.exists() else None
+                if actual == expected:
+                    print(f"[PASS] {job['dir']}/{name} 与生成结果一致")
+                else:
+                    failed += 1
+                    print(f"[DIFF] {job['dir']}/{name} 已漂移，"
+                          "请运行 python tools/gen_examples.py")
             else:
-                failed += 1
-                print(f"[DIFF] {job['dir']}/output.md 已漂移，"
-                      "请运行 python tools/gen_examples.py")
-        else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(expected, encoding="utf-8", newline="\n")
-            print(f"[OK] 已生成 {target.relative_to(REPO)}")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(expected, encoding="utf-8", newline="\n")
+                print(f"[OK] 已生成 {target.relative_to(REPO)}")
     if failed:
         sys.exit(1)
 
