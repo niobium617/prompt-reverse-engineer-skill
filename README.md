@@ -80,7 +80,7 @@
 ```
 作品（文本/图片/视频/剧本）
    │
-   ├── 脚本层（本地确定性信号）──→ 字数/句式统计 · 主色/构图/EXIF/景深 · 镜头切分/首中末关键帧/运镜轴 · 场景切分信号 · 工作流节点/连线/依赖
+   ├── 脚本层（本地确定性信号）──→ 字数/句式统计 · 主色/构图/EXIF/景深 · 镜头切分/首中末关键帧/变化曲线与变化帧/运镜轴 · 场景切分信号 · 工作流节点/连线/依赖
    │        analyze_text.py / analyze_image.py / analyze_video.py / analyze_scenes.py / analyze_workflow.py
    │
    ├── Agent 多模态本体（语义分析）──→ 主体 · 风格 · 结构 · 叙事 · 逐场景七段+分镜 · 逐镜镜头卡（按规则库）
@@ -241,7 +241,7 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py compile   --anal
 
 Seedance 模板（`assets/templates/seedance.json`）与 Sora / Runway / Veo 模板**相互独立**，共用视频分镜与 `video_references` 底层契约；Seedance 模型更新只改自己的文件。六种模式、素材角色、参数边界与审查清单见 `references/seedance_rules.md`、`references/model_mappings.md` 5.4 节。
 
-**逐镜反推（实拍素材，`shots` 子命令）**：给了实拍视频/照片并要求「反推镜头提示词 / 复刻这个运镜 / 拆成分镜」时，走镜头反推分支。视频脚本额外输出首/中/末关键帧、运镜轴（Z 推拉 / X 水平摇移 / Y 升降 / R 旋转）、逐镜主色与黑边信号，图片脚本额外输出 EXIF 焦段/光圈/快门/ISO、景深与黑边推断；Agent 逐帧复核后按 `references/shot_reverse_rules.md` 填镜头卡（景别 / 机位 / 运镜 / 时长 / 画面动作 / 环境 / 光影 / 色彩 / 锚点 / 声音 / 衔接 / 转场 / 证据），再由编译器逐镜、逐模型独立渲染：
+**逐镜反推（实拍素材，`shots` 子命令）**：给了实拍视频/照片并要求「反推镜头提示词 / 复刻这个运镜 / 拆成分镜」时，走镜头反推分支。视频脚本额外输出首/中/末关键帧、逐抽样点变化曲线、镜头内变化峰值帧（边界保护 + `--max-keyframes` 整片上限）、运镜轴（Z 推拉 / X 水平摇移 / Y 升降 / R 旋转）、逐镜主色与黑边信号，图片脚本额外输出 EXIF 焦段/光圈/快门/ISO、景深与黑边推断；Agent 逐帧复核后按 `references/shot_reverse_rules.md` 填镜头卡（景别 / 机位 / 运镜 / 时长 / 画面动作 / 环境 / 光影 / 色彩 / 锚点 / 声音 / 衔接 / 转场 / 证据），再由编译器逐镜、逐模型独立渲染：
 
 ```bash
 python prompt-reverse-engineer-skill/scripts/prompt_compiler.py shots \
@@ -252,7 +252,7 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py shots \
   --analysis shot_image.json --auto --format md
 ```
 
-输出分镜总表 + 每镜镜头卡 + 每个模型的独立 Prompt + 逐镜六维评分 + 镜头审查清单。未指定模型时按模态取默认：视频素材出四款视频模型，单张图片出六款图片模型，可用 `--models mj,sd` 等自选；镜头卡字段错误（编号不连续/重复、枚举不符、时长 ≤ 0、运镜超两轴、锚点超 5 个、证据无置信度标签）退出 4 并报镜头号；指定模型都没有 `shot_style` 段时退出 1。示例见 `assets/examples/shot_reverse_example/output.md`。
+输出分镜总表 + 每镜镜头卡 + 每个模型的独立 Prompt + 逐镜六维评分 + 镜头审查清单。未指定模型时按模态取默认：视频素材出四款视频模型，单张图片出六款图片模型，可用 `--models mj,sd` 等自选；镜头卡字段错误（编号不连续/重复、枚举不符、时长 ≤ 0、运镜超两轴、锚点超 5 个、证据无置信度标签）退出 4 并报镜头号；指定模型都没有 `shot_style` 段时退出 1。声明 `reuse_mode`（`replicate`/`local_edit`/`variant`/`continuation`/`repair`）时额外输出四栏复用计划（已修改 / 保留 / 必须联动 / 无法保证），审查清单由 6 项扩为 9 项；模式必填缺失退出 4，Delta 与 Preserve 冲突仅警告并标 `reuse_conflict=warn`。示例见 `assets/examples/shot_reverse_example/output.md` 与 `assets/examples/shot_reuse_example/`，规则见 `references/shot_reverse_rules.md` 第五节。
 
 ### 3.5 叙事文本场景化模式（剧本/小说/文章）
 
@@ -325,7 +325,7 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py optimize \
 │   ├── scripts/
 │   │   ├── analyze_text.py            # 文本确定性统计
 │   │   ├── analyze_image.py           # 图片信号提取（主色/构图/EXIF/景深/黑边/镜头信号）
-│   │   ├── analyze_video.py           # 视频镜头切分+首中末关键帧+运镜轴+逐镜色彩（无需 ffmpeg）
+│   │   ├── analyze_video.py           # 视频镜头切分+首中末关键帧+变化曲线/变化帧+运镜轴+逐镜色彩（无需 ffmpeg）
 │   │   ├── analyze_scenes.py          # 叙事文本场景切分信号（剧本场次标记/散文候选块）
 │   │   ├── analyze_workflow.py        # ComfyUI API/UI JSON 只读解析（节点/连线/依赖/问题）
 │   │   ├── _net.py                    # 受限 URL 下载（仅公网/逐跳复检重定向/大小上限）
@@ -349,7 +349,7 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py optimize \
 │   └── assets/
 │       ├── templates/                 # 17 个 JSON 模板（16 模型渲染 + 1 评分报告，新模型=新文件，自动注册）
 │       └── examples/                  # 四模态示例（输入媒体+金标输出，含 story_example / muse_image_example / seedance_example / shot_reverse_example / optimize_example）
-├── benchmarks/                        # 离线基准（10 例：图片3/视频3/工作流2/平台2）
+├── benchmarks/                        # 离线基准（13 例：图片3/视频3/镜头复用3/工作流2/平台2）
 │   ├── README.md                      # 结构层自动校验 vs 语义层人工评分
 │   ├── rubric.md                      # 语义层五维 0–2 分 rubric
 │   └── image|video|workflow|platform/ # 每例 JSON + gold.md（输入/金标/rubric）
@@ -371,6 +371,7 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py optimize \
 │   ├── 2026-11-15-跨平台工作流升级方案.md # IR / 平台适配 / 工作流升级（已确认）
 │   ├── 2026-11-15-实拍镜头反推方案.md  # 镜头信号 / 镜头卡 / shots 逐镜渲染（已实施）
 │   ├── 2026-11-18-v3.1.0-发布说明.md  # v3.1.0 发布说明（四模型 + 离线基准）
+│   ├── 2026-11-19-镜头逆向复用升级方案.md # 复用计划 / 关键帧时间轴 / 变体延续（待评审）
 │   ├── DEVLOG.md                      # 阶段开发记录（改动/验证/回滚）
 │   └── RELEASE.md                     # 发布检查表（版本源/tag/Release）
 ├── tasks/
@@ -381,7 +382,7 @@ python prompt-reverse-engineer-skill/scripts/prompt_compiler.py optimize \
     ├── gen_examples.py                # 从 fixtures 重新生成全部示例（四模态 + 专项 + Prompt 优化，确定性）
     ├── gen_registry.py                # 从模板与 creative-platforms 生成三份注册表（确定性，--check）
     ├── benchmarks.py                  # 基准执行器（结构层自动校验，语义层只标记人工）
-    ├── verify.py                      # 离线端到端验证（74 项断言）
+    ├── verify.py                      # 离线端到端验证（83 项断言）
     └── fixtures/                      # 金标语义分析 JSON（契约测试/字段范例）
 ```
 
@@ -425,7 +426,7 @@ python tools/benchmarks.py --check
 python tools/benchmarks.py --suite image --check
 ```
 
-74 项断言、全部离线、可重复执行；基准结构层自动校验，语义层由 Agent/人工按 `benchmarks/rubric.md` 评分：
+83 项断言、全部离线、可重复执行；基准结构层自动校验，语义层由 Agent/人工按 `benchmarks/rubric.md` 评分：
 
 | 层 | 覆盖 |
 |---|---|
@@ -438,9 +439,9 @@ python tools/benchmarks.py --suite image --check
 | DeepSeek 模型 | 别名（`deepseek`/`ds`/`deepseek-flash`/`deepseek-1017`）解析一致 + 三模态渲染含模型名/思考档/推理段 + 不混入默认集合 |
 | 模板层 | 16 个模型模板元数据齐全且在对应模态均渲染非空 Prompt；FLUX.2 无负向、GPT Image/Muse/Seedance/Nano Banana/Veo/Runway/Sora 结构正确；可灵/海螺/Vidu 标签与 params 正确、即梦 prompt/params 与中文标签正确、三者别名解析一致且不混入默认集合；Markdown 排版；模板别名冲突→退出码 4；GPT Image 六项审查清单齐全且不参与总分；Muse、Seedance 六项审查清单各自独立且不串用；模板引用 `{uncertainty}` 被拒 |
 | 任务模式 | GPT Image 五用途、Muse 八用途、Seedance 六任务模式互斥渲染（`--kind` / `task_type` 映射）；编辑顺序 Change→Scope→Preserve→Do not change；参考图逐行带编号；Muse / Seedance 模板与其他模型独立（本模型用途齐全、无串用）；Anchor/多轮/文字版式结构正确；首帧 / 首尾帧 / 全模态参考互斥、`素材N` 角色与编号校验；嵌套对象/编号缺失重复/未知 task_type/冲突→退出码 4，无模型支持→退出码 1 |
-| 镜头反推 | 图片脚本输出 EXIF/景深/黑边镜头信号且带置信度；视频脚本输出首/中/末关键帧、运镜轴、逐镜色彩与黑边；`shots` 三镜 × 四视频模型独立 Prompt、分镜表、逐镜评分与审查清单齐全；单张图片默认 × 六图片模型（MJ `/imagine` 参数行、SD 正负向、FLUX 无负向、GPT/Muse/Nano 规格书），EXIF 焦段与景别进全部 Prompt，单帧无视频时长句式；`--dims` 人工评分与 `--format md` 排版；10 类镜头卡错误（编号/枚举/时长/运镜轴/锚点/证据标签）→退出码 4，图片多镜→退出码 4，无 `shot_style`→退出码 1，黑名单→退出码 5 且 `--sanitize` 放行 |
+| 镜头反推 | 图片脚本输出 EXIF/景深/黑边镜头信号且带置信度；视频脚本输出首/中/末关键帧、逐抽样点变化曲线、镜头内变化峰值帧（距边界不足一个抽样间隔不加密）与运镜轴、逐镜色彩及黑边；`shots` 三镜 × 四视频模型独立 Prompt、分镜表、逐镜评分与审查清单齐全；单张图片默认 × 六图片模型（MJ `/imagine` 参数行、SD 正负向、FLUX 无负向、GPT/Muse/Nano 规格书），EXIF 焦段与景别进全部 Prompt，单帧无视频时长句式；`--dims` 人工评分与 `--format md` 排版；10 类镜头卡错误（编号/枚举/时长/运镜轴/锚点/证据标签）→退出码 4，图片多镜→退出码 4，无 `shot_style`→退出码 1，黑名单→退出码 5 且 `--sanitize` 放行；声明 `reuse_mode` 时输出四栏复用计划、九项审查清单与镜头卡扩展字段，复用模式必填缺失→退出码 4，Delta/Preserve 冲突→警告不覆盖，未声明时旧输出逐字节不变 |
 | 优化层 | 弱结构图片 Prompt → 模态/模型判定、缺失构图/摄影参数/模糊词诊断；视频镜头编号+时长 → 视频模态与 Sora 2 默认；`--analysis` 重编 → 字段覆盖与六维评分提升（C→A）；黑名单退出码 5、`--sanitize` 放行；两次运行逐字节一致 |
-| 基准层 | 10 例基准契约合法（图片 3 / 视频 3 / 工作流 2 / 平台 2），每例含输入、结构层断言、`gold.md` 与至少 3 条语义标准；`benchmarks.py --check` 结构层 10/10 通过，语义层只标记人工评分不自动打分；图片套件 3 例单独通过 |
+| 基准层 | 13 例基准契约合法（图片 3 / 视频 3 / 镜头复用 3 / 工作流 2 / 平台 2），每例含输入、结构层断言、`gold.md` 与至少 3 条语义标准；`benchmarks.py --check` 结构层 13/13 通过，语义层只标记人工评分不自动打分；图片套件 3 例与镜头复用套件 3 例单独通过 |
 | 一致性 | `VERSION` 与 codex 清单版本一致；清单描述含十六模型与 DeepSeek/可灵/海螺/Vidu/即梦；豆包脚本文案与 `scripts/*.py` 同步；豆包三产物两次生成哈希一致；README 依赖声明与脚本导入一致；README 断言数与实际一致；四模态 + Muse / Seedance / 镜头反推 / Prompt 优化示例可由 `gen_examples.py` 逐字节复现；8 个参考图角色在 references 中齐全；unknown 项进正文会提示而不改变总分；三注册表可由 `gen_registry.py --check` 逐字节复现（16 模型、无绝对路径）；L3 仅只读 / L4 不支持、全部模型声明 L1 且不支持 L4、平台过来源闸门；IR 文档覆盖 11 模块且 SKILL/README 同步；工作流规范/能力声明/三平台别名表同步 |
 | 平台层 | 三平台五件套齐全；`capability_map.json` schema、置信度标记、官方来源闸门（`official` + 已读 `verified`）通过；`workflow_mapping.json` 节点状态合法；无「可运行 / 保证运行」表述；注册表 3 平台均为 L1-L3 且 `supported_by_skill: false`；junction / copy / 豆包包均物化 `platforms/` 且幂等 |
 | 安全加固 | 全角、词内/词间零宽、大小写西里尔同形字 5 类绕过仍阻断；纯注入措辞（`act as if`/`ignore all prior rules`）只进 `injection_flags` 不阻断；`validate-templates` 全量通过且 5 类坏模板均报错；私网/回环/凭据/非 http URL 被拒，四脚本退出码 3 |

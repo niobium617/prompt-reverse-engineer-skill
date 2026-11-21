@@ -1,6 +1,6 @@
 # 基准用例（benchmarks/）
 
-离线、确定性、可重复的回归基准，覆盖图片逆向、视频逆向、工作流解析与跨平台迁移。共 10 例：图片 3、视频 3、工作流 2、平台迁移 2。
+离线、确定性、可重复的回归基准，覆盖图片逆向、视频逆向、镜头复用、工作流解析与跨平台迁移。共 13 例：图片 3、视频 3、镜头复用 3、工作流 2、平台迁移 2。
 
 ## 两层分离
 
@@ -25,6 +25,10 @@ benchmarks/
     video-storyboard-six-models.json / .gold.md
     video-reference-to-video.json / .gold.md
     video-shot-reverse.json / .gold.md
+  shot_reuse/
+    shot-local-edit.json / .gold.md
+    shot-continuation.json / .gold.md
+    shot-variant.json / .gold.md
   workflow/
     workflow-api-parse.json / .gold.md
     workflow-ui-parse.json / .gold.md

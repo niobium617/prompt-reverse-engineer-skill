@@ -174,6 +174,13 @@ KNOWN_FIELDS = {
     # Seedance 视频扩展字段（references/seedance_rules.md）
     "first_frame", "last_frame", "source_video", "extension_plan",
     "video_references",
+    # 镜头复用计划字段（references/shot_reverse_rules.md，阶段 A）
+    "reuse_mode", "baseline_prompt", "prompt_delta", "dependent_updates",
+    "uncontrollable", "continuation_from", "variant_of", "variant_axis",
+    "action_timeline", "start_state", "end_state", "subject_appearance",
+    "subject_facing", "composition_design", "material_texture", "audio_cues",
+    # 连续性资料（references/shot_reverse_rules.md，阶段 C）
+    "character_profile", "scene_profile", "style_profile",
 }
 
 # 任务模式 → 用途（kind）；与 prompt_framework.md 2.3 节、
@@ -218,12 +225,19 @@ TASK_REQUIRED = {
 NEW_STRING_FIELDS = ("subject_position", "subject_scale", "shot_type",
                      "camera_angle", "spatial", "material", "text_layout",
                      "first_frame", "last_frame", "source_video",
-                     "extension_plan")
+                     "extension_plan",
+                     # 镜头复用计划（references/shot_reverse_rules.md）
+                     "reuse_mode", "baseline_prompt", "continuation_from",
+                     "variant_of", "variant_axis")
 NEW_LIST_FIELDS = ("preserve_constraints", "forbidden_changes",
                    "modification_scope", "reference_images", "uncertainty",
                    "spatial_relationships", "target_changes", "reference_usage",
                    "feature_transfer", "feature_exclusion", "anchor_set",
-                   "iteration_context", "video_references")
+                   "iteration_context", "video_references",
+                   # 镜头复用计划（references/shot_reverse_rules.md）
+                   "prompt_delta", "dependent_updates", "uncontrollable",
+                   # 连续性资料（阶段 C）
+                   "character_profile", "scene_profile", "style_profile")
 # 列表字段的连接方式：逐条资产/轮次/素材每项一行，其余按语言选择分隔符
 LIST_JOINERS = {"reference_images": "\n", "anchor_set": "\n",
                 "iteration_context": "\n", "video_references": "\n"}
@@ -284,8 +298,29 @@ SHOT_REQUIRED = ("shot_size", "camera_angle", "camera_move", "duration_s",
 SHOT_STRING_FIELDS = ("shot_size", "camera_angle", "camera_move",
                       "subject_action", "environment", "lighting", "color",
                       "sound", "continuity", "lens", "focus", "transition",
-                      "first_frame", "shot_note")
-SHOT_LIST_FIELDS = ("anchors", "evidence")
+                      "first_frame", "shot_note",
+                      # 镜头卡扩展（阶段 A，全部可选）
+                      "start_state", "end_state", "subject_appearance",
+                      "subject_facing", "composition_design",
+                      "material_texture")
+SHOT_LIST_FIELDS = ("anchors", "evidence", "action_timeline", "audio_cues")
+# 镜头复用模式（references/shot_reverse_rules.md 第五节）
+# 只做分析层编排，不进入 TASK_KINDS，避免与 task_type / kind 两套枚举打架。
+REUSE_MODES = ("replicate", "local_edit", "variant", "continuation", "repair")
+# 连续性资料：只进审查说明，不默认进入 Prompt 正文（阶段 C）
+PROFILE_FIELDS = ("character_profile", "scene_profile", "style_profile")
+VARIANT_AXES = ("shot_size", "camera_angle", "camera_move",
+                "action_intensity", "lighting_weather")
+# 各模式追加必填字段；continuation 另有「第 1 镜 start_state」规则，
+# repair 还有「target_changes 或 prompt_delta 至少一项」的二选一规则。
+REUSE_REQUIRED = {
+    "replicate": (),
+    "local_edit": ("baseline_prompt", "prompt_delta", "preserve_constraints"),
+    "variant": ("variant_of", "variant_axis"),
+    "continuation": ("continuation_from",),
+    "repair": ("modification_scope",),
+}
+VARIANT_AXIS_OTHER_RE = re.compile(r"^other:\s*\S")
 PROGRAM_REQUIRED = ("style", "aspect_ratio", "total_duration")
 PROGRAM_STRING_FIELDS = PROGRAM_REQUIRED + (
     "color_script", "sound_plan", "continuity_notes", "negative_words",
@@ -2984,11 +3019,107 @@ def parse_camera_moves(value):
     return tokens, [t for t in tokens if t not in CAMERA_MOVE_TERMS]
 
 
+def normalized_phrase(value):
+    """去掉标点与空白，用于 Delta / Preserve 的包含关系检查。"""
+    return re.sub(r"[\s，。、；;,.：:！!？?（）()\[\]【】\"'“”‘’·—\-]",
+                  "", str(value)).lower()
+
+
+def reuse_conflicts(semantic):
+    """Delta 与 Preserve 归一化后互相包含 → 冲突对（只提示，不阻断）。"""
+    deltas = [str(item).strip() for item in (semantic.get("prompt_delta") or [])
+              if str(item).strip()]
+    preserves = [str(item).strip()
+                 for item in (semantic.get("preserve_constraints") or [])
+                 if str(item).strip()]
+    pairs = []
+    for delta in deltas:
+        left = normalized_phrase(delta)
+        if len(left) < 2:
+            continue
+        for keep in preserves:
+            right = normalized_phrase(keep)
+            if len(right) < 2:
+                continue
+            if left in right or right in left:
+                pairs.append((delta, keep))
+    return pairs
+
+
+def validate_reuse_contract(semantic, shots, err):
+    """校验 reuse_mode 及其模式必填字段（prompt_framework.md 2.6 节）。"""
+    mode = semantic.get("reuse_mode")
+    if mode is None:
+        return None
+    if not isinstance(mode, str) or mode not in REUSE_MODES:
+        err(f"reuse_mode 必须是 {'/'.join(REUSE_MODES)} 之一，当前：{mode!r}")
+    missing = [field for field in REUSE_REQUIRED[mode]
+               if not _has_value(semantic, field)]
+    if mode == "continuation" and not _has_value(shots[0], "start_state"):
+        missing.append("shots[1].start_state")
+    if mode == "repair" and not (_has_value(semantic, "target_changes")
+                                 or _has_value(semantic, "prompt_delta")):
+        missing.append("target_changes 或 prompt_delta")
+    if missing:
+        err(f"reuse_mode={mode} 缺少必填字段：{', '.join(missing)}")
+    axis = semantic.get("variant_axis")
+    if mode == "variant" and not (
+            axis in VARIANT_AXES or VARIANT_AXIS_OTHER_RE.match(str(axis or ""))):
+        err(f"variant_axis 必须是 {'/'.join(VARIANT_AXES)} 之一，"
+            f"或 other:<说明>，当前：{axis!r}")
+    return mode
+
+
+def reuse_warnings(semantic):
+    """模式冲突转为审查提示（不阻断，不静默覆盖）。"""
+    return [
+        f"复用冲突：prompt_delta「{delta}」与 preserve_constraints「{keep}」"
+        "存在包含关系，请复核最小调整（不静默覆盖）"
+        for delta, keep in reuse_conflicts(semantic)
+    ]
+
+
+def build_reuse_plan(semantic):
+    """仅在声明 reuse_mode 时生成复用计划；四栏与输入字段一一对应。"""
+    mode = semantic.get("reuse_mode")
+    if not mode:
+        return None
+
+    def items(field):
+        return [str(item).strip() for item in (semantic.get(field) or [])
+                if str(item).strip()]
+
+    changed = items("prompt_delta")
+    preserved = items("preserve_constraints")
+    dependent = items("dependent_updates")
+    uncontrollable = items("uncontrollable")
+    plan = {"mode": mode}
+    if _has_value(semantic, "baseline_prompt"):
+        plan["baseline_prompt"] = semantic["baseline_prompt"]
+    for key in ("continuation_from", "variant_of", "variant_axis"):
+        if _has_value(semantic, key):
+            plan[key] = semantic[key]
+    plan.update({
+        "delta": changed,
+        "preserve": preserved,
+        "dependent_updates": dependent,
+        "uncontrollable": uncontrollable,
+        "manifest": {
+            "changed": changed,
+            "preserved": preserved,
+            "dependent": dependent,
+            "uncontrollable": uncontrollable,
+        },
+    })
+    return plan
+
+
 def validate_shots(semantic, modality, where="semantic_analysis"):
     """校验镜头卡契约（prompt_framework.md 2.6 节），返回 shots 列表。
 
     结构错误一律退出码 4：编号不连续、枚举非法、运镜超过两轴、
-    镜头时长非正数、锚点/证据格式不符、镜头字段写成 unknown。
+    镜头时长非正数、锚点/证据格式不符、镜头字段写成 unknown，
+    以及声明 reuse_mode 时缺失该模式的必填字段。
     """
     def err(message):
         die(f"{where}：{message}", 4)
@@ -3082,6 +3213,7 @@ def validate_shots(semantic, modality, where="semantic_analysis"):
     if numbers != list(range(1, len(numbers) + 1)):
         err("镜头 shot_no 必须从 1 连续编号，当前：" +
             ", ".join(str(n) for n in numbers))
+    validate_reuse_contract(semantic, shots, err)
     return shots
 
 
@@ -3174,7 +3306,11 @@ def heuristic_shot_scores(program, card):
 
 
 def build_shot_review_checklist(semantic, shots, texts):
-    """实拍镜头反推的六项审查清单（不参与总分）。"""
+    """实拍镜头反推的审查清单（不参与总分）。
+
+    默认六项；声明 reuse_mode 时追加 reuse_contract / reuse_conflict /
+    continuity_state 三项，旧 fixture 不声明模式，输出保持逐字节一致。
+    """
     items = []
 
     def add(key, item, status, detail):
@@ -3247,6 +3383,46 @@ def build_shot_review_checklist(semantic, shots, texts):
     else:
         add("continuity_sound", "声音与跨镜衔接是否写明", "pass",
             "声音与衔接逐镜写明")
+
+    mode = semantic.get("reuse_mode")
+    if not mode:
+        return items
+
+    missing = [field for field in REUSE_REQUIRED.get(mode, ())
+               if not _has_value(semantic, field)]
+    if mode == "continuation" and not _has_value(shots[0], "start_state"):
+        missing.append("shots[1].start_state")
+    if mode == "repair" and not (_has_value(semantic, "target_changes")
+                                 or _has_value(semantic, "prompt_delta")):
+        missing.append("target_changes 或 prompt_delta")
+    if missing:
+        add("reuse_contract", "复用模式必填项是否齐全", "warn",
+            f"reuse_mode={mode} 缺少字段：" + "、".join(missing))
+    else:
+        add("reuse_contract", "复用模式必填项是否齐全", "pass",
+            f"reuse_mode={mode} 的模式必填字段齐全")
+
+    conflicts = reuse_conflicts(semantic)
+    if conflicts:
+        add("reuse_conflict", "Delta 与 Preserve 是否冲突", "warn",
+            "存在包含关系，请复核最小调整：" +
+            "；".join(f"「{delta}」↔「{keep}」" for delta, keep in conflicts))
+    else:
+        add("reuse_conflict", "Delta 与 Preserve 是否冲突", "pass",
+            "prompt_delta 与 preserve_constraints 无包含冲突")
+
+    if mode == "continuation":
+        if _has_value(semantic, "continuation_from") and \
+                _has_value(shots[0], "start_state"):
+            add("continuity_state", "延续模式首镜状态是否写明", "pass",
+                "continuation_from 与第 1 镜 start_state 均已写明，"
+                "人物位置/朝向/视线等语义对齐由 Agent 核对")
+        else:
+            add("continuity_state", "延续模式首镜状态是否写明", "warn",
+                "延续模式需同时写明 continuation_from 与第 1 镜 start_state")
+    else:
+        add("continuity_state", "延续模式首镜状态是否写明", "pass",
+            f"当前模式 {mode} 非延续，无需检查")
     return items
 
 
@@ -3408,7 +3584,14 @@ def cmd_shots(args):
         "review_checklist": build_shot_review_checklist(
             semantic, shots, all_texts),
     }
-    warnings = uncertainty_warnings(semantic, all_texts)
+    reuse_plan = build_reuse_plan(semantic)
+    if reuse_plan:
+        result["reuse_plan"] = reuse_plan
+    profile_notes = {key: semantic[key] for key in PROFILE_FIELDS
+                     if _has_value(semantic, key)}
+    if profile_notes:
+        result["profile_notes"] = profile_notes
+    warnings = uncertainty_warnings(semantic, all_texts) + reuse_warnings(semantic)
     if warnings:
         result["warnings"] = warnings
     if args.format == "json":
@@ -3448,6 +3631,49 @@ def emit_shots_text(result, output):
             f"| {cell(row['action'])} | {cell(row['transition'])} |")
     lines.append("")
 
+    plan = result.get("reuse_plan")
+    if plan:
+        lines += ["## 复用计划", "", f"- 模式：`{plan.get('mode')}`"]
+        if plan.get("baseline_prompt"):
+            lines.append(f"- 基准：{cell(plan['baseline_prompt'])}")
+        if plan.get("continuation_from"):
+            lines.append(f"- 延续自：{cell(plan['continuation_from'])}")
+        if plan.get("variant_of"):
+            suffix = (f"，变体轴：`{plan['variant_axis']}`"
+                      if plan.get("variant_axis") else "")
+            lines.append(f"- 变体基准：`{cell(plan['variant_of'])}`{suffix}")
+            lines.append("- 说明：本文件为同一基准镜头的变体之一；"
+                         "多个变体分别运行 `shots`，不要当成独立镜头")
+        manifest = plan.get("manifest", {})
+
+        def column(values):
+            if not values:
+                return "—"
+            return "<br>".join(cell(value) for value in values)
+
+        lines += [
+            "",
+            "| 已修改 | 保留 | 必须联动 | 无法保证 |",
+            "|---|---|---|---|",
+            f"| {column(manifest.get('changed'))} "
+            f"| {column(manifest.get('preserved'))} "
+            f"| {column(manifest.get('dependent'))} "
+            f"| {column(manifest.get('uncontrollable'))} |",
+            "",
+        ]
+
+    profiles = result.get("profile_notes")
+    if profiles:
+        lines += ["## 连续性资料（审查参考）", ""]
+        for field, label in (("character_profile", "人物"),
+                             ("scene_profile", "场景"),
+                             ("style_profile", "风格")):
+            values = profiles.get(field) or []
+            if values:
+                lines.append(f"- {label}：{cell('；'.join(values))}")
+        lines += ["", "> 仅用于跨镜一致性复核，未写入 Prompt 正文；"
+                      "需要时由 Agent 显式引用。", ""]
+
     for shot in shots:
         card = shot.get("card", {})
         lines += [f"## 镜头 {shot['shot_no']} · {card.get('shot_size', '')} · "
@@ -3465,6 +3691,20 @@ def emit_shots_text(result, output):
                              ("first_frame", "首帧提示"), ("transition", "转场")):
             if str(card.get(field) or "").strip():
                 lines.append(f"- {label}：{cell(card.get(field))}")
+        for field, label in (("action_timeline", "动作时间轴"),
+                             ("start_state", "开始状态"), ("end_state", "结束状态"),
+                             ("subject_appearance", "主体外观"),
+                             ("subject_facing", "主体朝向"),
+                             ("composition_design", "构图设计"),
+                             ("material_texture", "材质质感"),
+                             ("audio_cues", "声音时间点")):
+            value = card.get(field)
+            if isinstance(value, list):
+                text = "；".join(str(item) for item in value if str(item).strip())
+            else:
+                text = str(value or "").strip()
+            if text:
+                lines.append(f"- {label}：{cell(text)}")
         evidence = card.get("evidence") or []
         if evidence:
             lines.append(f"- 置信度：{'；'.join(evidence)}")

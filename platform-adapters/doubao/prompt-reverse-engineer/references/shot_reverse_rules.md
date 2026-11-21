@@ -22,7 +22,7 @@
 真实素材
   ├─ 第一层：脚本确定性信号（local_features）
   │    analyze_image.py：尺寸/EXIF/主色/构图/清晰度/人脸 + shot_hints
-  │    analyze_video.py：镜头切分/首中末关键帧/光流运镜/逐镜色彩/黑边/人脸提示
+  │    analyze_video.py：镜头切分/首中末关键帧/变化曲线/变化帧/光流运镜/逐镜色彩/黑边/人脸提示
   └─ 第二层：Agent 多模态语义（semantic_analysis）
        Read 原图或关键帧 → 逐镜填写镜头卡 → 写入 shots JSON
                     ↓
@@ -40,6 +40,9 @@
 | `letterbox` | 黑边/白边像素 | 画幅按内容区计算，别把黑边算进构图 |
 | `motion_axes` / `camera_move_hint` | 光流方向与推拉 | 分出 Z/X 轴即可，摇镜与移镜需人工确认 |
 | `color`（逐镜） | 主色/亮度/饱和/色温 | 写 `color` 字段的依据，跨镜对比找色彩变化 |
+| `change_curve` | 每个抽样点的帧间直方图变化量（`t` / `score`，每个抽样点一项） | 找全片变化峰值；切点附近不加密，只作时间轴参考 |
+| `change_frames`（逐镜） | 镜头内部变化峰值帧（`path` / `timestamp_s` / `score`） | 写 `action_timeline` 时优先 Read 这些帧，并与首中末关键帧对照 |
+| `--max-keyframes` | 整片关键帧上限（默认 24；每镜中点帧必留） | 超出时先丢弃低分变化帧与首/末帧，变化索引仍保留在 `change_curve` |
 
 ---
 
@@ -142,9 +145,107 @@
 ]
 ```
 
+**变化帧证据引用**：写 `action_timeline` 时，每一段动作都应有可回查的帧依据。
+
+- 优先引用 `change_frames` 的 `timestamp_s`，例如「2.4s 变化峰值（score≈0.12）：手臂抬至肩线」；`score` 只说明帧间差异强度，不代表动作类型。
+- 变化帧只是**证据候选**，动作语义仍需 Agent 读取画面判断；不要把 `score` 直接写成「推镜 / 转身 / 情绪升级」。
+- 首/中/末关键帧与变化帧冲突时，以画面为准并在 `evidence` 里写明 `inferred:` 或 `unknown:`。
+- 边界保护：`analyze_video.py` 不在镜头边界一个抽样间隔内加变化帧；时间轴跨镜结论应另引相邻镜头卡，而不是把切点当成动作起点。
+
 ---
 
-## 五、跨镜一致性
+## 五、复用计划（局部改 / 变体 / 延续 / 修复）
+
+镜头反推不只用于「一次生成」，也用于「已有 Prompt 或已生成片段 → 最小改动复用」。
+在 `semantic_analysis` 顶层声明 `reuse_mode` 后，编译器额外输出 `reuse_plan`，
+审查清单从 6 项扩到 9 项。不声明时行为与旧版完全一致，新增字段全部可选。
+
+### 5.1 五种模式
+
+| 模式 | 用途 | 追加必填 | 写法要点 |
+|---|---|---|---|
+| `replicate` | 原样复刻 | 无 | 只补齐镜头卡；不写 Delta，避免「看似改了」 |
+| `local_edit` | 局部替换（人、物、服装、天气） | `baseline_prompt`、`prompt_delta`、`preserve_constraints` | 基准只写可复用部分；Delta 一条一件事；未授权改动默认进 Preserve |
+| `variant` | 同一内容换拍法 | `variant_of`、`variant_axis` | 只改轴上的一个变量；其余字段保持不变 |
+| `continuation` | 承接上一镜继续演 | `continuation_from`，且第 1 镜有 `start_state` | 上一镜 `end_state` 与下一镜 `start_state` 对齐；可借首尾帧能力 |
+| `repair` | 用户指认问题后返修 | `modification_scope`，且 `target_changes` 或 `prompt_delta` | 只改指认范围；不得重写场景/角色设定；不做自动差异评分 |
+
+`variant_axis` 固定枚举：`shot_size` / `camera_angle` / `camera_move` /
+`action_intensity` / `lighting_weather`；确实无法归类时用 `other:<说明>`，
+说明必须具体到可验收（如 `other:改为雨天`），不能只写 `other`。
+
+### 5.2 四栏清单与联动项判定
+
+`reuse_plan.manifest` 固定四栏，与输入字段一一对应：
+
+| 栏位 | 来源字段 | 收什么 |
+|---|---|---|
+| 已修改 changed | `prompt_delta` | 用户明确要求的改动，一条一件事 |
+| 保留 preserved | `preserve_constraints` | 构图、运镜、动作时序、氛围等不能动的项 |
+| 必须联动 dependent | `dependent_updates` | 因改动必然变化的阴影、倒影、褶皱、遮挡、接触关系 |
+| 无法保证 uncontrollable | `uncontrollable` | 模型能力边界：构图锁定、严格运镜复现、面部一致性等 |
+
+联动项判定表（改 A 时检查 B 是否必须跟着改）：
+
+| 改动 | 常见联动项 |
+|---|---|
+| 换主体性别 / 体型 | 服装版型、发型、肩线、步态、声音音色 |
+| 换服装颜色 / 材质 | 环境反射色、阴影色、湿润高光、地面倒影 |
+| 换天气 / 时段 | 主光方向、色温、地面反光、雨具、轮廓光 |
+| 换景别 / 机位 | 主体在画面中的占比、背景压缩、焦段感、锚点可见性 |
+| 换运镜 | 起幅/落幅构图、运动模糊、锚点出入画时机 |
+| 换动作强度 | 衣摆/发丝幅度、接触点、时间轴分段、声音节奏 |
+
+只有「改 A 必然导致 B 不一致」才进 `dependent_updates`；可改可不改的进
+`uncontrollable` 或审查提示，不塞满 Delta。
+
+### 5.3 冲突处理
+
+`prompt_delta` 与 `preserve_constraints` 归一化（去标点空白）后若互相包含，
+即视为冲突信号：编译器**不退出、不静默覆盖**，而是写入 `warnings` 并把
+`reuse_conflict` 标为「待复核」。Agent 必须给出最小调整，例如：
+
+- Delta「构图不变，只换人物」与 Preserve「构图：人物右三分之一」冲突 →
+  改为 Delta「只换人物性别与服装」，构图留在 Preserve；
+- Delta「换成夜景」与 Preserve「雨夜氛围不变」冲突 →
+  明确保留项是「雨」还是「夜」，再拆成两条。
+
+### 5.4 修复模式边界
+
+`repair` 只做「用户指认问题 + 最小修改 Prompt」：
+
+- 保留 `baseline_prompt` 中未被指认的场景、角色、镜头语言；
+- `modification_scope` 写清允许改的范围，`forbidden_changes` 写清不能碰的项；
+- 不重写整体风格，不借修复之名换主体或换场景；
+- 自动差异评分（生成片段 vs 目标镜头卡）留待阶段 D 的 `diff` 子命令。
+
+### 5.5 延续对齐规则
+
+`continuation` 的 `continuation_from` 必须与第 1 镜 `start_state` 对齐以下七项：
+人物位置、身体朝向、视线方向、运动方向、服装与道具状态、场景布局、光线方向。
+`continuity_state` 审查项只检查「两者是否都写明」，语义是否一致由 Agent 复核；
+跨镜一致性写法仍按第六节执行。
+
+### 5.6 连续性资料（审查参考）
+
+三组可选 `string[]`，每项一句话，随分析 JSON 传入，不落盘：
+
+| 字段 | 内容 | 示例 |
+|---|---|---|
+| `character_profile` | 人物固定特征 | `"林晓：短发、白色西装、左眉疤痕；用户已确认"` |
+| `scene_profile` | 场景固定元素 | `"便利店外街角：霓虹招牌、湿滑地面、夜间小雨"` |
+| `style_profile` | 全片风格口径 | `"冷蓝主调、高对比、轻颗粒、写实摄影"` |
+
+- 来源限于用户确认或本片多镜一致观察；单镜推断不得直接升级为项目设定。
+- 提供时 `shots` 输出 `profile_notes` 并在 Markdown 插入「连续性资料（审查参考）」；
+  该段**不进入任何模型 Prompt 正文**，需要时由 Agent 显式引用。
+- 未提供时不改变输出，与旧版逐字节一致。
+- 变体模式下 Markdown 额外说明「本文件为同一基准镜头的变体之一」；
+  多个变体分别运行 `shots`，各自文件内 `shot_no` 连续，不当独立镜头汇总。
+
+---
+
+## 六、跨镜一致性
 
 | 一致项 | 写法 | 检查方式 |
 |---|---|---|
@@ -158,7 +259,7 @@
 
 ---
 
-## 六、图片单帧反推
+## 七、图片单帧反推
 
 图片没有时间轴，按「如果这一帧要动起来」反推：
 
@@ -169,7 +270,7 @@
 
 ---
 
-## 七、逐模型写法
+## 八、逐模型写法
 
 同一张镜头卡，各模板的 `shot_style` 各有侧重（均在 `assets/templates/*.json`）。视频四款：
 
@@ -197,22 +298,23 @@ Seedance 可借用其官方「SCELA」拆解思路（Subject / Camera / Effect /
 
 ---
 
-## 八、输出组织
+## 九、输出组织
 
 `shots --format md` 固定顺序：
 
 1. 概览：模态、画幅、总时长、目标模型；
 2. **分镜总表**：镜头 / 景别 / 机位 / 运镜 / 时长 / 动作 / 转场；
-3. **逐镜头卡片**：动作、环境、光影、色彩、锚点、运镜轴数、证据、转场；
-4. **逐镜 Prompt**：每个模型一个代码块，标题 `模型（版本） · 镜头 N`；
-5. **逐镜评分**：六维表 + 总分等级；
-6. **镜头审查清单**：六项自动检查（不参与总分）。
+3. **复用计划**（仅声明 `reuse_mode` 时）：模式、基准、已修改 / 保留 / 必须联动 / 无法保证四栏；
+4. **逐镜头卡片**：动作、环境、光影、色彩、锚点、运镜轴数、证据、转场；
+5. **逐镜 Prompt**：每个模型一个代码块，标题 `模型（版本） · 镜头 N`；
+6. **逐镜评分**：六维表 + 总分等级；
+7. **镜头审查清单**：默认六项，声明 `reuse_mode` 时九项（不参与总分）。
 
-JSON 输出字段：`storyboard` / `shots[].card` / `shots[].prompts` / `shots[].score_report` / `review_checklist` / `skipped` / `warnings`。
+JSON 输出字段：`storyboard` / `reuse_plan`（仅声明模式时）/ `shots[].card` / `shots[].prompts` / `shots[].score_report` / `review_checklist` / `skipped` / `warnings`。
 
 ---
 
-## 九、安全与合规
+## 十、安全与合规
 
 - 真实人物：避免生成可识别的在世特定人物肖像；需要时改为「保留服装与体型的原创角色」。Seedance 对写实真人脸部素材有硬限制。
 - 版权 IP：保留配色/装备/能力等视觉特征，去掉标识与可识别元素，改写为原创角色。
@@ -222,7 +324,7 @@ JSON 输出字段：`storyboard` / `shots[].card` / `shots[].prompts` / `shots[]
 
 ---
 
-## 十、自检清单
+## 十一、自检清单
 
 自动检查（`review_checklist`）之外，交付前人工确认：
 
@@ -233,11 +335,14 @@ JSON 输出字段：`storyboard` / `shots[].card` / `shots[].prompts` / `shots[]
 - [ ] `lens`/`focus` 有依据或已省略，没有编造参数；
 - [ ] 人物造型、运动方向、光线方向跨镜一致；
 - [ ] 声音逐镜写明，对白加引号；
-- [ ] 目标模型参数（时长/分辨率/画幅）没有混进 Prompt 正文。
+- [ ] 目标模型参数（时长/分辨率/画幅）没有混进 Prompt 正文；
+- [ ] 声明了 `reuse_mode` 时，模式必填字段齐全，Delta 与 Preserve 无冲突；
+- [ ] 延续模式的 `continuation_from` 与首镜 `start_state` 七项对齐；
+- [ ] `uncontrollable` 只写模型能力边界，不把「懒得写」当免责声明。
 
 ---
 
-## 十一、常见错误
+## 十二、常见错误
 
 | 错误 | 后果 | 修正 |
 |---|---|---|
@@ -250,7 +355,7 @@ JSON 输出字段：`storyboard` / `shots[].card` / `shots[].prompts` / `shots[]
 
 ---
 
-## 十二、设计来源与边界
+## 十三、设计来源与边界
 
 本文件的镜头卡结构与写法参考了以下公开技能/仓库的设计思路（仅借鉴结构与工作流，未复制代码）：
 

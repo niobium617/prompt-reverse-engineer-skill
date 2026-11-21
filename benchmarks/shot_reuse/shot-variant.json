@@ -1,0 +1,54 @@
+{
+  "id": "shot-variant",
+  "suite": "shot_reuse",
+  "title": "镜头复用：变体模式（同一基准镜头的机位变体）",
+  "input": {
+    "fixture": "tools/fixtures/semantic_shot_variant.json",
+    "steps": [
+      {
+        "script": "prompt_compiler.py",
+        "args": ["shots", "--analysis", "{fixture}"],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "models": ["sora2", "runway", "veo3", "seedance"],
+    "shots": {
+      "count": 1,
+      "models": ["sora2", "runway", "veo3", "seedance"],
+      "prompts_per_shot": 4,
+      "checklist_min": 9,
+      "skipped": 0
+    },
+    "json_equals": {
+      "reuse_plan.mode": "variant",
+      "reuse_plan.variant_of": "雨夜街角基准镜 1",
+      "reuse_plan.variant_axis": "camera_angle",
+      "review_checklist.6.key": "reuse_contract",
+      "review_checklist.7.key": "reuse_conflict",
+      "review_checklist.8.key": "continuity_state"
+    },
+    "json_lengths": {
+      "reuse_plan.manifest.changed": 1,
+      "reuse_plan.manifest.preserved": 4,
+      "reuse_plan.manifest.dependent": 2,
+      "reuse_plan.manifest.uncontrollable": 1,
+      "profile_notes.character_profile": 1,
+      "profile_notes.scene_profile": 1,
+      "profile_notes.style_profile": 1
+    },
+    "text_forbidden": ["{", "}", "uncertainty", "左眉疤痕"]
+  },
+  "semantic": {
+    "gold": "shot-variant.gold.md",
+    "criteria": [
+      "variant_of 与 variant_axis 是否原样输出，且改动只沿机位轴发生，未顺手改景别、动作或天气",
+      "Preserve 是否覆盖构图、运镜、动作时序与雨夜氛围，Delta 只写平拍→仰拍",
+      "联动项是否说明仰拍造成的天花板占比、招牌透视与地面倒影变化",
+      "连续性资料是否只出现在审查参考，未混入任一模型 Prompt 正文",
+      "四模型 Prompt 是否各自可粘贴，并明确这是同一基准镜头的变体之一"
+    ],
+    "max_score": 10
+  }
+}

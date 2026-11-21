@@ -1,0 +1,51 @@
+{
+  "id": "shot-local-edit",
+  "suite": "shot_reuse",
+  "title": "镜头复用：局部修改（主体替换）输出四栏复用计划",
+  "input": {
+    "fixture": "tools/fixtures/semantic_shot_reuse.json",
+    "steps": [
+      {
+        "script": "prompt_compiler.py",
+        "args": ["shots", "--analysis", "{fixture}"],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "models": ["sora2", "runway", "veo3", "seedance"],
+    "shots": {
+      "count": 2,
+      "models": ["sora2", "runway", "veo3", "seedance"],
+      "prompts_per_shot": 4,
+      "checklist_min": 9,
+      "skipped": 0
+    },
+    "json_equals": {
+      "reuse_plan.mode": "local_edit",
+      "reuse_plan.manifest.changed.0": "主体由男性替换为女性，穿白色西装",
+      "reuse_plan.manifest.preserved.0": "构图：人物位于画面右三分之一，霓虹招牌占据左上留白",
+      "review_checklist.6.key": "reuse_contract",
+      "review_checklist.7.key": "reuse_conflict",
+      "review_checklist.8.key": "continuity_state"
+    },
+    "json_lengths": {
+      "reuse_plan.manifest.changed": 2,
+      "reuse_plan.manifest.preserved": 4,
+      "reuse_plan.manifest.dependent": 3,
+      "reuse_plan.manifest.uncontrollable": 2
+    },
+    "text_forbidden": ["{", "}", "uncertainty"]
+  },
+  "semantic": {
+    "gold": "shot-local-edit.gold.md",
+    "criteria": [
+      "Delta 是否只写用户要求的改动（主体性别与服装、伞），一条一件事，未夹带运镜/构图/氛围改动",
+      "Preserve 是否覆盖构图、运镜、动作时序与雨夜氛围四项，且与 Delta 无互相包含的冲突",
+      "dependent_updates 是否覆盖白色西装的湿润褶皱、湿地面倒影、透明伞透光对面部补光三项联动",
+      "uncontrollable 是否只写模型能力边界（构图比例锁定、伞的透光差异），未把未写项包装成免责",
+      "四模型 Prompt 是否基于同一镜头卡，仅按平台语法改写，未把复用计划字段塞进正文"
+    ],
+    "max_score": 10
+  }
+}

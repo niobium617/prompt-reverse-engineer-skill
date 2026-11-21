@@ -1,0 +1,105 @@
+{
+  "schema_version": "1.0",
+  "tool": "agent",
+  "modality": "video",
+  "semantic_analysis": {
+    "summary": [
+      "6 秒雨夜街角两镜片段，用于演示镜头延续",
+      "第 1 镜结束状态直接作为第 2 镜的起点"
+    ],
+    "suggestions": [
+      "优先用首尾帧能力保证第 2 镜起点与第 1 镜终点一致"
+    ],
+    "style": "霓虹写实电影感，轻微颗粒，冷调高对比",
+    "aspect_ratio": "16:9",
+    "total_duration": 6,
+    "color_script": "深蓝夜色打底，霓虹橙与青色点缀",
+    "sound_plan": "雨声铺底，脚步与伞尖滴水落在前景",
+    "continuity_notes": "人物位置、朝向、服装与霓虹位置跨镜不变",
+    "negative_words": "无字幕、无水印、无变形、无多余肢体",
+    "reuse_mode": "continuation",
+    "continuation_from": "上一镜结束：女性侧身立于街角，透明伞收拢在右手，视线朝向画面左侧",
+    "preserve_constraints": [
+      "人物位置从街角起步，不跳变",
+      "透明伞与白色西装保持一致",
+      "霓虹招牌位置与冷暖对比不变"
+    ],
+    "dependent_updates": [
+      "起步瞬间的衣摆惯性",
+      "湿地面倒影随人物移动拉长"
+    ],
+    "uncontrollable": [
+      "模型可能轻微改变人物面部朝向"
+    ],
+    "uncertainty": [
+      "observed: 街道湿滑，反光连续",
+      "inferred: 同一场景连续拍摄",
+      "unknown: 画外车辆距离"
+    ],
+    "shots": [
+      {
+        "shot_no": 1,
+        "shot_size": "中景",
+        "camera_angle": "平拍",
+        "camera_move": "固定",
+        "duration_s": 3,
+        "subject_action": "女性侧身站在霓虹招牌下，收拢透明伞，视线转向画面左侧",
+        "environment": "雨夜商业街角，湿滑反光路面，密集灯牌",
+        "lighting": "霓虹顶光加地面反射光，人物边缘有青色轮廓光",
+        "color": "深蓝夜色，橙红霓虹为主光，白色西装为最亮块",
+        "anchors": ["收拢的透明伞", "白色西装肩线", "湿地面橙色倒影"],
+        "sound": "雨声、霓虹电流嗡鸣",
+        "continuity": "作为延续起点，结束状态需与下一镜完全对齐",
+        "lens": "约 50mm 标准视角",
+        "focus": "浅景深，人物清晰",
+        "transition": "硬切",
+        "action_timeline": [
+          "0–1.5 秒：站立，视线由镜头转向左侧",
+          "1.5–3 秒：重心移向左脚，准备起步"
+        ],
+        "start_state": "女性侧身位于街角，透明伞收拢在右手，视线朝向画面左侧",
+        "end_state": "女性身体前倾约 10 度，左脚承重，伞尖轻触地面",
+        "subject_appearance": "短发，白色西装套装，内搭浅灰高领",
+        "subject_facing": "身体朝向画面左侧",
+        "composition_design": "人物右三分之一，霓虹招牌占据左上留白",
+        "material_texture": "写实摄影，轻颗粒，西装面料哑光带湿润高光",
+        "audio_cues": ["0–3 秒雨声与霓虹电流声"],
+        "evidence": [
+          "observed: 人物视线与身体朝向一致向左",
+          "inferred: 由重心变化判断即将起步"
+        ]
+      },
+      {
+        "shot_no": 2,
+        "shot_size": "全景",
+        "camera_angle": "平拍",
+        "camera_move": "跟",
+        "duration_s": 3,
+        "subject_action": "女性提收拢的透明伞向画面左侧走出，白色西装下摆随步伐摆动",
+        "environment": "街角转向窄道，湿地面连续反光，霓虹灯牌在身后退远",
+        "lighting": "侧逆光，霓虹在肩部与发梢形成轮廓",
+        "color": "冷蓝主调，橙色招牌点状高光",
+        "anchors": ["摆动的白色西装下摆", "收拢伞尖滴落的水线", "肩部霓虹轮廓光"],
+        "sound": "脚步声、伞尖滴水、远处车流",
+        "continuity": "承接第 1 镜结束状态：位置、朝向、服装、光线方向不变",
+        "focus": "中等景深，人物与近处地面清晰",
+        "transition": "渐暗收尾",
+        "action_timeline": [
+          "0–2 秒：从左脚承重状态起步",
+          "2–3 秒：走出画面左侧边缘"
+        ],
+        "start_state": "女性身体前倾约 10 度，左脚承重，收拢的伞垂在右手",
+        "end_state": "女性背对镜头走向窄道深处，伞尖水线拉长",
+        "subject_appearance": "短发，白色西装套装，裤脚有雨水打湿的深色痕迹",
+        "subject_facing": "身体朝向画面左侧，行走方向不变",
+        "composition_design": "人物从右三分之一移动至左侧，背景灯牌形成纵深引导线",
+        "material_texture": "写实摄影，湿润路面镜面反射",
+        "audio_cues": ["0–3 秒脚步声由近及远"],
+        "evidence": [
+          "observed: 起步姿态与上一镜结束帧一致",
+          "inferred: 由背景灯牌透视变化判断为跟拍"
+        ]
+      }
+    ]
+  }
+}

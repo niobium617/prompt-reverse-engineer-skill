@@ -139,3 +139,23 @@
   - [x] `verify.py` 新增 1 项（诊断/模态判定/重编对比/安全/幂等），共 74 项
   - [x] README / DEVLOG / VERSION / plugin.json / 豆包产物同步（3.2.0）
 - [ ] 戊（可选）：WAV 音频信号、专业软件 L1 说明
+
+## 镜头逆向复用升级（待评审）
+
+> 方案：[`docs/2026-11-19-镜头逆向复用升级方案.md`](../docs/2026-11-19-镜头逆向复用升级方案.md)（2026-11-19）。评审通过后按阶段 A → B 实施，阶段 C 跟进，阶段 D 并入上方阶段 4。
+
+- [x] 阶段 A（P0）：复用计划字段与模式校验、`reuse_plan` 输出、审查清单 6→9、2 例基准（v3.3.0）
+  - [x] 顶层 `reuse_mode` / `baseline_prompt` / `prompt_delta` / `dependent_updates` / `uncontrollable` / `continuation_from` / `variant_of` / `variant_axis`；镜头卡扩展 8 字段（`action_timeline` 等）
+  - [x] 按模式必填校验（退出码 4）；四栏 `manifest`；`reuse_contract` / `reuse_conflict` / `continuity_state` 三项审查；冲突只警告不退出
+  - [x] `semantic_shot_reuse.json` + `shot_reuse_example`；基准 `shot-local-edit` / `shot-continuation`
+  - [x] `verify.py` +4（字段契约/负向模式/冲突提示/旧输出 SHA-256 不变）
+- [x] 阶段 B（P0）：`analyze_video.py` 变化曲线、变化帧加密、边界保护、`--max-keyframes`（v3.3.0）
+  - [x] `change_curve: [{t, score}]`、`shot_NN_change_M.jpg`、逐镜 `change_frames`；变化候选距镜头边界至少一个采样间隔
+  - [x] 关键帧预算默认 24：中点必留，首/末帧与变化峰按分数竞争；`--max-keyframes < 1` 退出 2
+  - [x] `verify.py` +3（变化曲线/变化帧边界/关键帧上限）；规则文档补「变化帧证据引用」
+- [x] 阶段 C（P1）：资料卡可选字段、`variant_of` / `variant_axis`、延续对齐规则（v3.4.0）
+  - [x] `character_profile` / `scene_profile` / `style_profile` 只进 `profile_notes` 与审查参考段，不进 Prompt 正文；未提供时输出不变
+  - [x] 变体说明「同一基准镜头的变体之一」；延续七项对齐规则；基准 `shot-variant`
+  - [x] `verify.py` +2（资料边界/变体字段）；`benchmarks --check` 13 例；断言 74 → 83
+- [ ] 阶段 D（P2）：修复闭环并入阶段 4（`diff` 子命令 + 结果回传）
+- [x] 评审待决项确认：版本拆分（A+B→3.3.0、C→3.4.0）、`reuse_mode` 英文枚举、变体轴复用现有枚举、资料卡不进正文

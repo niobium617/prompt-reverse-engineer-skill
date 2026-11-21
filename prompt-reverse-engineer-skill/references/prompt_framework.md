@@ -270,6 +270,100 @@ python scripts/prompt_compiler.py shots --analysis shot.json \
 | shot_note | 可选 | 本镜补充说明（不写推测性参数） |
 | evidence | 可选 | 镜头参数依据，字符串数组，每项 `observed:` / `inferred:` / `unknown:` 开头；写 `lens`/`focus` 时应提供 |
 
+#### 2.6.1 镜头复用计划（可选）
+
+用于「已有镜头 Prompt / 已生成片段 → 局部改、变体、延续或修复」。所有字段**可选**；
+不声明 `reuse_mode` 时 `shots` 输出与 v3.2.0 逐字节一致。规则详见
+`references/shot_reverse_rules.md` 第五节。
+
+镜头组新增字段（`semantic_analysis` 顶层，扁平）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| reuse_mode | string | `replicate` / `local_edit` / `variant` / `continuation` / `repair` |
+| baseline_prompt | string | 原镜头基准描述，只写可复用部分（`local_edit` 必填） |
+| prompt_delta | string[] | 只表达用户要求的改动，一条一件事 |
+| dependent_updates | string[] | 因改动必须联动的项：阴影、倒影、褶皱、遮挡、接触关系 |
+| uncontrollable | string[] | 模型无法保证的项（构图锁定、运镜严格复现等） |
+| preserve_constraints | string[] | 复用已有字段；未授权改动默认进这里（`local_edit` 必填） |
+| forbidden_changes | string[] | 复用已有字段；明确禁止的变化 |
+| modification_scope | string[] | 复用已有字段；修复/编辑的改动边界（`repair` 必填） |
+| target_changes | string[] | 复用已有字段；编辑类目标（与 `prompt_delta` 二选一，`repair` 用） |
+| continuation_from | string | 延续模式：上一镜头结束状态（`continuation` 必填） |
+| variant_of | string | 变体模式：原镜头标识，如 `shot_01`（`variant` 必填） |
+| variant_axis | string | 变体模式：`shot_size` / `camera_angle` / `camera_move` / `action_intensity` / `lighting_weather`，或 `other:<说明>` |
+
+镜头卡新增字段（`shots[i]`，全部可选，不进入 `SHOT_REQUIRED`）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| action_timeline | string[] | 动作时间轴，如 `["0–1.5 秒站立", "1.5–3 秒转身"]` |
+| start_state | string | 镜头开始状态：人物位置、朝向、视线、道具状态 |
+| end_state | string | 镜头结束状态；延续模式以它为下一镜输入 |
+| subject_appearance | string | 主体外观与服装（跨镜一致性抓手） |
+| subject_facing | string | 主体朝向与运动方向 |
+| composition_design | string | 视觉中心、留白、前中背景、遮挡关系 |
+| material_texture | string | 材质、颗粒、写实/动画质感 |
+| audio_cues | string[] | 声音及其时间位置 |
+
+模式必填规则（`validate_shots` 强制，缺失退出码 4）：
+
+| reuse_mode | 追加必填 |
+|---|---|
+| replicate | 无（旧行为） |
+| local_edit | `baseline_prompt`、`prompt_delta`、`preserve_constraints` |
+| variant | `variant_of`、`variant_axis`（枚举校验，允许 `other:<说明>`） |
+| continuation | `continuation_from`，且第 1 镜必须有 `start_state` |
+| repair | `modification_scope`，且 `target_changes` 或 `prompt_delta` 至少一项 |
+
+声明 `reuse_mode` 后，`shots` 输出增加 `reuse_plan`（Markdown 在「分镜总表」
+与「逐镜头卡片」之间插入「复用计划」四栏表）：
+
+```json
+{
+  "reuse_plan": {
+    "mode": "local_edit",
+    "baseline_prompt": "...",
+    "delta": ["男性替换为女性，穿白色西装"],
+    "preserve": ["构图", "运镜", "动作时序", "雨夜氛围"],
+    "dependent_updates": ["服装褶皱", "阴影", "地面倒影"],
+    "uncontrollable": ["模型无法严格锁定构图"],
+    "manifest": {
+      "changed": ["..."],
+      "preserved": ["..."],
+      "dependent": ["..."],
+      "uncontrollable": ["..."]
+    }
+  }
+}
+```
+
+- `manifest` 四栏与输入字段一一对应：`changed ← prompt_delta`、
+  `preserved ← preserve_constraints`、`dependent ← dependent_updates`、
+  `uncontrollable ← uncontrollable`；无内容时为空数组。
+- `prompt_delta` 与 `preserve_constraints` 归一化后若存在包含关系，不退出、
+  不静默覆盖：写入 `warnings`，审查清单 `reuse_conflict` 标 `warn`，由 Agent
+  给出最小调整。
+- 审查清单由 6 项扩为 9 项：`reuse_contract`（模式必填是否齐全）、
+  `reuse_conflict`（Delta 与 Preserve 是否冲突）、`continuity_state`
+  （延续模式 `continuation_from` 与首镜 `start_state` 是否都写明），均不参与总分。
+- `repair` 模式只做「用户指认问题 + 最小修改 Prompt」，不得重写
+  `baseline_prompt` 以外的场景/角色设定；自动差异评分留待阶段 D。
+
+**连续性资料**（阶段 C，三组可选 `string[]`，不落盘、不跨会话保存）：
+
+| 字段 | 说明 | 示例 |
+|---|---|---|
+| character_profile | 人物固定特征，只来自用户确认或多镜一致观察 | `"林晓：短发、白色西装、左眉疤痕；用户已确认"` |
+| scene_profile | 场景固定元素 | `"便利店外街角：霓虹招牌、湿滑地面、夜间小雨"` |
+| style_profile | 全片风格口径 | `"冷蓝主调、高对比、轻颗粒、写实摄影"` |
+
+- 提供时 `shots` 输出增加 `profile_notes`（三组原样），Markdown 插入
+  「连续性资料（审查参考）」，**不写入任何 Prompt 正文**；需要时由 Agent 显式引用。
+- 未提供时输出与旧版逐字节一致；单镜推断不得直接升级为项目设定。
+- 变体模式（`variant`）在 Markdown 额外标注「本文件为同一基准镜头的变体之一」，
+  多个变体分别运行 `shots`，各自文件内 `shot_no` 连续，不当作独立镜头汇总。
+
 校验与渲染规则（`prompt_compiler.py` 强制）：
 
 - 镜头编号必须 `1..N` 连续；图片模态 `shots` 必须恰好 1 项；视频模态必须给 `total_duration` 且与镜头时长之和相差不超过 0.5 秒。
@@ -376,7 +470,7 @@ python scripts/prompt_compiler.py optimize \
 
 ### 3.4 镜头反推审查清单（不参与总分）
 
-`shots` 子命令在输出末尾附六项清单（JSON 字段 `review_checklist`，Markdown 为「## 镜头审查清单（不参与总分）」），与 3.1–3.3 分开维护：
+`shots` 子命令在输出末尾附审查清单（JSON 字段 `review_checklist`，Markdown 为「## 镜头审查清单（不参与总分）」），与 3.1–3.3 分开维护。默认六项；声明 `reuse_mode` 时追加后三项，共九项：
 
 | 检查项 key | 自动判定方式 | 结论含义 |
 |---|---|---|
@@ -386,6 +480,9 @@ python scripts/prompt_compiler.py optimize \
 | anchors | 视觉锚点是否 3–5 个 | 通过 / 待复核（列出数量异常镜头） |
 | lens_evidence | 写了 `lens`/`focus` 的镜头是否有 `evidence`；`unknown` 项是否泄漏进正文 | 通过 / 待复核 |
 | continuity_sound | 每镜是否写明 `sound` 与 `continuity` | 通过 / 待复核 |
+| reuse_contract | 声明 `reuse_mode` 时，该模式的必填字段是否齐全 | 通过 / 待复核（列出缺失字段；不声明时该项不出现） |
+| reuse_conflict | `prompt_delta` 与 `preserve_constraints` 归一化后是否互相包含 | 通过 / 待复核（列出冲突对，不静默覆盖） |
+| continuity_state | 延续模式下 `continuation_from` 与第 1 镜 `start_state` 是否都写明 | 通过 / 待复核；非延续模式记为通过（无需检查） |
 
 > 口径提醒：Prompt 评分衡量的是**提示词本身的结构质量**，不是生成图像与原图的相似度；不要把评分当作复刻准确率的证明。
 
@@ -419,6 +516,6 @@ python scripts/prompt_compiler.py optimize \
 - **新增分析维度**：在本文档 2.x 添加字段定义 → 在对应模型模板 JSON 的占位串中引用新字段 → 在 SKILL.md 分析要点补一行。无需改脚本。
 - **新增评分维度**：修改 `prompt_compiler.py` 中 `DIMENSIONS`（含权重，和须为 100）→ 在本文档第三节补锚点 → 在第五节补建议条目（保持两处镜像）。
 - **新增目标模型**：在 `assets/templates/` 新增一个 `*.json` 模板文件，必需元数据 `model` / `display_name` / `vendor` / `version` / `last_verified`，以及 `alias`、`default_params`、`modalities`；编译器自动注册并校验别名冲突。在 `model_mappings.md` 补映射表行并更新 `last_verified`。零代码改动。模板内若需引用非语义字段（模型名、调用参数等），写进 `default_params` 由编译器注入（范例：`deepseek.json` 的 `model_id` / `thinking_effort`），**不要**加进本文档第二节字段表。
-- **新增逐镜头模型**：视频或图片模板加 `shot_style` 对象（`shot` 必填，`shot_prefix` / `shot_suffix` 可选），占位符只用 2.6 节的镜头卡字段、镜头组字段与 `default_params`；`validate-templates` 会校验键名、大括号与占位符。无 `shot_style` 的模板在 `shots` 中自动跳过，不影响其他模型。模板写法参考 `shot_reverse_rules.md` 第七节。
+- **新增逐镜头模型**：视频或图片模板加 `shot_style` 对象（`shot` 必填，`shot_prefix` / `shot_suffix` 可选），占位符只用 2.6 节的镜头卡字段、镜头组字段与 `default_params`；`validate-templates` 会校验键名、大括号与占位符。无 `shot_style` 的模板在 `shots` 中自动跳过，不影响其他模型。模板写法参考 `shot_reverse_rules.md` 第八节。
 - **模型独立编译**：共享 `semantic_analysis` 扁平契约，但每个模型独立维护模板与规则文件。Muse Image 的范例是 `assets/templates/muse_image.json` + `references/muse_image_rules.md`，Seedance 的范例是 `assets/templates/seedance.json` + `references/seedance_rules.md`；不得把其自然语言结构复制进 `gpt_image.json` / `sora2.json`，模型更新只改自己的文件。新增任务模式时，先加入本文档 2.3.1 / 2.4.1，再同步 `prompt_compiler.py` 的 `TASK_KINDS` / `TASK_REQUIRED`，最后才在模板里加 kind。
 - **条件渲染**：只有提供某字段才应输出的用途（如 `style_transfer` / `edit` / `negative`），在模板中写 `kind_requires`，不要靠空串清理。

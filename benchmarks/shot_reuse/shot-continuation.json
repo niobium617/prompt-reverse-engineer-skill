@@ -1,0 +1,51 @@
+{
+  "id": "shot-continuation",
+  "suite": "shot_reuse",
+  "title": "镜头复用：延续模式（上一镜结束状态承接下一镜）",
+  "input": {
+    "fixture": "tools/fixtures/semantic_shot_continuation.json",
+    "steps": [
+      {
+        "script": "prompt_compiler.py",
+        "args": ["shots", "--analysis", "{fixture}"],
+        "exit_code": 0
+      }
+    ]
+  },
+  "structural": {
+    "models": ["sora2", "runway", "veo3", "seedance"],
+    "shots": {
+      "count": 2,
+      "models": ["sora2", "runway", "veo3", "seedance"],
+      "prompts_per_shot": 4,
+      "checklist_min": 9,
+      "skipped": 0
+    },
+    "json_equals": {
+      "reuse_plan.mode": "continuation",
+      "reuse_plan.continuation_from": "上一镜结束：女性侧身立于街角，透明伞收拢在右手，视线朝向画面左侧",
+      "review_checklist.6.key": "reuse_contract",
+      "review_checklist.7.key": "reuse_conflict",
+      "review_checklist.8.key": "continuity_state",
+      "review_checklist.8.status": "pass"
+    },
+    "json_lengths": {
+      "reuse_plan.manifest.changed": 0,
+      "reuse_plan.manifest.preserved": 3,
+      "reuse_plan.manifest.dependent": 2,
+      "reuse_plan.manifest.uncontrollable": 1
+    },
+    "text_forbidden": ["{", "}", "uncertainty"]
+  },
+  "semantic": {
+    "gold": "shot-continuation.gold.md",
+    "criteria": [
+      "continuation_from 是否与第 1 镜 start_state 在人物位置、朝向、视线、道具状态上一致",
+      "第 2 镜 start_state 是否承接第 1 镜 end_state（重心、伞尖位置、身体前倾），未出现跳变",
+      "Preserve 是否覆盖人物位置、伞与西装、霓虹位置三项，Delta 为空时未伪造改动",
+      "continuity_state 审查项是否只检查「是否写明」，语义冲突是否留给 Agent 复核",
+      "四模型 Prompt 是否保持两镜各自独立可粘贴，未把延续说明混入正文"
+    ],
+    "max_score": 10
+  }
+}

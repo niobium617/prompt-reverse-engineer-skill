@@ -67,6 +67,12 @@ JOBS = [
         "command": ["shots"],
     },
     {
+        "dir": "shot_reuse_example",
+        "fixture": "semantic_shot_reuse.json",
+        "title": "镜头复用（局部修改：主体替换 + 保留清单 + 四栏复用计划）",
+        "command": ["shots"],
+    },
+    {
         "dir": "optimize_example",
         "fixture": "semantic_image.json",
         "source": "prompt_optimize_baseline.txt",
