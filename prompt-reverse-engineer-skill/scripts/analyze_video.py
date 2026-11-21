@@ -38,6 +38,9 @@ HIST_BINS = [8, 8, 4]  # HSV 分桶
 MIN_SHOT_SECONDS = 0.4  # 小于该时长的镜头与前一镜头合并
 MOTION_SILENT = 0.02    # 光流均值低于该值判静止
 MOTION_STRONG = 0.15    # 高于该值判强烈运动
+CHANGE_FRAME_MIN = 0.005  # 变化帧的最低分数，低于该值视为无有效变化
+CHANGE_FRAMES_PER_SHOT = 2  # 每镜最多额外抽取的变化帧数
+MAX_KEYFRAMES_DEFAULT = 24  # 整片关键帧上限（每镜中点帧不计入裁剪）
 CHUNK = 64 * 1024
 
 
@@ -356,7 +359,7 @@ def motion_hint(level, direction, zoom):
 
 
 def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
-            keyframes_dir: str):
+            keyframes_dir: str, max_keyframes: int = MAX_KEYFRAMES_DEFAULT):
     keyframes_dir = os.path.abspath(str(keyframes_dir))
     os.makedirs(keyframes_dir, exist_ok=True)
     # 同一输入重复运行时清掉上次的关键帧，避免 stride/时长变化留下多余文件
@@ -384,6 +387,8 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
     prev_hist = None
     shot_frames = []  # 每个镜头的帧索引列表
     frame_infos = []  # (frame_idx, seconds, brightness)
+    change_curve = []  # [{t, score}]，每个抽样点一项；首点分数为 0
+    change_scores = {}  # frame_idx -> 变化分数，供变化帧与裁剪排序使用
     while True:
         ok, frame = cap.read()
         if not ok or frame_idx >= frame_count:
@@ -391,14 +396,19 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
         if frame_idx % stride == 0:
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             hist = hist_of(hsv)
+            distance = 0.0
             if prev_hist is not None:
-                distance = 1.0 - cv2.compareHist(prev_hist, hist, cv2.HISTCMP_CORREL)
+                distance = max(0.0, 1.0 - cv2.compareHist(
+                    prev_hist, hist, cv2.HISTCMP_CORREL))
                 if distance > SHOT_THRESHOLD:
                     shot_frames.append([])  # 新镜头
             prev_hist = hist
             if not shot_frames:
                 shot_frames.append([])
             shot_frames[-1].append(frame_idx)
+            change_scores[frame_idx] = distance
+            change_curve.append({"t": round(frame_idx / fps, 3),
+                                 "score": rounded(distance)})
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             frame_infos.append((frame_idx, frame_idx / fps, float(gray.mean())))
         frame_idx += 1
@@ -418,24 +428,66 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
             merged.append(sf)
     merged = [sf for sf in merged if sf]
 
-    # 只登记需要的帧：每镜首帧（运镜基准）、中点帧（关键帧）、末帧（运镜终点）
-    wanted = {}
+    # 每镜中点帧为必留关键帧；首/末帧与变化帧按变化分数竞争剩余预算。
+    # 变化帧只落在镜头内部，距边界至少一个抽样间隔（边界保护）。
+    candidates = []
     for i, sf in enumerate(merged):
-        for idx, tag in ((sf[0], "first"), (sf[len(sf) // 2], "mid"),
-                         (sf[-1], "last")):
-            wanted.setdefault(idx, set()).add((i, tag))
+        mid = sf[len(sf) // 2]
+        candidates.append({"idx": mid, "shot": i, "tag": "mid", "score": -1.0})
+        for idx, tag in ((sf[0], "first"), (sf[-1], "last")):
+            if idx == mid:
+                continue
+            candidates.append({"idx": idx, "shot": i, "tag": tag,
+                               "score": change_scores.get(idx, 0.0)})
+        peaks = []
+        for idx in sf:
+            if idx in (sf[0], mid, sf[-1]):
+                continue
+            if idx - sf[0] < stride or sf[-1] - idx < stride:
+                continue
+            score = change_scores.get(idx, 0.0)
+            if score >= CHANGE_FRAME_MIN:
+                peaks.append((score, idx))
+        peaks.sort(key=lambda item: (-item[0], item[1]))
+        for order, (score, idx) in enumerate(peaks[:CHANGE_FRAMES_PER_SHOT], 1):
+            candidates.append({"idx": idx, "shot": i,
+                               "tag": f"change{order}", "score": score})
+
+    mandatory = [item for item in candidates if item["tag"] == "mid"]
+    optional = [item for item in candidates if item["tag"] != "mid"]
+    budget = max(0, int(max_keyframes) - len(mandatory))
+    optional.sort(key=lambda item: (-item["score"], item["idx"]))
+    selected = mandatory + optional[:budget]
+
+    # 变化帧按时间顺序重新编号，保证落盘文件名连续（shot_NN_change_1/2.jpg）
+    for i in range(len(merged)):
+        changes = sorted((item for item in selected
+                          if item["shot"] == i and item["tag"].startswith("change")),
+                         key=lambda item: item["idx"])
+        for order, item in enumerate(changes, 1):
+            item["tag"] = f"change{order}"
+
+    wanted = {}
+    for item in selected:
+        wanted.setdefault(item["idx"], set()).add((item["shot"], item["tag"]))
 
     records = {}
     first_gray = {}
     frame_paths = {}
     mid_stats = {}
     mid_hints = {}
+    change_records = {}
     letterbox = None
     last_frame = None
     last_gray = None
 
     def frame_path(i, tag):
-        name = "keyframe" if tag == "mid" else tag
+        if tag == "mid":
+            name = "keyframe"
+        elif tag.startswith("change"):
+            name = f"change_{tag[len('change'):]}"
+        else:
+            name = tag
         return os.path.abspath(os.path.join(
             keyframes_dir, f"shot_{i + 1:02d}_{name}.jpg"))
 
@@ -475,6 +527,8 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
             "motion_axes": move["axes"],
             "camera_move_hint": move,
             "shot_type_hint": shot_type,
+            "change_frames": sorted(change_records.get(i, []),
+                                    key=lambda item: item["timestamp_s"]),
             "letterbox": letterbox or {"detected": False, "top_px": 0,
                                        "bottom_px": 0, "left_px": 0,
                                        "right_px": 0},
@@ -505,6 +559,12 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
                     elif tag == "mid":
                         mid_stats[i] = color_block(frame)
                         mid_hints[i] = face_hints(frame)
+                    elif tag.startswith("change"):
+                        change_records.setdefault(i, []).append({
+                            "path": path,
+                            "timestamp_s": round(frame_idx / fps, 3),
+                            "score": rounded(change_scores.get(frame_idx, 0.0)),
+                        })
                     else:
                         record_shot(i, frame, gray, first_gray.pop(i, gray))
             frame_idx += 1
@@ -546,11 +606,13 @@ def analyze(video_path: str, data_size: int, max_seconds: float, stride: int,
             "file_size": int(data_size),
             "truncated": truncated,
             "keyframes_dir": keyframes_dir,
+            "max_keyframes": int(max_keyframes),
             "letterbox": letterbox or {"detected": False, "top_px": 0,
                                        "bottom_px": 0, "left_px": 0,
                                        "right_px": 0},
         },
         "shots": {"shot_count": len(shot_list), "shot_list": shot_list},
+        "change_curve": change_curve,
         "brightness_curve": brightness_curve,
     }
 
@@ -565,10 +627,15 @@ def main():
     parser.add_argument("--timeout", type=float, default=15.0, help="URL 下载超时秒数")
     parser.add_argument("--max-bytes", type=int, default=512 * 1024 * 1024,
                         help="输入大小上限（字节，默认 512 MiB；本地/URL/stdin 均生效）")
+    parser.add_argument("--max-keyframes", type=int, default=MAX_KEYFRAMES_DEFAULT,
+                        help="整片关键帧上限（默认 24）；超出时按变化分数保留，"
+                             "每镜中点帧必留，其余只留在 change_curve 索引中")
     parser.add_argument("--workdir", default=None,
                         help="工作目录（默认仓库 .tmp/，安装态回退系统临时目录）；"
                              "关键帧写入 <workdir>/video_<sha8>/keyframes/")
     args = parser.parse_args()
+    if args.max_keyframes < 1:
+        parser.error("--max-keyframes 必须 ≥ 1")
 
     base = Path(args.workdir) if args.workdir else default_workdir()
     try:
@@ -585,7 +652,7 @@ def main():
 
     try:
         local_features = analyze(video_path, size, args.max_seconds, args.stride,
-                                 str(keyframes_dir))
+                                 str(keyframes_dir), args.max_keyframes)
     finally:
         if temp_copy is not None:
             try:

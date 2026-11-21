@@ -1230,3 +1230,208 @@ $ python tools/gen_examples.py --check
 ### 脱敏
 
 本文不含密钥与绝对用户路径；验证输出只使用仓库内中性 fixtures，路径以 `...` 省略。
+
+## 2026-11-18 阶段 己：Prompt 优化分支（v3.2.0）
+
+### 摘要
+
+为技能增加一等公民的「已有 Prompt → 诊断 → 改写 → 重编对比」分支。`prompt_compiler.py` 新增 `optimize` 子命令：自动判定模态与模型语法，逐字段体检（主体/场景/构图/光影/色彩/风格/摄影参数/负向词/分镜/时长/画幅等），标出模糊词、重复、冲突与模型参数错误，输出按严重度排序的问题清单与六维启发式评分；提供 `--analysis` 时按同一套 `semantic_analysis` 契约重编目标模型 Prompt，并给出字段覆盖与前后评分对比。实现完全复用既有标准与建议库，不新建平行评分体系。
+
+### 背景（基线）
+
+- 旧版只有 `gpt4_claude` / `deepseek` 模板里的文本 `optimize` 用途，本质是「让目标模型替你改写」的元 Prompt，不做确定性诊断，也没有字段覆盖与评分对比。
+- 用户给定一段已有 Prompt 时，技能没有对应入口，只能按作品逆向，容易改换原意或凭空补细节。
+- 基线：`VERSION=3.1.0`，73 项离线断言全部通过。
+
+### 变更清单
+
+| 文件 | 旧 | 新 |
+|---|---|---|
+| `scripts/prompt_compiler.py` | 无 `optimize` | 新增 `optimize` 子命令：`--prompt/--file/--stdin`、`--modality auto|text|image|video`、`--model`、`--models`、`--analysis`、`--baseline-dims`、`--dims`、`--auto`、`--sanitize`、`--format`；模态/模型检测、三模态特征表、模糊/重复/冲突/语法检查、启发式评分、问题清单、优化稿编译与对比 |
+| `references/prompt_optimize_rules.md` | 无 | 新增：模态/模型判定、严重度、问题类型、改写原则、视觉模态专用建议、对比口径、常见错误 |
+| `references/prompt_framework.md` | 2.6 后直接进入第三节 | 新增 2.7 optimize 诊断契约（命令、JSON 顶层字段、issue schema） |
+| `SKILL.md` | 无优化分支 | 描述与触发词补充；§1 增加判定；§2 增加优化分支；§4 增加固定输出组织；§5 增加 6 条异常；§6 增加 `optimize` 用法；§7 增加规则文档与示例索引 |
+| `tools/gen_examples.py` | 7 个示例 | 新增 `optimize_example`，支持 `source` 生成 `input.md` 与 `output.md` |
+| `tools/fixtures/prompt_optimize_baseline.txt` | 无 | 新增弱结构原稿 fixture |
+| `tools/verify.py` | 73 项 | 新增「优化层/Prompt 诊断与重编」，74 项 |
+| `README.md` | 73 项；无优化说明 | 能力表/快速开始/触发词/3.8 优化模式/架构树/验证表同步；74 项 |
+| `VERSION` / codex `plugin.json` | `3.1.0` | `3.2.0`；清单描述、关键词与默认提示补充优化能力 |
+| `tools/install.py` | 豆包源 7 份 | 增加 `prompt_optimize_rules.md`；重新生成豆包指令/SKILL/zip |
+| `assets/examples/optimize_example/` | 无 | 新增 `input.md` 与金标 `output.md` |
+
+### 生效方式
+
+脚本随技能目录使用，无需额外安装。已重新运行 `python tools/install.py --platform doubao`，豆包指令、技能包与 zip 已包含新规则文档与新子命令说明；其他平台重新执行 `python tools/install.py` 即可（junction 模式自动生效）。
+
+### 验证（真实输出）
+
+```text
+$ python tools/verify.py
+...
+[PASS] 优化层/Prompt 诊断与重编 — 图片诊断+模态判定+重编评分 62.1→92.0（C→A）+黑名单退出 5/sanitize 放行+幂等
+[PASS] 一致性/README 断言数 — README 断言数 74 与实际一致
+
+== 验证汇总 ==
+通过 74 / 74
+全部通过 ✔
+```
+
+```text
+$ python tools/gen_examples.py --check
+[PASS] optimize_example/output.md 与生成结果一致
+[PASS] optimize_example/input.md 与生成结果一致
+（其余 7 个示例同样 PASS）
+```
+
+补充验证：
+
+- `--prompt "一个女孩在城市里，很好看，霓虹灯，8k"` → 模态 `image`，问题清单含「缺少构图」「缺少摄影参数」「存在模糊修饰词 好看」。
+- `--prompt "分镜1：5秒，特写…；镜头2：3秒，中景…"` → 模态 `video`，目标模型 `sora2`。
+- `--file baseline --analysis semantic_image.json --auto` → 字段覆盖 12 项、六维评分 62.1 → 92.0（C→A）。
+- 黑名单 Prompt 未加 `--sanitize` 退出码 5；加 `--sanitize` 退出码 0 且 `filter.sanitized=true`。
+- 同一输入连续两次 `--format md` 输出逐字节一致。
+
+### 偏差
+
+- 原稿与优化稿的 `--auto` 评分都使用「字段覆盖」口径（同一 `_score_notes`），不是语义质量模型；对外必须标注「启发式近似」，最终分仍建议用 `--dims` 人工复核。
+- 模型检测只认语法特征，不把「Midjourney 风格」这类内容词当模型；未检出时按模态取默认目标模型，并在元信息卡提示 `--model`。
+- `--sanitize` 仅用于诊断展示，不作为交付稿；这一点写入规则文档与 SKILL 异常表。
+
+### 回滚
+
+`git revert` 本次提交。若需单独回退：删除 `optimize` 子命令及相关常量/函数、`references/prompt_optimize_rules.md`、`prompt_framework.md` 2.7、`optimize_example/` 与 `prompt_optimize_baseline.txt`；`verify.py` 删除 1 项并恢复 73；`VERSION` 与 codex 清单回到 `3.1.0`；README / SKILL.md 同步回退；从 `tools/install.py` 的 `DOUBAO_SOURCES` 移除新文档并重跑豆包生成。无数据迁移。
+
+### 脱敏
+
+本文不含密钥与绝对用户路径；验证输出仅使用仓库内中性 fixtures。
+
+## 2026-11-19 方案评审：镜头逆向复用升级（文档）
+
+### 摘要
+
+对 `AI短片镜头逆向复用_Skill专项升级方案_V1.0.docx` 做项目适配评审，产出 `docs/2026-11-19-镜头逆向复用升级方案.md`。结论：架构契合 9/10、能力覆盖约 6/10；采纳「镜头复用计划」与「关键帧时间轴」两条主线，改造 4 处契约冲突，明确 8 项不采纳。本次仅新增/更新文档，未改代码与契约。
+
+### 背景（基线）
+
+- `VERSION` 3.2.0；`python tools/verify.py` 74/74；`benchmarks/` 10 例；16 模型、13 个模板含 `shot_style`。
+- 现有实拍镜头分支（v2.4.0 / v2.4.1）已覆盖 L1/L2 分层、12 维镜头卡、逐镜 × 逐模型渲染、证据三档与镜头审查清单。
+- 提案中的嵌套 JSON、`shot_id`、`schemas/` 目录、数值 confidence 与现有扁平契约/目录结构冲突。
+
+### 变更清单
+
+| 文件 | 旧 | 新 |
+|---|---|---|
+| `docs/2026-11-19-镜头逆向复用升级方案.md` | 无 | 新增：契合度评估、冲突改造、A–D 阶段、字段契约、验收基线、评审待决项 |
+| `README.md` 目录树 | 无该方案 | 增加一行索引（待评审） |
+| `tasks/todo.md` | 结束于「戊（可选）」 | 新增「镜头逆向复用升级（待评审）」5 个未勾选项 |
+| `docs/DEVLOG.md` | 无本条目 | 新增本次文档评审记录 |
+
+### 生效方式
+
+仅文档变更，无需安装步骤；无脚本、模板、注册表或契约改动。
+
+### 验证（真实输出）
+
+本次未改代码，既有验证基线保持：
+
+```text
+基线（v3.2.0）：python tools/verify.py → 74 / 74 全部通过
+基线：python tools/benchmarks.py --check → 结构层 10/10
+```
+
+文档自检：
+
+- 所有新增字段均为可选，未改 `SHOT_REQUIRED` / `PROGRAM_REQUIRED`。
+- 冲突改造表 9 条与不采纳表 8 条一一对应提案章节。
+- 验收目标（断言 74→约 83、基准 10→13）已标注为估算，实施时以实际断言为准。
+
+### 回滚
+
+删除 `docs/2026-11-19-镜头逆向复用升级方案.md`，撤销 `README.md` 与 `tasks/todo.md` 的对应新增段落，并回退本 DEVLOG 条目。无代码与数据迁移。
+
+### 脱敏
+
+本文不含密钥、账号与绝对用户路径；来源文档仅引用文件名。
+
+## 2026-11-21 阶段 A–C：镜头逆向复用升级（v3.3.0 / v3.4.0）
+
+### 摘要
+
+按 [`docs/2026-11-19-镜头逆向复用升级方案.md`](2026-11-19-镜头逆向复用升级方案.md) 完成阶段 A、B、C 的实施：镜头复用计划（五种模式、四栏清单、九项审查）、视频变化曲线与变化帧、连续性资料与变体说明。新增字段全部可选，不声明 `reuse_mode` 时旧镜头输出逐字节不变；断言 74 → 83，基准 10 → 13，模型仍为 16 个。按方案版本映射，A+B 记为 v3.3.0、C 记为 v3.4.0，同分支一次交付。
+
+### 背景（基线）
+
+- 起点：`VERSION` 3.2.0；`python tools/verify.py` 74/74；`benchmarks/` 10 例；16 模型、13 个模板含 `shot_style`。
+- 现有镜头分支只输出「一次反推」，无法表达局部修改、变体、延续与返修；视频脚本关键帧只给首/中/末，变化剧烈的时刻可能没有证据帧。
+- 契约约束：扁平 JSON、退出码 4、确定性输出与 `gen_examples.py --check` 逐字节一致。
+
+### 变更清单
+
+| 文件 | 旧 | 新 |
+|---|---|---|
+| `prompt-reverse-engineer-skill/scripts/prompt_compiler.py` | 镜头卡 20 字段，无复用概念 | 顶层 `reuse_mode` / `baseline_prompt` / `prompt_delta` / `dependent_updates` / `uncontrollable` / `continuation_from` / `variant_of` / `variant_axis`；按模式必填校验；`reuse_plan.manifest` 四栏；九项审查；冲突写入 `warnings` 且 `reuse_conflict=warn`；`profile_notes` 只进审查参考；变体 Markdown 说明 |
+| `prompt-reverse-engineer-skill/scripts/analyze_video.py` | 每镜首/中/末关键帧 | 新增 `change_curve: [{t, score}]`、变化候选距镜头边界至少一个采样间隔、`shot_NN_change_M.jpg`、逐镜 `change_frames`、`--max-keyframes`（默认 24，`< 1` 退出 2）；中点必留，首/末与变化峰按分数竞争 |
+| `prompt-reverse-engineer-skill/references/prompt_framework.md` | 2.6.1 仅复用前置说明 | 补复用字段表、模式必填表、四栏语义、连续性资料表与渲染边界 |
+| `prompt-reverse-engineer-skill/references/shot_reverse_rules.md` | 复用 5.1–5.5 | 新增 5.6 连续性资料；补延续七项对齐与变体说明；第四节补「变化帧证据引用」 |
+| `prompt-reverse-engineer-skill/SKILL.md` | 镜头分支不含复用/资料 | 工作流、示例索引、fixtures 索引同步 |
+| `tools/verify.py` | 74 项 | 83 项：+4 复用契约/负向/冲突/旧输出、+3 变化曲线/变化帧边界/关键帧上限、+2 资料边界/变体字段 |
+| `tools/benchmarks.py` | 5 套件 10 例 | 新增 `shot_reuse` 套件，共 13 例（图片 3 / 视频 3 / 镜头复用 3 / 工作流 2 / 平台 2） |
+| `tools/fixtures/` | 无复用样例 | 新增 `semantic_shot_reuse.json` / `semantic_shot_continuation.json` / `semantic_shot_variant.json` |
+| `assets/examples/shot_reuse_example/` | 无 | 局部修改复用金标（四栏清单） |
+| `benchmarks/shot_reuse/` | 无 | `shot-local-edit` / `shot-continuation` / `shot-variant` 三例 |
+| `VERSION` / codex `plugin.json` | `3.2.0` | `3.4.0`：清单描述补镜头复用能力 |
+| `README.md` / `benchmarks/README.md` / `docs/RELEASE.md` / `tasks/todo.md` | 74 项 / 10 例 | 83 项 / 13 例；历史版本补 v3.3.0、v3.4.0 |
+| 豆包产物 | 旧技能包 | `install.py --platform doubao` 重新生成指令、技能目录与 zip |
+
+### 生效方式
+
+- 源码目录直接生效，无服务与系统配置改动。
+- 豆包平台需重新上传 `platform-adapters/doubao/prompt-reverse-engineer.zip`（或整个目录）。
+- 旧调用方式不变；`reuse_mode` 与三组资料字段均为可选。
+
+### 验证（真实输出）
+
+```text
+$ python tools/verify.py
+[PASS] 镜头复用/字段契约与四栏清单 — reuse_mode=local_edit 输出复用计划；四栏与输入一一对应；九项审查清单与镜头卡扩展字段进入 Markdown
+[PASS] 负向层/复用模式必填 — 局部修改/变体/延续/修复 7 类缺必填与模式越界均退出 4；other: 变体轴与补齐后的修复放行
+[PASS] 镜头复用/冲突提示 — Delta 与 Preserve 包含关系 → 警告 + reuse_conflict=warn，退出 0 且不覆盖输入
+[PASS] 镜头复用/旧输出不变 — 两份旧镜头 fixture JSON 输出 SHA-256 不变；Markdown 不含复用计划、清单仍为 6 项
+[PASS] 镜头复用/连续性资料边界 — 人物/场景/风格资料进入 profile_notes 与审查参考；未混入 Prompt 正文
+[PASS] 镜头复用/变体字段与说明 — variant_of / variant_axis 原样输出；shot_no 连续；Markdown 标明同一基准镜头的变体
+[PASS] 基准层/用例契约 — 13 例基准契约合法（图片 3/视频 3/镜头复用 3/工作流 2/平台 2），均含金标与语义标准
+[PASS] 基准层/结构层断言 — 13 例结构层全部通过；语义层标记为人工评分；图片 3 例与镜头复用 3 例套件通过
+== 验证汇总 ==
+通过 83 / 83
+全部通过 ✔
+
+$ python tools/benchmarks.py --check
+结构层通过 13 / 13；语义层需人工/Agent 评分
+```
+
+补充验证：
+
+- 旧镜头 fixture `--auto --format json` 输出 SHA-256 保持 `8772d4e2…a46` / `d52ef28c…eee`。
+- 复用冲突样例退出码 0，`reuse_conflict` 为 `warn`，输入四栏未被改写。
+- 变化帧样例每镜至少 1 个变化帧，时间戳距镜头边界大于一个采样间隔，命名 `shot_NN_change_M.jpg`。
+- `--max-keyframes 2` 只保留 2 个文件且中点存在；`--max-keyframes 0` 退出 2。
+- 变体样例 Prompt 正文不含「左眉疤痕」，该内容只出现在「连续性资料（审查参考）」。
+
+### 偏差
+
+- 方案将 A+B 与 C 拆为 3.3.0 / 3.4.0 两次版本；本次在同一分支一次交付，`VERSION` 直接到 3.4.0，DEVLOG 与 RELEASE 按两行记录，便于日后追溯。
+- `max_keyframes < 镜头数` 时「每镜中点必留」优先于预算，可能超出上限；未单独造用例。
+- `reuse_conflict` 只做归一化包含检测，语义冲突仍需 Agent 复核；自动差异评分按方案留到阶段 D。
+- 变化曲线使用 HSV 直方图相关距离（0–2），不等于真实运动强度，只用于排变化峰。
+
+### 回滚
+
+`git revert` 本次提交。若需拆分回退：
+
+- 回退阶段 C：删除 `PROFILE_FIELDS` 与 `profile_notes` 输出、Markdown 审查参考段、变体说明、`semantic_shot_variant.json` 与 `shot-variant` 基准；`verify.py` 删 2 项并恢复 81/13 → 83 计数；`VERSION` 回 `3.3.0`。
+- 回退阶段 A/B：删除复用字段与校验、`reuse_plan`、变化曲线/变化帧/`--max-keyframes`、对应 fixtures/示例/基准；`verify.py` 删 7 项并恢复 13 → 10 例计数。
+- 全部回退：`VERSION` 与 codex 清单回 `3.2.0`，README / SKILL / 规则文档同步撤销，重跑 `install.py --platform doubao`。无数据迁移。
+
+### 脱敏
+
+本文不含密钥、账号与绝对用户路径；验证输出只含仓库内中性 fixtures 与哈希前缀。

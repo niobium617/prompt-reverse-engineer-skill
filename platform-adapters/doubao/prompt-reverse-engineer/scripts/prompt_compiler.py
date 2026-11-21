@@ -174,6 +174,13 @@ KNOWN_FIELDS = {
     # Seedance 视频扩展字段（references/seedance_rules.md）
     "first_frame", "last_frame", "source_video", "extension_plan",
     "video_references",
+    # 镜头复用计划字段（references/shot_reverse_rules.md，阶段 A）
+    "reuse_mode", "baseline_prompt", "prompt_delta", "dependent_updates",
+    "uncontrollable", "continuation_from", "variant_of", "variant_axis",
+    "action_timeline", "start_state", "end_state", "subject_appearance",
+    "subject_facing", "composition_design", "material_texture", "audio_cues",
+    # 连续性资料（references/shot_reverse_rules.md，阶段 C）
+    "character_profile", "scene_profile", "style_profile",
 }
 
 # 任务模式 → 用途（kind）；与 prompt_framework.md 2.3 节、
@@ -218,12 +225,19 @@ TASK_REQUIRED = {
 NEW_STRING_FIELDS = ("subject_position", "subject_scale", "shot_type",
                      "camera_angle", "spatial", "material", "text_layout",
                      "first_frame", "last_frame", "source_video",
-                     "extension_plan")
+                     "extension_plan",
+                     # 镜头复用计划（references/shot_reverse_rules.md）
+                     "reuse_mode", "baseline_prompt", "continuation_from",
+                     "variant_of", "variant_axis")
 NEW_LIST_FIELDS = ("preserve_constraints", "forbidden_changes",
                    "modification_scope", "reference_images", "uncertainty",
                    "spatial_relationships", "target_changes", "reference_usage",
                    "feature_transfer", "feature_exclusion", "anchor_set",
-                   "iteration_context", "video_references")
+                   "iteration_context", "video_references",
+                   # 镜头复用计划（references/shot_reverse_rules.md）
+                   "prompt_delta", "dependent_updates", "uncontrollable",
+                   # 连续性资料（阶段 C）
+                   "character_profile", "scene_profile", "style_profile")
 # 列表字段的连接方式：逐条资产/轮次/素材每项一行，其余按语言选择分隔符
 LIST_JOINERS = {"reference_images": "\n", "anchor_set": "\n",
                 "iteration_context": "\n", "video_references": "\n"}
@@ -284,8 +298,29 @@ SHOT_REQUIRED = ("shot_size", "camera_angle", "camera_move", "duration_s",
 SHOT_STRING_FIELDS = ("shot_size", "camera_angle", "camera_move",
                       "subject_action", "environment", "lighting", "color",
                       "sound", "continuity", "lens", "focus", "transition",
-                      "first_frame", "shot_note")
-SHOT_LIST_FIELDS = ("anchors", "evidence")
+                      "first_frame", "shot_note",
+                      # 镜头卡扩展（阶段 A，全部可选）
+                      "start_state", "end_state", "subject_appearance",
+                      "subject_facing", "composition_design",
+                      "material_texture")
+SHOT_LIST_FIELDS = ("anchors", "evidence", "action_timeline", "audio_cues")
+# 镜头复用模式（references/shot_reverse_rules.md 第五节）
+# 只做分析层编排，不进入 TASK_KINDS，避免与 task_type / kind 两套枚举打架。
+REUSE_MODES = ("replicate", "local_edit", "variant", "continuation", "repair")
+# 连续性资料：只进审查说明，不默认进入 Prompt 正文（阶段 C）
+PROFILE_FIELDS = ("character_profile", "scene_profile", "style_profile")
+VARIANT_AXES = ("shot_size", "camera_angle", "camera_move",
+                "action_intensity", "lighting_weather")
+# 各模式追加必填字段；continuation 另有「第 1 镜 start_state」规则，
+# repair 还有「target_changes 或 prompt_delta 至少一项」的二选一规则。
+REUSE_REQUIRED = {
+    "replicate": (),
+    "local_edit": ("baseline_prompt", "prompt_delta", "preserve_constraints"),
+    "variant": ("variant_of", "variant_axis"),
+    "continuation": ("continuation_from",),
+    "repair": ("modification_scope",),
+}
+VARIANT_AXIS_OTHER_RE = re.compile(r"^other:\s*\S")
 PROGRAM_REQUIRED = ("style", "aspect_ratio", "total_duration")
 PROGRAM_STRING_FIELDS = PROGRAM_REQUIRED + (
     "color_script", "sound_plan", "continuity_notes", "negative_words",
@@ -1558,14 +1593,15 @@ def heuristic_scores(semantic):
     return scores
 
 
-def build_report(dim_entries, approximate, notes=None):
+def build_report(dim_entries, approximate, notes=None, suggestion_pool=None):
     total = round(sum(w * s for _, _, w, s in dim_entries) / 100.0, 1)
     grade = "A" if total >= 90 else "B" if total >= 75 else "C" if total >= 60 else "D"
     ranked = sorted(dim_entries, key=lambda e: (e[3], e[0]))
     suggestions = []
     for key, name, _, _ in ranked[:2]:
-        if SUGGESTIONS.get(key):
-            suggestions.append(SUGGESTIONS[key][0])
+        pool = suggestion_pool or SUGGESTIONS
+        if pool.get(key):
+            suggestions.append(pool[key][0])
     notes = notes or {}
     dimensions = [{"key": k, "name": n, "weight": w, "score": s,
                    "note": str(notes.get(k, "")).strip()}
@@ -1939,6 +1975,854 @@ def emit(result, output):
 
 
 # ---------------------------------------------------------------------------
+# optimize（已有 Prompt 诊断与优化）
+# ---------------------------------------------------------------------------
+TEXT_MODEL_IDS = ("gpt4_claude", "deepseek")
+VIDEO_MODEL_IDS = ("seedance", "sora2", "runway", "veo3", "kling", "hailuo", "vidu")
+IMAGE_MODEL_IDS = ("midjourney", "stable_diffusion", "flux2", "gpt_image",
+                   "muse_image", "nano_banana", "jimeng")
+
+# 只认语法特征与明确模型名；单独的「Midjourney 风格」不自动判定为 MJ 原稿。
+MODEL_SIGNATURES = [
+    ("deepseek", r"deepseek(?:[- ]v?4)?|\[模型\]"),
+    ("gpt4_claude", r"\[system\]|##\s*角色|\bclaude\b|\bgpt-?5(?:\.5)?\b"),
+    ("seedance", r"\bseedance\b"),
+    ("sora2", r"\bsora(?:[- ]?2)?\b"),
+    ("runway", r"\brunway\b|\bgen-4(?:\.5)?\b"),
+    ("veo3", r"\bveo(?:[- ]?3(?:\.1)?)?\b"),
+    ("kling", r"\bkling\b|可灵|【整体设定】"),
+    ("hailuo", r"\bhailuo\b|海螺|integrated_multimodal_description"),
+    ("vidu", r"\bvidu\b|\[@[^\]]+\]"),
+    ("jimeng", r"即梦|seedream"),
+    ("muse_image", r"\bmuse(?:\s*image)?\b"),
+    ("gpt_image", r"gpt[- ]?image|dall-e|create an image with the following specification"),
+    ("nano_banana", r"nano\s*banana"),
+    ("flux2", r"\bflux(?:\.2)?\b"),
+    ("stable_diffusion", r"stable diffusion|positive\s*:|negative prompt|cfg scale"),
+    ("midjourney", r"/imagine\b|--ar\s+\d|--v\s+\d|--no\s+"),
+]
+
+VIDEO_SIGNALS = [
+    r"分镜", r"运镜", r"镜头语言", r"\[shot\s*\d", r"镜头\s*\d+",
+    r"storyboard", r"\d+\s*(?:秒|seconds?)\b", r"camera (?:move|movement|pan|tilt)",
+]
+IMAGE_SIGNALS = [
+    r"/imagine", r"--ar\b", r"positive\s*:", r"negative prompt", r"主体",
+    r"构图", r"光影", r"色调", r"画面", r"aspect ratio", r"背景",
+    r"女孩|男孩|女子|男子|人物|角色", r"霓虹|赛博|街|城市|森林|海边|室内|室外",
+    r"8k|4k|高清|超清|电影感|画质", r"广角|长焦|微距|俯拍|仰拍|特写",
+    r"close-up|wide shot|medium shot", r"lighting", r"composition",
+]
+TEXT_SIGNALS = [
+    r"\[system\]", r"##\s*角色", r"输出格式", r"受众", r"写一篇|写一段|撰写|起草",
+    r"\brole\b|\byou are\b", r"\btask\b", r"constraints?", r"\baudience\b",
+    r"小说|文章|文案|剧本|报告|邮件|总结|翻译|演讲稿|段落|字数|读者",
+]
+STRONG_TEXT_SIGNALS = r"小说|文章|文案|剧本|报告|邮件|总结|翻译|演讲稿|字数|段落|读者"
+STRONG_VIDEO_SIGNALS = r"分镜|运镜|镜头语言|镜头\s*\d+|\[shot\s*\d+|\d+\s*(?:秒|seconds?)"
+
+CONFLICT_PAIRS = [
+    ("白天", "夜晚", "scene_completeness", "时间冲突"),
+    ("晴天", "雨天", "scene_completeness", "天气冲突"),
+    ("室内", "室外", "scene_completeness", "空间冲突"),
+    ("写实", "卡通", "style_fit", "风格冲突"),
+    ("冷色调", "暖色调", "style_fit", "色调冲突"),
+    ("固定镜头", "环绕", "param_reasonableness", "运镜冲突"),
+    ("特写", "远景", "param_reasonableness", "景别冲突"),
+]
+VAGUE_WORDS = (
+    "好看的", "好看", "高级感", "氛围感", "有感觉", "很酷", "一些", "等等",
+    "随便", "差不多", "漂亮", "震撼", "大片感", "whatever", "something",
+    "nice", "beautiful", "amazing", "interesting",
+)
+SEVERITY_PENALTY = {"high": 12, "medium": 6, "low": 3}
+SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
+SEVERITY_LABEL = {"high": "高", "medium": "中", "low": "低"}
+PLACEHOLDER_RE = re.compile(
+    r"\[(?!shot\b|镜头|图\d|素材\d|@|已过滤)[^\]\n]{1,24}\]"
+    r"|\{[^}\n]{1,24}\}|<[^>\n]{1,24}>", re.I)
+ASPECT_RATIO_RE = re.compile(r"\b\d{1,3}\s*[:：]\s*\d{1,3}\b")
+DURATION_RE = re.compile(r"\d+\s*(?:秒|s\b|seconds?)", re.I)
+PHOTO_PARAM_RE = re.compile(
+    r"\b\d{2,3}\s*mm\b|\bf/\d(?:\.\d+)?\b|\biso\s*\d+|\b\d+\s*(?:mm|毫米)\b", re.I)
+
+
+def _has_markers(text, markers):
+    lower = text.lower()
+    return any(marker.lower() in lower for marker in markers)
+
+
+def _subject_signal(text):
+    cleaned = re.sub(r"--[a-z]+(?:\s+[^\s,，;；]+)?", " ", text, flags=re.I)
+    cleaned = re.sub(r"\[[^\]]*\]|\{[^}]*\}", " ", cleaned)
+    cleaned = re.sub(r"[\s,，。.;；:：/\\|_\-]+", "", cleaned)
+    return len(cleaned) >= 3
+
+
+def _placeholder_signal(text):
+    return bool(PLACEHOLDER_RE.search(text))
+
+
+def _photo_params_signal(text):
+    return bool(PHOTO_PARAM_RE.search(text)) or _has_markers(
+        text, ("光圈", "快门", "景深", "焦段", "镜头参数", "aperture", "shutter",
+               "depth of field", "bokeh", "lens"))
+
+
+def _storyboard_signal(text):
+    return bool(re.search(r"镜头\s*\d+|\[shot\s*\d+|shot\s*\d+|scene\s*\d+",
+                          text, re.I)) or _has_markers(
+        text, ("分镜", "storyboard", "镜头表", "分镜表"))
+
+
+def _duration_signal(text):
+    return bool(DURATION_RE.search(text)) or _has_markers(text, ("时长", "duration"))
+
+
+def _aspect_ratio_signal(text):
+    return bool(ASPECT_RATIO_RE.search(text)) or _has_markers(text, ("画幅", "aspect ratio"))
+
+
+def _feat(fid, label, dimension, weight, markers=(), *, required=False,
+          severity="low", fix="", detector=None):
+    return {
+        "id": fid, "label": label, "dimension": dimension, "weight": weight,
+        "markers": tuple(markers), "required": required, "severity": severity,
+        "fix": fix, "detector": detector,
+    }
+
+
+IMAGE_FEATURES = [
+    _feat("subject", "主体", "theme_clarity", 5,
+          required=True, severity="high",
+          fix="首句写清主体（谁/什么）与至少 2 个可辨识特征",
+          detector=_subject_signal),
+    _feat("scene", "场景", "scene_completeness", 3,
+          ("场景", "环境", "背景", "地点", "街头", "室内", "室外", "森林", "海边",
+           "城市", "scene", "background", "environment", "setting", "location"),
+          required=True, severity="high",
+          fix="补时间 + 地点 + 氛围，如「雨夜霓虹街头，潮湿反光地面」"),
+    _feat("composition", "构图", "structure_clarity", 3,
+          ("构图", "景别", "视角", "特写", "近景", "中景", "远景", "全景", "仰拍",
+           "俯拍", "平视", "三分法", "居中", "对称", "composition", "framing",
+           "close-up", "wide shot", "medium shot", "camera angle", "rule of thirds"),
+          required=True, severity="high",
+          fix="补景别 + 机位 + 构图方式，如「低角度仰拍，全景，三分法」"),
+    _feat("lighting", "光影", "scene_completeness", 2,
+          ("光", "照明", "逆光", "侧光", "柔光", "硬光", "霓虹", "烛光", "光影",
+           "轮廓光", "打光", "lighting", "backlit", "rim light", "neon",
+           "soft light", "hard light", "golden hour"),
+          required=True, severity="high",
+          fix="补光源 + 方向 + 明暗，如「霓虹侧光与轮廓光，高对比夜色」"),
+    _feat("color", "色彩", "scene_completeness", 2,
+          ("色彩", "色调", "主色", "配色", "饱和度", "色温", "暖色", "冷色",
+           "color", "palette", "saturation", "color temperature", "warm tone",
+           "cool tone"),
+          required=True, severity="high",
+          fix="补主色 + 点缀色 + 饱和度，如「深蓝紫主色，霓虹橙点缀」"),
+    _feat("style", "风格", "style_fit", 3,
+          ("风格", "画风", "摄影", "电影感", "写实", "插画", "动漫", "油画",
+           "水彩", "赛博朋克", "复古", "极简", "style", "cinematic",
+           "photorealistic", "illustration", "anime", "painting", "vintage",
+           "minimalist"),
+          severity="medium", fix="补 1-2 个风格锚点词（见 image_rules.md 术语库）"),
+    _feat("photo_params", "摄影参数", "param_reasonableness", 2,
+          severity="medium", fix="补焦段/光圈/景深，如「24mm，f/2.8，深景深」",
+          detector=_photo_params_signal),
+    _feat("quality_words", "质量词", "style_fit", 1,
+          ("8k", "4k", "高清", "超清", "细节", "电影级", "高画质", "杰作",
+           "ultra detailed", "high resolution", "masterpiece", "best quality",
+           "sharp focus"),
+          fix="补 2-3 个质量词，如「ultra detailed, 8K, cinematic」"),
+    _feat("negative_words", "负向词", "param_reasonableness", 2,
+          ("--no", "negative prompt", "negative words", "反向词", "负面词",
+           "负面提示", "避免", "不要出现", "禁止出现", "avoid", "no "),
+          fix="补负向三类：质量缺陷 / 多余元素 / 解剖错误（见 image_rules.md）"),
+    _feat("text_content", "画内文字", "theme_clarity", 1,
+          ("画面文字", "招牌", "字幕", "标题文字", "text in image", "sign", "caption"),
+          fix="有画内文字时逐字写明并加引号"),
+    _feat("reference_note", "参考素材", "adaptability", 1,
+          ("参考图", "参考素材", "图1", "图2", "reference image", "reference"),
+          fix="有参考图时逐张写「图N：角色/用途」"),
+    _feat("placeholder", "变量占位", "adaptability", 1,
+          fix="把可变项写成 [变量]，便于复用", detector=_placeholder_signal),
+]
+
+TEXT_FEATURES = [
+    _feat("role", "角色", "structure_clarity", 2,
+          ("你是", "扮演", "角色是", "role", "act as", "you are"),
+          required=True, severity="high",
+          fix="补角色：身份 / 专业领域 / 人设"),
+    _feat("task", "任务", "theme_clarity", 4,
+          ("任务", "撰写", "写一篇", "写一段", "写", "生成", "创作", "起草",
+           "分析", "翻译", "总结", "task", "write", "create", "generate",
+           "draft", "compose"),
+          required=True, severity="high",
+          fix="首段直接写清要完成的任务与交付物"),
+    _feat("context", "背景", "scene_completeness", 2,
+          ("背景", "受众", "读者", "用户", "产品", "场景", "context", "background",
+           "audience", "reader", "product"),
+          severity="medium", fix="补背景：受众、使用场景、已有材料"),
+    _feat("style", "风格", "style_fit", 2,
+          ("风格", "语气", "语调", "文风", "style", "tone", "voice"),
+          required=True, severity="high",
+          fix="补写作风格与语气，如「专业克制，面向开发者」"),
+    _feat("structure", "结构", "structure_clarity", 2,
+          ("结构", "开头", "结尾", "分段", "步骤", "outline", "structure",
+           "sections"),
+          required=True, severity="high",
+          fix="写清结构：开头 / 展开 / 结尾或分段顺序"),
+    _feat("constraints", "约束", "param_reasonableness", 3,
+          ("限制", "字数", "不超过", "不少于", "禁止", "避免", "constraint",
+           "no more than", "within", "must not", "word count"),
+          required=True, severity="high",
+          fix="补硬约束：字数、格式、禁用词、必须包含项"),
+    _feat("output_format", "输出格式", "structure_clarity", 1,
+          ("输出格式", "格式", "output format", "format", "json", "markdown"),
+          severity="medium", fix="补输出格式：Markdown / JSON / 表格 / 分段"),
+    _feat("audience", "受众", "theme_clarity", 1,
+          ("受众", "读者", "面向", "audience", "reader", "for beginners"),
+          fix="补目标受众，避免内容泛化"),
+    _feat("reference_note", "参考素材", "adaptability", 1,
+          ("参考范文", "参考", "reference", "示例", "example"),
+          fix="有参考范文时标明可借鉴与不可照搬的部分"),
+    _feat("placeholder", "变量占位", "adaptability", 1,
+          fix="把主题/对象写成 [变量]，便于复用", detector=_placeholder_signal),
+]
+
+VIDEO_FEATURES = [
+    _feat("story", "故事", "theme_clarity", 4,
+          ("故事", "情节", "叙事", "剧情", "起承转合", "story", "narrative", "plot"),
+          required=True, severity="high",
+          fix="补故事线：谁在什么处境下做了什么，结果如何"),
+    _feat("character", "人物", "theme_clarity", 1,
+          ("人物", "角色", "主角", "女子", "男子", "character", "protagonist"),
+          severity="medium", fix="补人物外形、服装与动作状态"),
+    _feat("storyboard", "分镜", "structure_clarity", 3,
+          required=True, severity="high",
+          fix="按镜头拆写：镜头N + 时长 + 景别 + 动作",
+          detector=_storyboard_signal),
+    _feat("camera", "运镜", "param_reasonableness", 2,
+          ("运镜", "推镜", "拉镜", "摇镜", "移镜", "跟拍", "环绕", "升降",
+           "固定镜头", "camera move", "pan", "tilt", "dolly", "tracking shot",
+           "zoom", "orbit"),
+          severity="medium", fix="补运镜方式，单镜不超过两个轴"),
+    _feat("atmosphere", "氛围", "scene_completeness", 2,
+          ("氛围", "气氛", "天气", "环境", "atmosphere", "mood", "weather",
+           "environment"),
+          severity="medium", fix="补环境与氛围：地点、天气、时间"),
+    _feat("lighting", "光影", "scene_completeness", 2,
+          ("光", "照明", "逆光", "侧光", "柔光", "硬光", "霓虹", "烛光", "光影",
+           "轮廓光", "打光", "lighting", "backlit", "rim light", "neon",
+           "soft light", "hard light", "golden hour"),
+          severity="medium", fix="补光源方向与明暗关系"),
+    _feat("color", "色彩", "scene_completeness", 1,
+          ("色彩", "色调", "主色", "配色", "饱和度", "色温", "暖色", "冷色",
+           "color", "palette", "saturation", "color temperature"),
+          fix="补主色与色彩走向"),
+    _feat("style", "风格", "style_fit", 3,
+          ("风格", "画风", "电影感", "写实", "动画", "赛博朋克", "复古", "style",
+           "cinematic", "photorealistic", "anime", "vintage"),
+          severity="medium", fix="补整体风格锚点，保证跨镜统一"),
+    _feat("audio", "声音", "structure_clarity", 1,
+          ("声音", "音效", "配乐", "对白", "环境音", "旁白", "audio", "sound",
+           "music", "dialogue", "voiceover"),
+          fix="补声音设计：环境音 / 音效 / 对白 / 配乐"),
+    _feat("duration", "时长", "param_reasonableness", 1,
+          severity="medium", fix="写清总时长与逐镜时长",
+          detector=_duration_signal),
+    _feat("aspect_ratio", "画幅", "param_reasonableness", 1,
+          severity="medium", fix="补画幅，如 16:9 / 9:16",
+          detector=_aspect_ratio_signal),
+    _feat("reference_note", "参考素材", "adaptability", 1,
+          ("参考图", "参考视频", "参考素材", "图1", "素材1", "reference"),
+          fix="有参考素材时逐项写「素材N：用途 / 保留 / 禁止迁移」"),
+    _feat("placeholder", "变量占位", "adaptability", 1,
+          fix="把可变项写成 [变量]，便于复用", detector=_placeholder_signal),
+]
+
+FEATURE_SPECS = {"text": TEXT_FEATURES, "image": IMAGE_FEATURES, "video": VIDEO_FEATURES}
+AUDIT_SUGGESTIONS = {
+    "image": {
+        "theme_clarity": ["首句写清主体与 2 个可辨识特征", "删除画面中无法呈现的抽象修饰"],
+        "scene_completeness": ["补时间、地点、氛围三要素", "补主色 + 点缀色 + 饱和度"],
+        "style_fit": ["补 1-2 个风格锚点词（见 image_rules.md）", "删除与整体风格冲突的修饰"],
+        "structure_clarity": ["按七段结构重排：主体→场景→风格→光影→色彩→构图→参数"],
+        "param_reasonableness": ["补焦段/光圈/景深，并核对模型参数语法"],
+        "adaptability": ["把主体、风格、画幅写成 [变量] 便于复用"],
+    },
+    "video": {
+        "theme_clarity": ["第一句写清故事线与主角目标", "一镜只保留一个可见事件"],
+        "scene_completeness": ["补环境、光影、色彩与氛围", "用具体地点替换泛化场景词"],
+        "style_fit": ["补整体风格锚点，保证跨镜统一"],
+        "structure_clarity": ["按镜头拆写：镜头N + 时长 + 景别 + 动作 + 运镜"],
+        "param_reasonableness": ["补总时长、逐镜时长与画幅，单镜运镜不超过两轴"],
+        "adaptability": ["把人物、场景、时长写成 [变量]，并写清跨镜一致项"],
+    },
+}
+DEFAULT_OPTIMIZE_MODELS = {"text": "gpt4_claude", "image": "default", "video": "sora2"}
+FEATURE_FIELDS = {
+    "text": {
+        "role": ("role",), "task": ("task",), "context": ("context", "audience"),
+        "style": ("style",), "structure": ("structure",),
+        "constraints": ("constraints",), "output_format": ("output_format",),
+        "audience": ("audience",), "reference_note": ("reference_note",),
+    },
+    "image": {
+        "subject": ("subject",), "scene": ("scene",), "composition": ("composition",),
+        "lighting": ("lighting",), "color": ("color",), "style": ("style",),
+        "photo_params": ("photo_params",), "quality_words": ("quality_words",),
+        "negative_words": ("negative_words",), "text_content": ("text_content",),
+        "reference_note": ("reference_note", "reference_images"),
+    },
+    "video": {
+        "story": ("story",), "character": ("character",), "storyboard": ("storyboard",),
+        "camera": ("camera",), "atmosphere": ("atmosphere",), "lighting": ("lighting",),
+        "color": ("color",), "style": ("style",), "audio": ("audio", "narration", "dialogue"),
+        "duration": ("duration",), "aspect_ratio": ("aspect_ratio",),
+        "reference_note": ("reference_note", "video_references"),
+    },
+}
+
+
+def _modality_scores(text):
+    return {
+        "video": sum(1 for p in VIDEO_SIGNALS if re.search(p, text, re.I)),
+        "image": sum(1 for p in IMAGE_SIGNALS if re.search(p, text, re.I)),
+        "text": sum(1 for p in TEXT_SIGNALS if re.search(p, text, re.I)),
+    }
+
+
+def detect_model(text):
+    for model, pattern in MODEL_SIGNATURES:
+        if re.search(pattern, text, re.I):
+            return model
+    return None
+
+
+def model_modality(registry, model):
+    """模型模板支持的唯一模态；多模态模板返回 None（交给内容信号判断）。"""
+    if model not in registry:
+        return None
+    supported = [m for m in ("text", "image", "video")
+                 if m in registry[model].get("modalities", {})]
+    return supported[0] if len(supported) == 1 else None
+
+
+def choose_modality(registry, model, text):
+    scores = _modality_scores(text)
+    if model in registry:
+        supported = set(registry[model].get("modalities", {}))
+    else:
+        supported = {"text", "image", "video"}
+    if not supported:
+        supported = {"text"}
+    # 强信号优先：带镜头编号/时长的是视频；带小说/文章/字数的是文本；
+    # 其余按命中数排序，至少 2 个信号才判为视觉模态，避免把普通描述误判成图片。
+    if "video" in supported and re.search(STRONG_VIDEO_SIGNALS, text, re.I):
+        return "video"
+    if "text" in supported and re.search(STRONG_TEXT_SIGNALS, text, re.I) and not \
+            re.search(r"/imagine\b|--ar\s+\d|positive\s*:|negative prompt", text, re.I):
+        return "text"
+    ranked = sorted(scores.items(),
+                    key=lambda item: (-item[1], ("video", "image", "text").index(item[0])))
+    for modality, score in ranked:
+        if modality in supported and (score >= 2 or len(supported) == 1):
+            return modality
+    for modality in ("text", "image", "video"):
+        if modality in supported:
+            return modality
+    return "text"
+
+
+def _detect_feature(text, spec):
+    if spec["detector"]:
+        return spec["detector"](text)
+    return _has_markers(text, spec["markers"])
+
+
+def _issue(issue_id, dimension, severity, title, evidence, fix):
+    return {
+        "id": issue_id, "dimension": dimension, "severity": severity,
+        "title": title, "evidence": evidence, "fix": fix,
+    }
+
+
+def _missing_issues(features, specs):
+    issues = []
+    for spec in specs:
+        if features.get(spec["id"]):
+            continue
+        severity = "high" if spec["required"] else spec["severity"]
+        issues.append(_issue(
+            f"missing_{spec['id']}", spec["dimension"], severity,
+            f"缺少{spec['label']}",
+            f"未检出「{spec['label']}」信号（关键词：{'、'.join(spec['markers'][:3]) or '长度不足'}）",
+            spec["fix"],
+        ))
+    return issues
+
+
+def _quality_issues(text, modality):
+    issues = []
+    lower = text.lower()
+    vague = sorted({word for word in VAGUE_WORDS if word in lower})
+    if vague:
+        issues.append(_issue(
+            "vague_wording", "theme_clarity", "medium" if len(vague) > 1 else "low",
+            "存在模糊修饰词", "、".join(vague[:6]),
+            "替换为可观察的具体名词/形容词，如「高级感」→「低饱和莫兰迪配色」",
+        ))
+    segments = [seg.strip().lower() for seg in re.split(r"[,，;；。\n]+", text)
+                if len(seg.strip()) >= 4]
+    duplicated = sorted({seg for seg in segments if segments.count(seg) >= 2})
+    adjacent = re.findall(r"([一-鿿]{2,8})\1", text)
+    if duplicated or adjacent:
+        evidence = "、".join(duplicated[:3] + adjacent[:3]) or "相邻重复短语"
+        issues.append(_issue(
+            "duplicate_wording", "structure_clarity", "low",
+            "存在重复表述", evidence, "删除重复词，合并为一次具体描述",
+        ))
+    if modality != "video":
+        for index, (left, right, dimension, label) in enumerate(CONFLICT_PAIRS):
+            if left in text and right in text:
+                issues.append(_issue(
+                    f"conflict_{index}", dimension, "medium", label,
+                    f"同时出现「{left}」与「{right}」",
+                    "确认是否为有意的时间/空间变化；单画面 Prompt 只保留一个方向",
+                ))
+    ratios = sorted({match.group(0).replace("：", ":")
+                     for match in ASPECT_RATIO_RE.finditer(text)})
+    if len(ratios) > 1:
+        issues.append(_issue(
+            "aspect_ratio_conflict", "param_reasonableness", "medium",
+            "画幅声明冲突", "、".join(ratios),
+            "一个 Prompt 只保留一个画幅；多画幅请拆成多条 Prompt",
+        ))
+    return issues
+
+
+def _syntax_issues(model, text, modality):
+    if not model:
+        return []
+    issues = []
+    lower = text.lower()
+    mj_flag = "/imagine" in lower or bool(re.search(r"--(?:ar|v|no)\b", lower))
+
+    def add(severity, dimension, title, evidence, fix):
+        issues.append(_issue("syntax_" + str(len(issues) + 1), dimension,
+                             severity, title, evidence, fix))
+
+    if model == "midjourney":
+        match = re.search(r"--ar\s+(\S+)", text, re.I)
+        if match and not re.fullmatch(r"\d{1,3}:\d{1,3}", match.group(1)):
+            add("high", "param_reasonableness", "--ar 参数格式错误",
+                f"--ar {match.group(1)}", "改为 --ar 16:9 这类「宽:高」格式")
+        elif mj_flag and not re.search(r"--ar\s+\d{1,3}:\d{1,3}", text, re.I):
+            add("medium", "param_reasonableness", "缺少 --ar 画幅",
+                "未检出 --ar", "补 --ar 16:9 或 --ar 9:16，避免默认画幅")
+        if "negative prompt" in lower:
+            add("medium", "param_reasonableness", "负向写法不符合 MJ",
+                "出现 Negative prompt:", "Midjourney 用 --no 列表，不用 Negative prompt:")
+    elif model == "stable_diffusion":
+        if mj_flag:
+            add("high", "param_reasonableness", "混入 Midjourney 参数",
+                "出现 /imagine 或 --ar/--v/--no", "SD 用 Positive/Negative 分段，参数另起一行")
+        if not re.search(r"negative\s*(?:prompt)?\s*:", lower):
+            add("medium", "param_reasonableness", "缺少 Negative Prompt",
+                "未检出 Negative prompt:", "补 Negative prompt: 并列出三类负向词")
+    elif model in ("flux2", "gpt_image", "muse_image", "nano_banana"):
+        if mj_flag:
+            add("medium", "param_reasonableness", "混入 Midjourney 参数",
+                "出现 /imagine 或 --ar/--v/--no", "该模型用自然语言或分段标签，删除 MJ 参数")
+    elif model in VIDEO_MODEL_IDS:
+        if mj_flag:
+            add("medium", "param_reasonableness", "混入图片模型参数",
+                "出现 /imagine 或 --ar/--v/--no", "视频 Prompt 用自然语言分镜，参数放 params 块")
+    elif model in TEXT_MODEL_IDS:
+        if mj_flag:
+            add("high", "param_reasonableness", "文本 Prompt 混入图片参数",
+                "出现 /imagine 或 --ar/--v/--no", "删除图片参数，改用六要素与输出格式约束")
+    if model == "hailuo" and modality == "video" and \
+            "integrated_multimodal_description" not in lower:
+        add("low", "structure_clarity", "未使用 Hailuo 四段结构",
+            "缺少 integrated_multimodal_description:",
+            "按官方四段结构重排：description / [Shot N] / soundscape / music")
+    return issues
+
+
+def _score_notes(features, specs):
+    scores, present_weight, total_weight = {}, {}, {}
+    for key, _, _ in DIMENSIONS:
+        present_weight[key] = 0
+        total_weight[key] = 0
+    for spec in specs:
+        dimension = spec["dimension"]
+        total_weight[dimension] += spec["weight"]
+        if features.get(spec["id"]):
+            present_weight[dimension] += spec["weight"]
+    for key, _, _ in DIMENSIONS:
+        if key == "adaptability":
+            scores[key] = 55 + (20 if features.get("placeholder") else 0) + \
+                (10 if features.get("reference_note") else 0)
+        elif total_weight[key]:
+            scores[key] = 40 + 55.0 * present_weight[key] / total_weight[key]
+        else:
+            scores[key] = 55
+    return scores
+
+
+def audit_prompt(text, modality, model=None):
+    """确定性体检：字段覆盖 + 问题清单 + 启发式评分。不做语义改写。"""
+    specs = FEATURE_SPECS[modality]
+    features = {spec["id"]: _detect_feature(text, spec) for spec in specs}
+    issues = _missing_issues(features, specs)
+    issues += _quality_issues(text, modality)
+    issues += _syntax_issues(model, text, modality)
+    scores = _score_notes(features, specs)
+    for issue in issues:
+        scores[issue["dimension"]] -= SEVERITY_PENALTY[issue["severity"]]
+    scores = {key: max(0, min(100, round(value))) for key, value in scores.items()}
+    notes = {}
+    for key, name, _ in DIMENSIONS:
+        present = [spec["label"] for spec in specs
+                   if spec["dimension"] == key and features.get(spec["id"])]
+        missing = [spec["label"] for spec in specs
+                   if spec["dimension"] == key and not features.get(spec["id"])]
+        parts = []
+        if present:
+            parts.append("已检出：" + "、".join(present))
+        if missing:
+            parts.append("缺少：" + "、".join(missing))
+        if key == "adaptability":
+            parts = [f"变量占位：{'有' if features.get('placeholder') else '无'}",
+                     f"参考素材：{'有' if features.get('reference_note') else '无'}"]
+        notes[key] = "；".join(parts)
+    dim_entries = [(key, name, weight, scores[key]) for key, name, weight in DIMENSIONS]
+    report = build_report(dim_entries, True, notes,
+                          suggestion_pool=AUDIT_SUGGESTIONS.get(modality))
+    issues.sort(key=lambda item: (SEVERITY_RANK[item["severity"]],
+                                  item["dimension"], item["id"]))
+    return {"features": features, "issues": issues, "score_report": report, "notes": notes}
+
+
+def optimized_features(semantic, modality):
+    """按 semantic_analysis 字段判断优化稿覆盖了哪些检查项。"""
+    specs = FEATURE_SPECS[modality]
+    fields = FEATURE_FIELDS[modality]
+    result = {}
+    all_text = []
+    for value in semantic.values():
+        if isinstance(value, str):
+            all_text.append(value)
+        elif isinstance(value, list):
+            all_text.extend(str(item) for item in value if str(item).strip())
+    for spec in specs:
+        if spec["id"] == "placeholder":
+            result[spec["id"]] = _placeholder_signal(" ".join(all_text))
+            continue
+        names = fields.get(spec["id"], ())
+        result[spec["id"]] = any(_has_value(semantic, name) for name in names)
+    return result
+
+
+def feature_comparison(baseline, optimized, modality):
+    return [{"id": spec["id"], "label": spec["label"],
+             "baseline": bool(baseline.get(spec["id"])),
+             "optimized": bool(optimized.get(spec["id"]))}
+            for spec in FEATURE_SPECS[modality]]
+
+
+def _comparison_report(baseline, optimized):
+    by_key = {dim["key"]: dim for dim in baseline["dimensions"]}
+    dimensions = []
+    for dim in optimized["dimensions"]:
+        before = by_key[dim["key"]]["score"]
+        dimensions.append({
+            "key": dim["key"], "name": dim["name"], "weight": dim["weight"],
+            "baseline": before, "optimized": dim["score"],
+            "delta": round(dim["score"] - before, 1),
+        })
+    return {
+        "baseline_total": baseline["total"], "optimized_total": optimized["total"],
+        "baseline_grade": baseline["grade"], "optimized_grade": optimized["grade"],
+        "delta": round(optimized["total"] - baseline["total"], 1),
+        "dimensions": dimensions,
+    }
+
+
+def _read_prompt(args):
+    if args.prompt is not None:
+        return args.prompt, "inline"
+    if args.file:
+        if args.file == "-":
+            return sys.stdin.read(), "stdin"
+        try:
+            return Path(args.file).read_text(encoding="utf-8"), args.file
+        except OSError as exc:
+            die(f"文件不可读：{exc}", 2)
+    if args.stdin:
+        return sys.stdin.read(), "stdin"
+    die("需要 --prompt、--file 或 --stdin", 1)
+
+
+def cmd_optimize(args):
+    text, source = _read_prompt(args)
+    if not text.strip():
+        die("待优化 Prompt 为空", 1)
+    registry = load_registry(args.template_dir)
+    if not registry:
+        die(f"模板目录 {args.template_dir} 下未发现模型模板", 4)
+
+    warnings = []
+    model_hint, model_source = None, "none"
+    if args.model:
+        resolved, unknown = resolve_models(args.model, registry)
+        if unknown:
+            die(f"未知模型：{', '.join(unknown)}（可用：{', '.join(sorted(registry))}）", 1)
+        if resolved:
+            model_hint, model_source = resolved[0], "explicit"
+    else:
+        detected = detect_model(text)
+        if detected:
+            model_hint, model_source = detected, "detected"
+
+    if args.modality == "auto":
+        modality = choose_modality(registry, model_hint, text)
+        modality_source = "model" if model_hint and model_modality(registry, model_hint) else "heuristic"
+    else:
+        modality = args.modality
+        modality_source = "explicit"
+    supported = set(registry[model_hint]["modalities"]) if model_hint else set()
+    if model_hint and supported and modality not in supported:
+        warnings.append(f"模型 {model_hint} 不支持 {modality} 模态，已忽略该模型线索")
+        model_hint, model_source = None, "none"
+        if modality_source == "model":
+            modality_source = "heuristic"
+
+    analysis = None
+    if args.analysis:
+        analysis = load_analysis(args.analysis)
+        analysis_modality = analysis["modality"]
+        if args.modality != "auto" and analysis_modality != modality:
+            die(f"--analysis 的 modality={analysis_modality} 与 --modality {modality} 不一致", 4)
+        if analysis_modality != modality:
+            warnings.append(
+                f"自动识别模态为 {modality}，analysis 声明 {analysis_modality}；以 analysis 为准")
+            modality = analysis_modality
+            modality_source = "analysis"
+            if model_hint and supported and modality not in supported:
+                warnings.append(f"模型 {model_hint} 不支持 {modality} 模态，已忽略该模型线索")
+                model_hint, model_source = None, "none"
+
+    matches, sanitized = scan_text(text)
+    input_blocked = len(matches) > 0
+    audit = audit_prompt(sanitized if (input_blocked and args.sanitize) else text,
+                         modality, model_hint)
+    if args.baseline_dims:
+        dim_entries, notes = parse_dims(args.baseline_dims)
+        audit["score_report"] = build_report(
+            dim_entries, False, notes,
+            suggestion_pool=AUDIT_SUGGESTIONS.get(modality))
+        audit["notes"] = notes
+
+    target_spec = args.models
+    if target_spec is None:
+        if model_hint and modality in registry[model_hint].get("modalities", {}):
+            target_spec = model_hint
+        else:
+            target_spec = DEFAULT_OPTIMIZE_MODELS[modality]
+    models, unknown = resolve_models(target_spec, registry)
+    if unknown:
+        die(f"未知模型：{', '.join(unknown)}（可用：{', '.join(sorted(registry))}）", 1)
+    if not models:
+        die("未解析到任何模型", 1)
+
+    optimized = None
+    comparison = None
+    prompts, skipped = [], []
+    all_matches, injection_flags = [], []
+    blocked = input_blocked
+    if analysis:
+        semantic = analysis["semantic_analysis"]
+        validate_task_contract(semantic)
+        kind, strict = resolve_kind(semantic, args.kind)
+        prompts, skipped, missing_all, invalid_all = compile_prompts(
+            registry, models, modality, semantic, kind=kind, strict=strict)
+        report_compile_errors(invalid_all, missing_all)
+        if strict and kind and not prompts:
+            die(f"没有模型支持用途 {kind}（可用用途见模板 modalities）", 1)
+        if not prompts and skipped:
+            reasons = "；".join(f"{item['model']}：{item['reason']}" for item in skipped[:3])
+            die(f"目标模型均未渲染出 Prompt：{reasons}", 1)
+
+        sanitized_prompts = []
+        for prompt in prompts:
+            source_name = f"{prompt['model']}/{prompt['kind']}"
+            injection_flags.extend(
+                dict(flag, prompt=source_name) for flag in scan_injection(prompt["text"]))
+            prompt_matches, prompt_sanitized = scan_text(prompt["text"])
+            all_matches.extend(prompt_matches)
+            sanitized_prompts.append(dict(prompt, text=prompt_sanitized))
+        prompts = sanitized_prompts
+        blocked = blocked or bool(all_matches)
+
+        optimized_report = None
+        pool = AUDIT_SUGGESTIONS.get(modality)
+        opt_features = optimized_features(semantic, modality)
+        if args.dims:
+            dim_entries, notes = parse_dims(args.dims)
+            optimized_report = build_report(dim_entries, False, notes,
+                                            suggestion_pool=pool)
+        elif args.auto:
+            # 与原稿同一套字段覆盖口径，避免两种启发式混算出假的升降。
+            auto_scores = {key: round(value) for key, value in
+                           _score_notes(opt_features, FEATURE_SPECS[modality]).items()}
+            dim_entries = [(key, name, weight, auto_scores[key])
+                           for key, name, weight in DIMENSIONS]
+            optimized_report = build_report(dim_entries, True,
+                                            suggestion_pool=pool)
+
+        optimized = {
+            "features": opt_features,
+            "feature_compare": feature_comparison(audit["features"],
+                                                  opt_features, modality),
+            "score_report": optimized_report,
+        }
+        if optimized_report:
+            comparison = _comparison_report(audit["score_report"], optimized_report)
+        optimized["warnings"] = uncertainty_warnings(
+            semantic, [prompt["text"] for prompt in prompts])
+
+    result = {
+        "schema_version": SCHEMA_VERSION,
+        "tool": TOOL,
+        "subcommand": "optimize",
+        "modality": modality,
+        "modality_source": modality_source,
+        "source_model": model_hint,
+        "model_source": model_source,
+        "input": {"source": source, "chars": len(text)},
+        "filter": {
+            "blocked": blocked,
+            "input_blocked": input_blocked,
+            "sanitized": bool(args.sanitize),
+            "matches": matches + all_matches,
+            "injection_flags": scan_injection(text) + injection_flags,
+            "sanitized_text": sanitized,
+        },
+        "audit": audit,
+        "target_models": models,
+        "prompts": prompts,
+        "skipped": skipped,
+        "optimized": optimized,
+        "comparison": comparison,
+    }
+    if warnings:
+        result["warnings"] = warnings
+
+    if args.format == "json":
+        emit(result, args.output)
+    else:
+        emit_optimize_text(result, args.output)
+    if blocked and not args.sanitize:
+        print("安全过滤阻断：待优化 Prompt 或生成结果命中黑名单，请重写后重试",
+              file=sys.stderr)
+        sys.exit(5)
+
+
+def emit_optimize_text(result, output):
+    audit = result["audit"]
+    report = audit["score_report"]
+    lines = [
+        "# Prompt 优化报告",
+        "",
+        "## 元信息卡",
+        "",
+        "| 项 | 值 |",
+        "|---|---|",
+        f"| 模态 | `{result['modality']}`（{result['modality_source']}） |",
+        f"| 原稿模型 | `{result['source_model']}`（{result['model_source']}） |"
+        if result["source_model"] else "| 原稿模型 | 未检出（可加 --model） |",
+        f"| 目标模型 | {', '.join(f'`{m}`' for m in result['target_models']) or '—'} |",
+        f"| 原稿长度 | {result['input']['chars']} 字符 |",
+        f"| 安全过滤 | {'命中并已处理' if result['filter'].get('sanitized') else '命中并阻断' if result['filter']['blocked'] else '通过'} |",
+        f"| 注入标记 | {injection_summary(result['filter']['injection_flags'])} |",
+        "",
+    ]
+    if result.get("warnings"):
+        lines += ["## 识别提示", ""] + [f"- {item}" for item in result["warnings"]] + [""]
+    lines += report_markdown(report, "## 原稿评分（启发式）")
+    lines += ["", "## 问题清单", ""]
+    issues = audit["issues"]
+    if issues:
+        lines += ["| 严重度 | 维度 | 问题 | 证据 | 修法 |", "|---|---|---|---|---|"]
+        names = {key: name for key, name, _ in DIMENSIONS}
+        for issue in issues:
+            evidence = issue["evidence"].replace("|", "\\|")
+            fix = issue["fix"].replace("|", "\\|")
+            lines.append(
+                f"| {SEVERITY_LABEL[issue['severity']]} | {names[issue['dimension']]} "
+                f"| {issue['title']} | {evidence} | {fix} |")
+    else:
+        lines.append("未发现结构性问题。")
+    lines.append("")
+    if result["optimized"]:
+        compare = result["optimized"]["feature_compare"]
+        lines += ["## 字段覆盖对比", "", "| 检查项 | 原稿 | 优化稿 |", "|---|---|:---:|"]
+        for item in compare:
+            lines.append(
+                f"| {item['label']} | {'✓' if item['baseline'] else '—'} "
+                f"| {'✓' if item['optimized'] else '—'} |")
+        lines.append("")
+        if result["prompts"]:
+            lines += ["## 优化后 Prompt", ""]
+            for prompt in result["prompts"]:
+                title = prompt.get("display_name") or prompt["model"]
+                if prompt.get("version"):
+                    title += f"（v{prompt['version']}）"
+                lines += [f"### {title} · {prompt['kind']}", "",
+                          "```text", prompt["text"], "```", ""]
+        if result["comparison"]:
+            comp = result["comparison"]
+            lines += ["## 评分对比", "",
+                      "| 维度 | 权重 | 原稿 | 优化稿 | 变化 |",
+                      "|---|---:|---:|---:|---:|"]
+            for dim in comp["dimensions"]:
+                sign = "+" if dim["delta"] > 0 else ""
+                lines.append(
+                    f"| {dim['name']} | {dim['weight']}% | {dim['baseline']} "
+                    f"| {dim['optimized']} | {sign}{dim['delta']} |")
+            sign = "+" if comp["delta"] > 0 else ""
+            lines += ["", f"总分：{comp['baseline_total']} → {comp['optimized_total']}"
+                          f"（{sign}{comp['delta']}），等级 {comp['baseline_grade']} → "
+                          f"{comp['optimized_grade']}。", ""]
+        if result["optimized"].get("warnings"):
+            lines += ["## 待复核提示", ""]
+            lines += [f"- {item}" for item in result["optimized"]["warnings"]]
+            lines.append("")
+    else:
+        lines += ["## 下一步", "",
+                  "按 `references/prompt_optimize_rules.md` 把原稿改写为"
+                  " `semantic_analysis`，然后加 `--analysis <json> --auto` 重跑本命令，"
+                  "即可得到优化后 Prompt 与评分对比。", ""]
+    lines += ["## 使用提示", ""]
+    if report.get("approximate"):
+        lines.append("- 原稿评分为启发式近似值，仅供定位缺口；最终分请用 `--baseline-dims` 人工给分。")
+    if result["filter"]["blocked"] and not result["filter"].get("sanitized_text"):
+        lines.append("- 原稿命中安全黑名单，已阻断；重写违规表述后再优化。")
+    lines.append("- 改写只补结构、不编造原稿没有的事实；不确定项按 `uncertainty` 标 `unknown:`，不进正文。")
+    if result["source_model"]:
+        lines.append(f"- 已按 `{result['source_model']}` 语法体检；换模型时参数写法要同步替换。")
+    text = "\n".join(lines) + "\n"
+    if output:
+        with open(output, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    else:
+        print(text, end="")
+
+
+# ---------------------------------------------------------------------------
 # scenes
 # ---------------------------------------------------------------------------
 def cmd_scenes(args):
@@ -2135,11 +3019,107 @@ def parse_camera_moves(value):
     return tokens, [t for t in tokens if t not in CAMERA_MOVE_TERMS]
 
 
+def normalized_phrase(value):
+    """去掉标点与空白，用于 Delta / Preserve 的包含关系检查。"""
+    return re.sub(r"[\s，。、；;,.：:！!？?（）()\[\]【】\"'“”‘’·—\-]",
+                  "", str(value)).lower()
+
+
+def reuse_conflicts(semantic):
+    """Delta 与 Preserve 归一化后互相包含 → 冲突对（只提示，不阻断）。"""
+    deltas = [str(item).strip() for item in (semantic.get("prompt_delta") or [])
+              if str(item).strip()]
+    preserves = [str(item).strip()
+                 for item in (semantic.get("preserve_constraints") or [])
+                 if str(item).strip()]
+    pairs = []
+    for delta in deltas:
+        left = normalized_phrase(delta)
+        if len(left) < 2:
+            continue
+        for keep in preserves:
+            right = normalized_phrase(keep)
+            if len(right) < 2:
+                continue
+            if left in right or right in left:
+                pairs.append((delta, keep))
+    return pairs
+
+
+def validate_reuse_contract(semantic, shots, err):
+    """校验 reuse_mode 及其模式必填字段（prompt_framework.md 2.6 节）。"""
+    mode = semantic.get("reuse_mode")
+    if mode is None:
+        return None
+    if not isinstance(mode, str) or mode not in REUSE_MODES:
+        err(f"reuse_mode 必须是 {'/'.join(REUSE_MODES)} 之一，当前：{mode!r}")
+    missing = [field for field in REUSE_REQUIRED[mode]
+               if not _has_value(semantic, field)]
+    if mode == "continuation" and not _has_value(shots[0], "start_state"):
+        missing.append("shots[1].start_state")
+    if mode == "repair" and not (_has_value(semantic, "target_changes")
+                                 or _has_value(semantic, "prompt_delta")):
+        missing.append("target_changes 或 prompt_delta")
+    if missing:
+        err(f"reuse_mode={mode} 缺少必填字段：{', '.join(missing)}")
+    axis = semantic.get("variant_axis")
+    if mode == "variant" and not (
+            axis in VARIANT_AXES or VARIANT_AXIS_OTHER_RE.match(str(axis or ""))):
+        err(f"variant_axis 必须是 {'/'.join(VARIANT_AXES)} 之一，"
+            f"或 other:<说明>，当前：{axis!r}")
+    return mode
+
+
+def reuse_warnings(semantic):
+    """模式冲突转为审查提示（不阻断，不静默覆盖）。"""
+    return [
+        f"复用冲突：prompt_delta「{delta}」与 preserve_constraints「{keep}」"
+        "存在包含关系，请复核最小调整（不静默覆盖）"
+        for delta, keep in reuse_conflicts(semantic)
+    ]
+
+
+def build_reuse_plan(semantic):
+    """仅在声明 reuse_mode 时生成复用计划；四栏与输入字段一一对应。"""
+    mode = semantic.get("reuse_mode")
+    if not mode:
+        return None
+
+    def items(field):
+        return [str(item).strip() for item in (semantic.get(field) or [])
+                if str(item).strip()]
+
+    changed = items("prompt_delta")
+    preserved = items("preserve_constraints")
+    dependent = items("dependent_updates")
+    uncontrollable = items("uncontrollable")
+    plan = {"mode": mode}
+    if _has_value(semantic, "baseline_prompt"):
+        plan["baseline_prompt"] = semantic["baseline_prompt"]
+    for key in ("continuation_from", "variant_of", "variant_axis"):
+        if _has_value(semantic, key):
+            plan[key] = semantic[key]
+    plan.update({
+        "delta": changed,
+        "preserve": preserved,
+        "dependent_updates": dependent,
+        "uncontrollable": uncontrollable,
+        "manifest": {
+            "changed": changed,
+            "preserved": preserved,
+            "dependent": dependent,
+            "uncontrollable": uncontrollable,
+        },
+    })
+    return plan
+
+
 def validate_shots(semantic, modality, where="semantic_analysis"):
     """校验镜头卡契约（prompt_framework.md 2.6 节），返回 shots 列表。
 
     结构错误一律退出码 4：编号不连续、枚举非法、运镜超过两轴、
-    镜头时长非正数、锚点/证据格式不符、镜头字段写成 unknown。
+    镜头时长非正数、锚点/证据格式不符、镜头字段写成 unknown，
+    以及声明 reuse_mode 时缺失该模式的必填字段。
     """
     def err(message):
         die(f"{where}：{message}", 4)
@@ -2233,6 +3213,7 @@ def validate_shots(semantic, modality, where="semantic_analysis"):
     if numbers != list(range(1, len(numbers) + 1)):
         err("镜头 shot_no 必须从 1 连续编号，当前：" +
             ", ".join(str(n) for n in numbers))
+    validate_reuse_contract(semantic, shots, err)
     return shots
 
 
@@ -2325,7 +3306,11 @@ def heuristic_shot_scores(program, card):
 
 
 def build_shot_review_checklist(semantic, shots, texts):
-    """实拍镜头反推的六项审查清单（不参与总分）。"""
+    """实拍镜头反推的审查清单（不参与总分）。
+
+    默认六项；声明 reuse_mode 时追加 reuse_contract / reuse_conflict /
+    continuity_state 三项，旧 fixture 不声明模式，输出保持逐字节一致。
+    """
     items = []
 
     def add(key, item, status, detail):
@@ -2398,6 +3383,46 @@ def build_shot_review_checklist(semantic, shots, texts):
     else:
         add("continuity_sound", "声音与跨镜衔接是否写明", "pass",
             "声音与衔接逐镜写明")
+
+    mode = semantic.get("reuse_mode")
+    if not mode:
+        return items
+
+    missing = [field for field in REUSE_REQUIRED.get(mode, ())
+               if not _has_value(semantic, field)]
+    if mode == "continuation" and not _has_value(shots[0], "start_state"):
+        missing.append("shots[1].start_state")
+    if mode == "repair" and not (_has_value(semantic, "target_changes")
+                                 or _has_value(semantic, "prompt_delta")):
+        missing.append("target_changes 或 prompt_delta")
+    if missing:
+        add("reuse_contract", "复用模式必填项是否齐全", "warn",
+            f"reuse_mode={mode} 缺少字段：" + "、".join(missing))
+    else:
+        add("reuse_contract", "复用模式必填项是否齐全", "pass",
+            f"reuse_mode={mode} 的模式必填字段齐全")
+
+    conflicts = reuse_conflicts(semantic)
+    if conflicts:
+        add("reuse_conflict", "Delta 与 Preserve 是否冲突", "warn",
+            "存在包含关系，请复核最小调整：" +
+            "；".join(f"「{delta}」↔「{keep}」" for delta, keep in conflicts))
+    else:
+        add("reuse_conflict", "Delta 与 Preserve 是否冲突", "pass",
+            "prompt_delta 与 preserve_constraints 无包含冲突")
+
+    if mode == "continuation":
+        if _has_value(semantic, "continuation_from") and \
+                _has_value(shots[0], "start_state"):
+            add("continuity_state", "延续模式首镜状态是否写明", "pass",
+                "continuation_from 与第 1 镜 start_state 均已写明，"
+                "人物位置/朝向/视线等语义对齐由 Agent 核对")
+        else:
+            add("continuity_state", "延续模式首镜状态是否写明", "warn",
+                "延续模式需同时写明 continuation_from 与第 1 镜 start_state")
+    else:
+        add("continuity_state", "延续模式首镜状态是否写明", "pass",
+            f"当前模式 {mode} 非延续，无需检查")
     return items
 
 
@@ -2559,7 +3584,14 @@ def cmd_shots(args):
         "review_checklist": build_shot_review_checklist(
             semantic, shots, all_texts),
     }
-    warnings = uncertainty_warnings(semantic, all_texts)
+    reuse_plan = build_reuse_plan(semantic)
+    if reuse_plan:
+        result["reuse_plan"] = reuse_plan
+    profile_notes = {key: semantic[key] for key in PROFILE_FIELDS
+                     if _has_value(semantic, key)}
+    if profile_notes:
+        result["profile_notes"] = profile_notes
+    warnings = uncertainty_warnings(semantic, all_texts) + reuse_warnings(semantic)
     if warnings:
         result["warnings"] = warnings
     if args.format == "json":
@@ -2599,6 +3631,49 @@ def emit_shots_text(result, output):
             f"| {cell(row['action'])} | {cell(row['transition'])} |")
     lines.append("")
 
+    plan = result.get("reuse_plan")
+    if plan:
+        lines += ["## 复用计划", "", f"- 模式：`{plan.get('mode')}`"]
+        if plan.get("baseline_prompt"):
+            lines.append(f"- 基准：{cell(plan['baseline_prompt'])}")
+        if plan.get("continuation_from"):
+            lines.append(f"- 延续自：{cell(plan['continuation_from'])}")
+        if plan.get("variant_of"):
+            suffix = (f"，变体轴：`{plan['variant_axis']}`"
+                      if plan.get("variant_axis") else "")
+            lines.append(f"- 变体基准：`{cell(plan['variant_of'])}`{suffix}")
+            lines.append("- 说明：本文件为同一基准镜头的变体之一；"
+                         "多个变体分别运行 `shots`，不要当成独立镜头")
+        manifest = plan.get("manifest", {})
+
+        def column(values):
+            if not values:
+                return "—"
+            return "<br>".join(cell(value) for value in values)
+
+        lines += [
+            "",
+            "| 已修改 | 保留 | 必须联动 | 无法保证 |",
+            "|---|---|---|---|",
+            f"| {column(manifest.get('changed'))} "
+            f"| {column(manifest.get('preserved'))} "
+            f"| {column(manifest.get('dependent'))} "
+            f"| {column(manifest.get('uncontrollable'))} |",
+            "",
+        ]
+
+    profiles = result.get("profile_notes")
+    if profiles:
+        lines += ["## 连续性资料（审查参考）", ""]
+        for field, label in (("character_profile", "人物"),
+                             ("scene_profile", "场景"),
+                             ("style_profile", "风格")):
+            values = profiles.get(field) or []
+            if values:
+                lines.append(f"- {label}：{cell('；'.join(values))}")
+        lines += ["", "> 仅用于跨镜一致性复核，未写入 Prompt 正文；"
+                      "需要时由 Agent 显式引用。", ""]
+
     for shot in shots:
         card = shot.get("card", {})
         lines += [f"## 镜头 {shot['shot_no']} · {card.get('shot_size', '')} · "
@@ -2616,6 +3691,20 @@ def emit_shots_text(result, output):
                              ("first_frame", "首帧提示"), ("transition", "转场")):
             if str(card.get(field) or "").strip():
                 lines.append(f"- {label}：{cell(card.get(field))}")
+        for field, label in (("action_timeline", "动作时间轴"),
+                             ("start_state", "开始状态"), ("end_state", "结束状态"),
+                             ("subject_appearance", "主体外观"),
+                             ("subject_facing", "主体朝向"),
+                             ("composition_design", "构图设计"),
+                             ("material_texture", "材质质感"),
+                             ("audio_cues", "声音时间点")):
+            value = card.get(field)
+            if isinstance(value, list):
+                text = "；".join(str(item) for item in value if str(item).strip())
+            else:
+                text = str(value or "").strip()
+            if text:
+                lines.append(f"- {label}：{cell(text)}")
         evidence = card.get("evidence") or []
         if evidence:
             lines.append(f"- 置信度：{'；'.join(evidence)}")
@@ -3223,6 +4312,33 @@ def main():
                           help="命中黑名单时替换为 [已过滤] 并放行（默认阻断退出码 5）")
     p_filter.add_argument("-o", "--output")
 
+    p_optimize = sub.add_parser(
+        "optimize", help="已有 Prompt 诊断：字段体检 + 问题清单 + 可选重编对比")
+    p_optimize.add_argument("--prompt", help="待优化 Prompt 文本")
+    p_optimize.add_argument("--file", help="待优化 Prompt 文件（- 表示 stdin）")
+    p_optimize.add_argument("--stdin", action="store_true", help="从 stdin 读取")
+    p_optimize.add_argument("--modality", default="auto",
+                            choices=["auto", "text", "image", "video"],
+                            help="原稿模态（默认自动识别）")
+    p_optimize.add_argument("--model", help="原稿模型线索（ID 或别名，如 mj/sora）")
+    p_optimize.add_argument("--models",
+                            help="优化稿目标模型（默认沿用检出模型，否则 default）")
+    p_optimize.add_argument("--analysis",
+                            help="优化稿 semantic_analysis JSON（提供后编译并对比）")
+    p_optimize.add_argument("--kind", help="优化稿用途（同 compile --kind）")
+    p_optimize.add_argument("--baseline-dims",
+                            help="原稿人工评分 JSON：[{key, score, note}]（替代启发式）")
+    p_optimize.add_argument("--dims", help="优化稿人工评分 JSON：[{key, score, note}]")
+    p_optimize.add_argument("--auto", action="store_true",
+                            help="优化稿启发式近似评分（仅离线验证）")
+    p_optimize.add_argument("--sanitize", action="store_true",
+                            help="命中黑名单时替换为 [已过滤] 并放行（默认退出码 5）")
+    p_optimize.add_argument("--format", default="md",
+                            choices=["json", "text", "md", "markdown"],
+                            help="json 或 markdown/text（诊断表 + 问题清单 + 对比）")
+    p_optimize.add_argument("--template-dir", default=str(DEFAULT_TEMPLATE_DIR))
+    p_optimize.add_argument("-o", "--output")
+
     p_all = sub.add_parser("all", help="compile + filter + score 串联")
     p_all.add_argument("--analysis", required=True)
     p_all.add_argument("--models", default="default")
@@ -3305,6 +4421,8 @@ def main():
         cmd_score(args)
     elif args.command == "filter":
         cmd_filter(args)
+    elif args.command == "optimize":
+        cmd_optimize(args)
     elif args.command == "all":
         cmd_all(args)
     elif args.command == "scenes":
