@@ -2053,18 +2053,20 @@ def main():
         return True, "Delta 与 Preserve 包含关系 → 警告 + reuse_conflict=warn，退出 0 且不覆盖输入"
 
     def shots_reuse_legacy():
+        # 哈希前统一换行为 LF，避免 Windows 文本模式（CRLF）与 CI Linux（LF）
+        # 对同一输出算出不同摘要。
         expected = {
             "semantic_shot_reverse.json":
-                "8772d4e2d7978c12a3160da7b4cf859b1a87a338748f4f57cebd485bc6e15a46",
+                "8c3c287b8c57998a6b91ffe413c7b9a9b7f58d5da95592ed8f638be204cef5e6",
             "semantic_shot_reverse_image.json":
-                "d52ef28c446a86f2a8116504c1610b0bab33c5cb73d7501845c3b32af04faeee",
+                "12cdcc11fa8db5c6cd195c782a3cc26ab356a0282e2e2f6d93ae574532107e21",
         }
         for name, digest in expected.items():
             rc, out, err = run([PYTHON, SCRIPTS / "prompt_compiler.py", "shots",
                                 "--analysis", FIXTURES / name, "--auto",
                                 "--format", "json"])
             assert rc == 0, f"{name} 渲染失败：{decode(err)[:200]}"
-            actual = hashlib.sha256(out).hexdigest()
+            actual = hashlib.sha256(out.replace(b"\r\n", b"\n")).hexdigest()
             assert actual == digest, f"{name} 输出已变化：{actual}"
             data = json.loads(decode(out))
             assert "reuse_plan" not in data, f"{name} 未声明 reuse_mode 却输出复用计划"
